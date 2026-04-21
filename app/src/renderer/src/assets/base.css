@@ -386,6 +386,102 @@ dd {
   border: 1px solid var(--danger);
 }
 
+.debrief-summary {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  padding: 12px 16px;
+  margin: 10px 0 14px 0;
+}
+.debrief-summary dl {
+  grid-template-columns: 110px 1fr;
+  gap: 3px 14px;
+}
+
+.debrief-highlights {
+  margin: 14px 0;
+}
+.debrief-highlights ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.highlight {
+  display: flex;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-1);
+  border-left: 3px solid var(--accent);
+  font-size: 13px;
+  align-items: baseline;
+}
+.highlight-callsign {
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 90px;
+}
+.highlight-text {
+  color: var(--fg-0);
+}
+.highlight-ace {
+  border-left-color: var(--accent);
+}
+.highlight-medic {
+  border-left-color: var(--ok);
+}
+.highlight-medic .highlight-callsign {
+  color: var(--ok);
+}
+.highlight-held-under-fire {
+  border-left-color: var(--fg-1);
+}
+.highlight-held-under-fire .highlight-callsign {
+  color: var(--fg-1);
+}
+.highlight-heavy-casualty {
+  border-left-color: var(--danger);
+}
+.highlight-heavy-casualty .highlight-callsign {
+  color: var(--danger);
+}
+
+.debrief-roster {
+  margin: 14px 0;
+}
+.dossier {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.dossier thead th {
+  text-align: left;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+  padding: 4px 8px;
+}
+.dossier thead th.num,
+.dossier tbody td.num {
+  text-align: right;
+  width: 50px;
+}
+.dossier tbody td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.dossier tbody tr.row-casualty {
+  background: rgba(217, 83, 79, 0.04);
+}
+.dossier tbody tr.row-casualty .callsign {
+  text-decoration: line-through;
+  color: var(--fg-dim);
+}
+
 .armory-layout {
   display: grid;
   grid-template-columns: 240px 1fr;

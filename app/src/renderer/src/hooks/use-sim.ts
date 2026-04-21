@@ -1,10 +1,11 @@
-import type { SimSnapshot, WorldSnapshot } from '@shared/snapshot';
+import type { MatchStats, SimSnapshot, WorldSnapshot } from '@shared/snapshot';
 import { useEffect, useState } from 'react';
 import { getSimBridge } from '../sim-bridge';
 
 export type SimEndedEvent = {
   winner: number | null;
   endReason: string | undefined;
+  stats: MatchStats;
 };
 
 export function useSimSnapshot(): {
@@ -24,7 +25,7 @@ export function useSimSnapshot(): {
         setWorld(msg.world);
         setEnded(null);
       } else if (msg.type === 'simEnded') {
-        setEnded({ winner: msg.winner, endReason: msg.endReason });
+        setEnded({ winner: msg.winner, endReason: msg.endReason, stats: msg.stats });
       } else if (msg.type === 'simStopped') {
         setSnapshot(null);
         setWorld(null);

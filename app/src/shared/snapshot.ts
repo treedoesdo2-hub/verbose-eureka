@@ -44,3 +44,29 @@ export type SerializedWorld = {
 };
 
 export type WorldSnapshot = SerializedWorld;
+
+export type PerUnitStats = {
+  readonly unitId: number;
+  readonly teamId: number;
+  readonly operatorId: string | null;
+  readonly shotsFired: number;
+  readonly hitsLanded: number;
+  readonly woundsReceived: number;
+  readonly kills: number;
+  readonly downs: number;
+  readonly alliesStabilized: number;
+  readonly survived: boolean;
+};
+
+export type MatchHighlight = {
+  readonly kind: 'ace' | 'medic' | 'held-under-fire' | 'heavy-casualty';
+  readonly unitId: number;
+  readonly operatorId: string | null;
+  readonly text: string;
+};
+
+export type MatchStats = {
+  readonly totalTicks: number;
+  readonly perUnit: readonly PerUnitStats[];
+  readonly highlights: readonly MatchHighlight[];
+};

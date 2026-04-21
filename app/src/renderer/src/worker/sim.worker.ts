@@ -1,6 +1,7 @@
 import type { RendererToWorker, ScenarioRequest, WorkerToRenderer } from '@shared/messages';
 import type { ContentLookup, Loadout } from '@sim/loadout';
 import { loadoutFromTemplate } from '@sim/loadout';
+import { MatchStatsAccumulator } from '@sim/match-stats';
 import { RecordingSim } from '@sim/replay';
 import type { ScenarioDeployment } from '@sim/scenario';
 import { buildScenario } from '@sim/scenario';
@@ -16,6 +17,7 @@ function post(msg: WorkerToRenderer): void {
 }
 
 let sim: RecordingSim | null = null;
+let stats: MatchStatsAccumulator | null = null;
 let speedMultiplier = 4;
 let paused = false;
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -99,16 +101,23 @@ function startLoop(): void {
       const steps = Math.max(1, Math.round(speedMultiplier));
       for (let i = 0; i < steps; i++) {
         sim.step();
+        // Fold this tick's events into the running match stats accumulator.
+        if (stats) stats.ingest(sim.current().events);
         if (sim.current().ended) break;
       }
       post({ type: 'state', snapshot: snapshotState(sim.current()) });
       if (sim.current().ended) {
-        const endReason = sim.current().endReason;
+        const final = sim.current();
+        const endReason = final.endReason;
         const winner =
           endReason === 'team-1-defeated' ? 0 : endReason === 'team-0-defeated' ? 1 : null;
-        post({ type: 'simEnded', winner, endReason });
+        const finalStats = stats
+          ? stats.finalize(final.tick)
+          : { totalTicks: final.tick, perUnit: [], highlights: [] };
+        post({ type: 'simEnded', winner, endReason, stats: finalStats });
         stopLoop();
         sim = null;
+        stats = null;
       }
     },
     Math.floor(1000 / BASE_HZ),
@@ -125,6 +134,8 @@ self.onmessage = (e: MessageEvent<RendererToWorker>): void => {
       const state = startSim(msg.payload.seed, msg.payload.scenarioRequest);
       if (!state) return;
       sim = new RecordingSim(state, msg.payload.seed);
+      stats = new MatchStatsAccumulator();
+      stats.seed(state.units);
       speedMultiplier = msg.payload.simSpeedMultiplier;
       paused = false;
       post({ type: 'simStarted', world: snapshotWorld(state.world) });
@@ -135,6 +146,7 @@ self.onmessage = (e: MessageEvent<RendererToWorker>): void => {
     case 'stopSim':
       stopLoop();
       sim = null;
+      stats = null;
       post({ type: 'simStopped' });
       break;
     case 'setSpeed':

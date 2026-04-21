@@ -1,3 +1,4 @@
+import type { MatchStats } from '@shared/snapshot';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 
@@ -9,6 +10,7 @@ export type DebriefSummary = {
   casualties: string[];
   survivors: string[];
   payout: number;
+  stats: MatchStats | null;
 };
 
 export type AppStateStore = {
@@ -33,9 +35,6 @@ export const useAppState = create<AppStateStore>()(
       set((s) => {
         s.selectedContractId = id;
       }),
-    setDebrief: (d) =>
-      set((s) => {
-        s.lastDebrief = d;
-      }),
+    setDebrief: (d) => set(() => ({ lastDebrief: d }), false),
   })),
 );

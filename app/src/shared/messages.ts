@@ -1,5 +1,5 @@
 import type { BodyZone } from '@schema/common';
-import type { SimSnapshot, WorldSnapshot } from './snapshot';
+import type { MatchStats, SimSnapshot, WorldSnapshot } from './snapshot';
 
 export type StartSimPayload = {
   readonly seed: number;
@@ -39,6 +39,11 @@ export type WorkerToRenderer =
   | { type: 'pong'; nonce: number }
   | { type: 'simStarted'; world: WorldSnapshot }
   | { type: 'simStopped' }
-  | { type: 'simEnded'; winner: number | null; endReason: string | undefined }
+  | {
+      type: 'simEnded';
+      winner: number | null;
+      endReason: string | undefined;
+      stats: MatchStats;
+    }
   | { type: 'state'; snapshot: SimSnapshot }
   | { type: 'error'; message: string };

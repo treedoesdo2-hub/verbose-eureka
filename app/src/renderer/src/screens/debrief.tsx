@@ -1,3 +1,4 @@
+import type { PerUnitStats } from '@shared/snapshot';
 import { getContent } from '../content';
 import { useAppState } from '../stores/app-state';
 
@@ -18,6 +19,19 @@ export function Debrief(): React.JSX.Element {
   }
 
   const won = debrief.winner === 0;
+  const stats = debrief.stats;
+  const playerUnits: PerUnitStats[] = (stats?.perUnit ?? []).filter((u) => u.teamId === 0);
+  const totalMinutes = stats ? Math.round((stats.totalTicks / 30 / 60) * 10) / 10 : null;
+
+  const enemyKills = stats
+    ? stats.perUnit.filter((u) => u.teamId === 0).reduce((n, u) => n + u.kills, 0)
+    : 0;
+  const enemyDowns = stats
+    ? stats.perUnit.filter((u) => u.teamId === 0).reduce((n, u) => n + u.downs, 0)
+    : 0;
+  const playerWounds = stats
+    ? stats.perUnit.filter((u) => u.teamId === 0).reduce((n, u) => n + u.woundsReceived, 0)
+    : 0;
 
   return (
     <div className="screen">
@@ -27,24 +41,99 @@ export function Debrief(): React.JSX.Element {
       <div className={`debrief-banner ${won ? 'won' : 'lost'}`}>
         {won ? 'Contract completed' : 'Contract failed'}
       </div>
-      <dl className="debrief-stats">
-        <dt>end state</dt>
-        <dd>{debrief.endReason ?? '—'}</dd>
-        <dt>payout</dt>
-        <dd className="mono">{debrief.payout.toLocaleString()} cr</dd>
-        <dt>survivors</dt>
-        <dd>
-          {debrief.survivors.length === 0
-            ? '—'
-            : debrief.survivors.map((id) => bundle.operators.get(id)?.callsign ?? id).join(', ')}
-        </dd>
-        <dt>casualties</dt>
-        <dd className="danger">
-          {debrief.casualties.length === 0
-            ? 'none'
-            : debrief.casualties.map((id) => bundle.operators.get(id)?.callsign ?? id).join(', ')}
-        </dd>
-      </dl>
+
+      <section className="debrief-summary">
+        <dl>
+          <dt>end state</dt>
+          <dd>{debrief.endReason ?? '—'}</dd>
+          <dt>duration</dt>
+          <dd className="mono">{totalMinutes !== null ? `${totalMinutes} min` : '—'}</dd>
+          <dt>payout</dt>
+          <dd className="mono accent">{debrief.payout.toLocaleString()} cr</dd>
+          <dt>enemy down</dt>
+          <dd className="mono">
+            {enemyKills} killed · {enemyDowns - enemyKills} wounded
+          </dd>
+          <dt>wounds taken</dt>
+          <dd className={`mono ${playerWounds > 5 ? 'danger' : ''}`}>{playerWounds} total</dd>
+        </dl>
+      </section>
+
+      {stats && stats.highlights.length > 0 ? (
+        <section className="debrief-highlights">
+          <h3>Standout moments</h3>
+          <ul>
+            {stats.highlights.map((h) => {
+              const op = h.operatorId ? bundle.operators.get(h.operatorId) : null;
+              const callsign = op?.callsign ?? h.operatorId ?? `unit-${h.unitId}`;
+              const key = `${h.kind}-${h.unitId}-${h.text}`;
+              return (
+                <li key={key} className={`highlight highlight-${h.kind}`}>
+                  <span className="highlight-callsign">"{callsign}"</span>
+                  <span className="highlight-text">{h.text}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="debrief-roster">
+        <h3>Operator report</h3>
+        {playerUnits.length === 0 ? (
+          <p className="mono dim">No roster data.</p>
+        ) : (
+          <table className="dossier">
+            <thead>
+              <tr>
+                <th>callsign</th>
+                <th>status</th>
+                <th className="num">K</th>
+                <th className="num">D</th>
+                <th className="num">wounds</th>
+                <th className="num">shots</th>
+                <th className="num">hits</th>
+                <th className="num">acc</th>
+                <th className="num">stab</th>
+              </tr>
+            </thead>
+            <tbody>
+              {playerUnits.map((u) => {
+                const op = u.operatorId ? bundle.operators.get(u.operatorId) : null;
+                const acc =
+                  u.shotsFired === 0 ? '—' : `${Math.round((u.hitsLanded / u.shotsFired) * 100)}%`;
+                return (
+                  <tr key={u.unitId} className={u.survived ? '' : 'row-casualty'}>
+                    <td>
+                      <span className="callsign">
+                        "{op?.callsign ?? u.operatorId ?? `u${u.unitId}`}"
+                      </span>{' '}
+                      <span className="dim">{op?.name ?? ''}</span>
+                    </td>
+                    <td>
+                      {u.survived ? (
+                        <span className="ok">standing</span>
+                      ) : (
+                        <span className="danger">down</span>
+                      )}
+                    </td>
+                    <td className="num mono">{u.kills}</td>
+                    <td className="num mono">{u.downs}</td>
+                    <td className={`num mono ${u.woundsReceived > 0 ? 'danger' : ''}`}>
+                      {u.woundsReceived}
+                    </td>
+                    <td className="num mono">{u.shotsFired}</td>
+                    <td className="num mono">{u.hitsLanded}</td>
+                    <td className="num mono">{acc}</td>
+                    <td className="num mono">{u.alliesStabilized}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
       <div className="actions">
         <button type="button" className="btn btn-primary" onClick={() => go('board')}>
           Another contract

@@ -68,6 +68,7 @@ export function Deploy(): React.JSX.Element {
       casualties,
       survivors,
       payout: ended.winner === 0 ? (contract?.payout ?? 0) : 0,
+      stats: ended.stats,
     });
     setTimeout(() => go('debrief'), 800);
   }, [ended, snapshot, contractId, setDebrief, go]);
