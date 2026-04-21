@@ -147,3 +147,24 @@ export function emptyLoadout(): Loadout {
     utilityIds: [],
   };
 }
+
+export function emptyCombatProfile(): CombatProfile {
+  return {
+    primaryWeapon: null,
+    sidearm: null,
+    armor: null,
+    utilityIds: [],
+    zoneDr: {
+      head: 0,
+      torso_front: 0,
+      torso_back: 0,
+      pelvis: 0,
+      left_arm: 0,
+      right_arm: 0,
+      left_leg: 0,
+      right_leg: 0,
+    },
+    tonnage: 0,
+    mobilityPenalty: 0,
+  };
+}

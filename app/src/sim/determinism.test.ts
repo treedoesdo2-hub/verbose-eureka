@@ -76,7 +76,7 @@ describe('sim determinism', () => {
     expect(hashState(a)).toBe(hashState(b));
   });
 
-  it('adds motion: unit moves toward target over ticks', () => {
+  it('adds motion: unit moves toward waypoint over ticks', () => {
     const world = makeWorld(32, 32, 1);
     const start = makeUnit({
       id: asUnitId(1),
@@ -84,12 +84,9 @@ describe('sim determinism', () => {
       operatorId: null,
       position: { x: 0, y: 0 },
       facing: 0,
+      waypoints: [{ x: 20, y: 0 }],
     });
-    const withMoving = {
-      ...start,
-      action: { kind: 'moving' as const, target: { x: 10, y: 0 } },
-    };
-    const state = makeInitialState(world, 1, [withMoving]);
+    const state = makeInitialState(world, 1, [start]);
     const sim = new RecordingSim(state, 1);
     for (let i = 0; i < 100; i++) sim.step();
     const unit = sim.current().units.get(asUnitId(1))!;
