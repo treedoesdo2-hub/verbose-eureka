@@ -1,5 +1,6 @@
 import type { UnitId } from '@shared/ids';
 import { decide, pickStance } from './ai/bt';
+import { coverAwareStepTarget } from './ai/movement';
 import { perceive } from './ai/perception';
 import { resolveShot } from './hit';
 import { Rng } from './rng';
@@ -382,10 +383,19 @@ export function tick(state: SimState, rng: Rng): SimState {
     const waypointIndex = decision.advanceWaypoint ? unit.waypointIndex + 1 : unit.waypointIndex;
     const lastSeen = updateLastSeen(unit.lastSeen, perception.spottedAt, state.tick);
     const threatenedNow = perception.bestTarget !== null;
-    const stance = pickStance(unit, decision.action, decision.aiState);
+    // Cover-aware step: if the unit is moving AND has visible threats,
+    // bias the next footstep toward cover against those threats instead
+    // of beelining to the goal.
+    let action = decision.action;
+    if (action.kind === 'moving' && perception.spottedAt.size > 0) {
+      const threats: Vec2[] = [...perception.spottedAt.values()];
+      const stepTarget = coverAwareStepTarget(state.world, unit.position, action.target, threats);
+      action = { kind: 'moving', target: stepTarget };
+    }
+    const stance = pickStance(unit, action, decision.aiState);
     mergePatch(patches, unit.id, {
       aiState: decision.aiState,
-      action: decision.action,
+      action,
       stance,
       currentTarget: decision.currentTarget,
       alerted: decision.alerted,

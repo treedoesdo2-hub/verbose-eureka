@@ -31,15 +31,21 @@ function samplePoints(center: Vec2, bearing: number): readonly { pos: Vec2; eye:
 }
 
 export function coverScore(world: World, shooter: Unit, target: Unit): number {
-  const bearing = Math.atan2(
-    shooter.position.y - target.position.y,
-    shooter.position.x - target.position.x,
-  );
-  const samples = samplePoints(target.position, bearing);
+  return coverScoreAt(world, shooter.position, target.position);
+}
+
+/**
+ * Position-only variant: the cover a unit *would* have at `pos` against
+ * a shooter firing from `shooterPos`. Used by cover-aware pathfinding
+ * to score candidate move steps without constructing synthetic Units.
+ */
+export function coverScoreAt(world: World, shooterPos: Vec2, pos: Vec2): number {
+  const bearing = Math.atan2(shooterPos.y - pos.y, shooterPos.x - pos.x);
+  const samples = samplePoints(pos, bearing);
   const shooterEye = eyeHeightFor('standing');
   let score = 0;
   for (const s of samples) {
-    const r = castRay(world, shooter.position, shooterEye, s.pos, s.eye);
+    const r = castRay(world, shooterPos, shooterEye, s.pos, s.eye);
     if (r === 'blocked') score += MAX_COVER_SCORE / samples.length;
     else if (r === 'concealed') score += MAX_COVER_SCORE / samples.length / 2;
   }
