@@ -1,3 +1,4 @@
+import 'pixi.js/unsafe-eval';
 import type { SimSnapshot, SnapshotUnit, WorldSnapshot } from '@shared/snapshot';
 import { Application, Container, Graphics } from 'pixi.js';
 import { useEffect, useRef } from 'react';
