@@ -1,6 +1,7 @@
 import { ALL_BODY_ZONES, type BodyZone, ZONE_CAPACITY_KG } from '@schema/common';
 import type { Operator } from '@schema/operator';
 import type { SquadMember } from '@schema/squad';
+import type { LoadoutTemplate } from '@schema/template';
 import type { LoadoutItem } from '@sim/loadout';
 import {
   deriveCombatProfile,
@@ -14,8 +15,46 @@ import { contentLookup, getContent } from '../content';
 import { useAppState } from '../stores/app-state';
 import { useSquads } from '../stores/squads';
 
+type ArmoryTab = 'squads' | 'templates';
+
 export function Armory(): React.JSX.Element {
   const go = useAppState((s) => s.go);
+  const [tab, setTab] = useState<ArmoryTab>('squads');
+
+  return (
+    <div className="screen armory-screen">
+      <div className="screen-header">
+        <button type="button" className="btn btn-small" onClick={() => go('menu')}>
+          ← menu
+        </button>
+        <h2>Armory</h2>
+        <nav className="armory-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'squads'}
+            className={`armory-tab ${tab === 'squads' ? 'active' : ''}`}
+            onClick={() => setTab('squads')}
+          >
+            Squads
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'templates'}
+            className={`armory-tab ${tab === 'templates' ? 'active' : ''}`}
+            onClick={() => setTab('templates')}
+          >
+            Templates
+          </button>
+        </nav>
+      </div>
+      {tab === 'squads' ? <SquadsTab /> : <TemplatesTab />}
+    </div>
+  );
+}
+
+function SquadsTab(): React.JSX.Element {
   const squadMap = useSquads((s) => s.squads);
   const order = useSquads((s) => s.order);
   const createSquad = useSquads((s) => s.create);
@@ -42,39 +81,177 @@ export function Armory(): React.JSX.Element {
   }
 
   return (
-    <div className="screen armory-screen">
-      <div className="screen-header">
-        <button type="button" className="btn btn-small" onClick={() => go('menu')}>
-          ← menu
-        </button>
-        <h2>Armory · Squads</h2>
-      </div>
-      <div className="armory-grid">
-        <SquadListPane
-          squads={squads}
-          selectedId={selectedSquadId}
-          onSelect={(id) => {
-            setSelectedSquadId(id);
-            setSelectedOperatorId(null);
-          }}
-          defaultNewName={`Squad ${squads.length + 1}`}
-          onCreate={handleCreate}
-        />
-        <SquadDetailPane
-          squad={selectedSquad}
-          operators={[...bundle.operators.values()]}
-          selectedOperatorId={selectedOperatorId}
-          onSelectMember={setSelectedOperatorId}
-        />
-        {selectedSquad && selectedMember ? (
-          <LoadoutEditorPane squadId={selectedSquad.id} member={selectedMember} />
-        ) : (
-          <div className="armory-editor empty">
-            <p className="mono dim">Select a squad member to edit their loadout.</p>
-          </div>
-        )}
-      </div>
+    <div className="armory-grid">
+      <SquadListPane
+        squads={squads}
+        selectedId={selectedSquadId}
+        onSelect={(id) => {
+          setSelectedSquadId(id);
+          setSelectedOperatorId(null);
+        }}
+        defaultNewName={`Squad ${squads.length + 1}`}
+        onCreate={handleCreate}
+      />
+      <SquadDetailPane
+        squad={selectedSquad}
+        operators={[...bundle.operators.values()]}
+        selectedOperatorId={selectedOperatorId}
+        onSelectMember={setSelectedOperatorId}
+      />
+      {selectedSquad && selectedMember ? (
+        <LoadoutEditorPane squadId={selectedSquad.id} member={selectedMember} />
+      ) : (
+        <div className="armory-editor empty">
+          <p className="mono dim">Select a squad member to edit their loadout.</p>
+        </div>
+      )}
     </div>
+  );
+}
+
+function TemplatesTab(): React.JSX.Element {
+  const bundle = getContent();
+  const lookup = contentLookup();
+  const setMemberLoadout = useSquads((s) => s.setMemberLoadout);
+  const squadMap = useSquads((s) => s.squads);
+  const order = useSquads((s) => s.order);
+  const squads = useMemo(
+    () => order.map((id) => squadMap.get(id)).filter((x): x is NonNullable<typeof x> => !!x),
+    [squadMap, order],
+  );
+  const templates = useMemo(() => [...bundle.templates.values()], [bundle]);
+
+  function applyTemplate(template: LoadoutTemplate, squadId: string, operatorId: string): void {
+    const loadout = loadoutFromTemplate(template, lookup);
+    setMemberLoadout(squadId, operatorId, { items: [...loadout.items] });
+  }
+
+  return (
+    <div className="armory-templates">
+      <p className="mono dim">
+        Templates are the battalion-scale control surface (spec/06 Part 5). Apply a template to any
+        squad member to reset their loadout to the role baseline; edits in the Squads tab then
+        override on top.
+      </p>
+      {templates.length === 0 ? (
+        <p className="mono dim">No templates defined.</p>
+      ) : (
+        <div className="template-grid">
+          {templates.map((t) => (
+            <TemplateCard
+              key={t.id}
+              template={t}
+              squads={squads}
+              onApply={(squadId, operatorId) => applyTemplate(t, squadId, operatorId)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TemplateCard({
+  template,
+  squads,
+  onApply,
+}: {
+  template: LoadoutTemplate;
+  squads: {
+    id: string;
+    name: string;
+    members: { operatorId: string }[];
+  }[];
+  onApply: (squadId: string, operatorId: string) => void;
+}): React.JSX.Element {
+  const bundle = getContent();
+  const lookup = contentLookup();
+  const loadout = useMemo(() => loadoutFromTemplate(template, lookup), [template, lookup]);
+  const profile = deriveCombatProfile(loadout, lookup);
+
+  const primary = template.primaryWeaponId ? lookup.weapon(template.primaryWeaponId) : null;
+  const sidearm = template.sidearmId ? lookup.weapon(template.sidearmId) : null;
+  const armor = template.armorId ? lookup.armor(template.armorId) : null;
+  const utilities = template.utilityIds
+    .map((id) => lookup.utility(id))
+    .filter((u): u is NonNullable<typeof u> => !!u);
+
+  // Flatten squad members into options so the user picks (squad, operator)
+  // in one select. Cheap and keeps the card compact.
+  type AssignOption = { value: string; label: string };
+  const options: AssignOption[] = [];
+  for (const sq of squads) {
+    for (const m of sq.members) {
+      const op = bundle.operators.get(m.operatorId);
+      options.push({
+        value: `${sq.id}::${m.operatorId}`,
+        label: `${sq.name} → "${op?.callsign ?? m.operatorId}"`,
+      });
+    }
+  }
+
+  return (
+    <article className="template-card">
+      <header>
+        <span className="template-name">{template.name}</span>
+        <span className="mono dim template-role">{template.role}</span>
+      </header>
+      <dl className="template-spec">
+        <dt>primary</dt>
+        <dd>
+          {primary ? `${primary.name} (${primary.weightKg} kg)` : <span className="dim">—</span>}
+        </dd>
+        <dt>sidearm</dt>
+        <dd>
+          {sidearm ? `${sidearm.name} (${sidearm.weightKg} kg)` : <span className="dim">—</span>}
+        </dd>
+        <dt>armor</dt>
+        <dd>{armor ? armor.name : <span className="dim">—</span>}</dd>
+        <dt>utility</dt>
+        <dd>
+          {utilities.length === 0 ? (
+            <span className="dim">—</span>
+          ) : (
+            <ul className="template-util-list">
+              {utilities.map((u) => (
+                <li key={u.id}>
+                  {u.name} · <span className="mono dim">{u.weightKg} kg</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </dd>
+        <dt>total</dt>
+        <dd className="mono">
+          {profile.totalWeightKg.toFixed(1)} kg ·{' '}
+          <span className="dim">mobility −{profile.mobilityPenalty}%</span>
+        </dd>
+      </dl>
+      <footer className="template-apply">
+        {options.length === 0 ? (
+          <span className="mono dim">No squad members to apply to.</span>
+        ) : (
+          <select
+            className="mono"
+            value=""
+            onChange={(e) => {
+              const v = e.target.value;
+              if (!v) return;
+              const [squadId, operatorId] = v.split('::', 2);
+              if (squadId && operatorId) onApply(squadId, operatorId);
+              e.target.value = '';
+            }}
+          >
+            <option value="">apply to…</option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </footer>
+    </article>
   );
 }
 
