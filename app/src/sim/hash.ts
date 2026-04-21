@@ -65,6 +65,7 @@ export function hashState(state: SimState): string {
     h.f64(u.morale);
     h.str(u.action.kind);
     h.str(u.aiState);
+    h.str(u.stance);
     h.byte(u.alerted ? 1 : 0);
     const sortedLastSeen = [...u.lastSeen.entries()].sort((a, b) => a[0] - b[0]);
     h.u32(sortedLastSeen.length);

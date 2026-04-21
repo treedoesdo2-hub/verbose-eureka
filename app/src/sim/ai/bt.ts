@@ -1,8 +1,8 @@
 import type { UnitId } from '@shared/ids';
 import type { SimState } from '../state';
 import { SIM_HZ } from '../state';
-import type { AiState, Unit, UnitAction, Vec2 } from '../unit';
-import { canFight, isDowned, MORALE_PANIC_THRESHOLD } from '../unit';
+import type { AiState, Stance, Unit, UnitAction, Vec2 } from '../unit';
+import { canFight, isDowned, MORALE_PANIC_THRESHOLD, SUPPRESSION_HEAVY_THRESHOLD } from '../unit';
 import type { PerceptionResult } from './perception';
 
 const AIM_TICKS = Math.round(SIM_HZ * 0.6);
@@ -62,6 +62,18 @@ export type Decision = {
   readonly alerted: boolean;
   readonly advanceWaypoint: boolean;
 };
+
+/**
+ * Stance policy: panic → prone; moving → standing (can't sprint while
+ * prone); pinned & holding → crouched; otherwise keep the current stance
+ * so deliberate choices stick instead of flipping every tick.
+ */
+export function pickStance(unit: Unit, action: UnitAction, aiState: AiState): Stance {
+  if (aiState === 'panic') return 'prone';
+  if (action.kind === 'moving') return 'standing';
+  if (unit.suppression >= SUPPRESSION_HEAVY_THRESHOLD) return 'crouched';
+  return unit.stance;
+}
 
 export function decide(unit: Unit, perception: PerceptionResult, state: SimState): Decision {
   if (!canFight(unit)) {

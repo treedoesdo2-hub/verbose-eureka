@@ -4,8 +4,8 @@ import { effectivePenetration } from './ballistics';
 import { coverScore, MAX_COVER_SCORE } from './cover';
 import { distance } from './los';
 import type { Rng } from './rng';
-import type { Unit, Wound } from './unit';
-import { bloodTier, bloodTierModifiers, suppressionAimMultiplier } from './unit';
+import type { Stance, Unit, Wound } from './unit';
+import { bloodTier, bloodTierModifiers, STANCE_AIM_BONUS, suppressionAimMultiplier } from './unit';
 import type { World } from './world';
 import { createWound } from './wound';
 
@@ -48,6 +48,59 @@ const ZONE_WEIGHTS_BACK: ZoneWeightMap = {
   right_leg: 0.11,
 };
 
+// Crouched reduces head exposure, slightly less torso. Prone collapses
+// torso/head exposure but exposes legs if the shooter is at a different
+// angle. Aggregate weights still sum to 1.0.
+const ZONE_WEIGHTS_CROUCHED_FRONT: ZoneWeightMap = {
+  head: 0.04,
+  torso_front: 0.4,
+  torso_back: 0.02,
+  left_arm: 0.15,
+  right_arm: 0.15,
+  left_leg: 0.12,
+  right_leg: 0.12,
+};
+
+const ZONE_WEIGHTS_CROUCHED_BACK: ZoneWeightMap = {
+  head: 0.04,
+  torso_front: 0.02,
+  torso_back: 0.4,
+  left_arm: 0.15,
+  right_arm: 0.15,
+  left_leg: 0.12,
+  right_leg: 0.12,
+};
+
+const ZONE_WEIGHTS_PRONE_FRONT: ZoneWeightMap = {
+  head: 0.02,
+  torso_front: 0.18,
+  torso_back: 0.02,
+  left_arm: 0.08,
+  right_arm: 0.08,
+  left_leg: 0.31,
+  right_leg: 0.31,
+};
+
+const ZONE_WEIGHTS_PRONE_BACK: ZoneWeightMap = {
+  head: 0.02,
+  torso_front: 0.02,
+  torso_back: 0.18,
+  left_arm: 0.08,
+  right_arm: 0.08,
+  left_leg: 0.31,
+  right_leg: 0.31,
+};
+
+function zoneWeights(stance: Stance, fromFront: boolean): ZoneWeightMap {
+  if (stance === 'crouched') {
+    return fromFront ? ZONE_WEIGHTS_CROUCHED_FRONT : ZONE_WEIGHTS_CROUCHED_BACK;
+  }
+  if (stance === 'prone') {
+    return fromFront ? ZONE_WEIGHTS_PRONE_FRONT : ZONE_WEIGHTS_PRONE_BACK;
+  }
+  return fromFront ? ZONE_WEIGHTS_FRONT : ZONE_WEIGHTS_BACK;
+}
+
 function facingDotBearing(target: Unit, shooter: Unit): number {
   const dx = shooter.position.x - target.position.x;
   const dy = shooter.position.y - target.position.y;
@@ -59,7 +112,7 @@ function facingDotBearing(target: Unit, shooter: Unit): number {
 
 function pickZone(rng: Rng, target: Unit, shooter: Unit): BodyZone {
   const dot = facingDotBearing(target, shooter);
-  const weights = dot > 0 ? ZONE_WEIGHTS_FRONT : ZONE_WEIGHTS_BACK;
+  const weights = zoneWeights(target.stance, dot > 0);
   let r = rng.next();
   for (const [zone, w] of Object.entries(weights) as [BodyZone, number][]) {
     r -= w;
@@ -76,7 +129,8 @@ export function resolveShot(ctx: ShotContext): ShotOutcome {
   const coverPenalty = (cover / MAX_COVER_SCORE) * 60;
   const bloodAim = bloodTierModifiers(bloodTier(ctx.shooter)).aimMultiplier;
   const supAim = suppressionAimMultiplier(ctx.shooter.suppression);
-  const aimMult = bloodAim * supAim;
+  const stanceAim = STANCE_AIM_BONUS[ctx.shooter.stance];
+  const aimMult = bloodAim * supAim * stanceAim;
   const accuracyFinal = Math.max(
     5,
     Math.min(

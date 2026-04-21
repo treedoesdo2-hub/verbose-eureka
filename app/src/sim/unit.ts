@@ -70,6 +70,22 @@ export type UnitAction =
 
 export type AiState = 'advance' | 'hold' | 'retreat' | 'flank' | 'recover' | 'panic';
 
+export type Stance = 'standing' | 'crouched' | 'prone';
+
+// Stance modifiers — stance changes how easy it is to hit the unit (zone
+// weighting shifts away from torso/head and toward legs the lower you get),
+// how fast it can move, and how steady its aim is.
+export const STANCE_AIM_BONUS: Record<Stance, number> = {
+  standing: 1.0,
+  crouched: 1.1,
+  prone: 1.2,
+};
+export const STANCE_MOVE_MULTIPLIER: Record<Stance, number> = {
+  standing: 1.0,
+  crouched: 0.6,
+  prone: 0.25,
+};
+
 export type UnitStats = {
   readonly aim: number;
   readonly move: number;
@@ -102,6 +118,7 @@ export type Unit = {
   readonly ammo: number;
   readonly action: UnitAction;
   readonly aiState: AiState;
+  readonly stance: Stance;
   readonly alerted: boolean;
   readonly lastAlertedTick: number;
   readonly lastSeen: ReadonlyMap<UnitId, LastSeen>;
@@ -137,6 +154,7 @@ export function makeUnit(params: {
     ammo: combat.primaryWeapon?.magazineSize ?? 0,
     action: { kind: 'idle' },
     aiState: 'hold',
+    stance: 'standing',
     alerted: false,
     lastAlertedTick: -1,
     lastSeen: new Map(),

@@ -1,5 +1,5 @@
 import type { UnitId } from '@shared/ids';
-import { decide } from './ai/bt';
+import { decide, pickStance } from './ai/bt';
 import { perceive } from './ai/perception';
 import { resolveShot } from './hit';
 import { Rng } from './rng';
@@ -21,6 +21,7 @@ import {
   MORALE_PANIC_THRESHOLD,
   MORALE_RECOVER_THRESHOLD,
   MORALE_RECOVERY_PER_SEC,
+  STANCE_MOVE_MULTIPLIER,
   SUPPRESSION_DECAY_PER_SEC,
   SUPPRESSION_HEAVY_THRESHOLD,
   SUPPRESSION_PER_SHOT,
@@ -90,7 +91,11 @@ function executeMovement(
   }
   const mobilityMult = Math.max(0.4, 1 - mobilityPenalty / 100);
   const bloodMoveMult = bloodTierModifiers(bloodTier(unit)).moveMultiplier;
-  const speed = Math.min(MAX_SPEED_MPS * mobilityMult * bloodMoveMult, dist / SIM_DT);
+  const stanceMoveMult = STANCE_MOVE_MULTIPLIER[unit.stance];
+  const speed = Math.min(
+    MAX_SPEED_MPS * mobilityMult * bloodMoveMult * stanceMoveMult,
+    dist / SIM_DT,
+  );
   const velocity = { x: (dx / dist) * speed, y: (dy / dist) * speed };
   const facing = Math.atan2(dy, dx);
   const candidate: Vec2 = {
@@ -377,9 +382,11 @@ export function tick(state: SimState, rng: Rng): SimState {
     const waypointIndex = decision.advanceWaypoint ? unit.waypointIndex + 1 : unit.waypointIndex;
     const lastSeen = updateLastSeen(unit.lastSeen, perception.spottedAt, state.tick);
     const threatenedNow = perception.bestTarget !== null;
+    const stance = pickStance(unit, decision.action, decision.aiState);
     mergePatch(patches, unit.id, {
       aiState: decision.aiState,
       action: decision.action,
+      stance,
       currentTarget: decision.currentTarget,
       alerted: decision.alerted,
       // Only refresh the alert timer when there's a *fresh* contact; sticky
