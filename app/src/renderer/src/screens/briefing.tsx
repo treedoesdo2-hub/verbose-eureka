@@ -1,6 +1,7 @@
 import type { ScenarioRequest, WireLoadout } from '@shared/messages';
 import { useMemo, useState } from 'react';
 import { getContent } from '../content';
+import { useHotkeys } from '../hooks/useHotkeys';
 import { getSimBridge } from '../sim-bridge';
 import { useAppState } from '../stores/app-state';
 import { useSquads } from '../stores/squads';
@@ -85,6 +86,26 @@ export function Briefing(): React.JSX.Element {
     go('deploy');
   }
 
+  const opCount = deployedOperatorIds.size;
+  const canLaunch =
+    !!contract && opCount >= contract.minOperators && opCount <= contract.maxOperators;
+
+  const hotkeys = useMemo(
+    () => [
+      { key: 'Escape', handler: () => go('board') },
+      { key: 'a', handler: () => go('armory') },
+      {
+        key: 'd',
+        handler: () => {
+          if (canLaunch) launch();
+        },
+      },
+    ],
+    // biome-ignore lint/correctness/useExhaustiveDependencies: launch captures live state through closure; rebinding per render is cheap for hotkeys.
+    [canLaunch, go],
+  );
+  useHotkeys(hotkeys);
+
   if (!contract) {
     return (
       <div className="screen">
@@ -96,15 +117,18 @@ export function Briefing(): React.JSX.Element {
     );
   }
 
-  const opCount = deployedOperatorIds.size;
-  const canLaunch = opCount >= contract.minOperators && opCount <= contract.maxOperators;
   const underCap = opCount < contract.minOperators;
   const overCap = opCount > contract.maxOperators;
 
   return (
     <div className="screen deployment-order">
       <div className="screen-header">
-        <button type="button" className="btn btn-small" onClick={() => go('board')}>
+        <button
+          type="button"
+          className="btn btn-small"
+          onClick={() => go('board')}
+          title="Back to board (Esc)"
+        >
           ← board
         </button>
         <h2>Deployment Order · {contract.name}</h2>
@@ -217,11 +241,22 @@ export function Briefing(): React.JSX.Element {
           )}
         </div>
         <div className="actions">
-          <button type="button" className="btn" onClick={() => go('armory')}>
-            Edit Armory
+          <button
+            type="button"
+            className="btn"
+            onClick={() => go('armory')}
+            title="Edit Armory (A)"
+          >
+            Edit Armory <span className="hotkey-hint mono">A</span>
           </button>
-          <button type="button" className="btn btn-primary" disabled={!canLaunch} onClick={launch}>
-            Deploy
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!canLaunch}
+            onClick={launch}
+            title={canLaunch ? 'Deploy (D)' : 'Deployment requires the correct team size'}
+          >
+            Deploy <span className="hotkey-hint mono">D</span>
           </button>
         </div>
       </section>

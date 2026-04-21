@@ -523,6 +523,22 @@ dd {
   outline-offset: -1px;
 }
 
+.hotkey-hint {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 10px;
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg-0);
+  letter-spacing: 0;
+}
+.btn-primary .hotkey-hint {
+  color: var(--accent-dim);
+  border-color: var(--accent-dim);
+}
+
 .armory-templates {
   background: var(--bg-1);
   border: 1px solid var(--border);

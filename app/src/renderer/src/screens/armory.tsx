@@ -10,8 +10,9 @@ import {
   loadoutFromTemplate,
   validateLoadout,
 } from '@sim/loadout';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { contentLookup, getContent } from '../content';
+import { useHotkeys } from '../hooks/useHotkeys';
 import { useAppState } from '../stores/app-state';
 import { useSquads } from '../stores/squads';
 
@@ -21,10 +22,25 @@ export function Armory(): React.JSX.Element {
   const go = useAppState((s) => s.go);
   const [tab, setTab] = useState<ArmoryTab>('squads');
 
+  const hotkeys = useMemo(
+    () => [
+      { key: '1', handler: () => setTab('squads') },
+      { key: '2', handler: () => setTab('templates') },
+      { key: 'Escape', handler: () => go('menu') },
+    ],
+    [go],
+  );
+  useHotkeys(hotkeys);
+
   return (
     <div className="screen armory-screen">
       <div className="screen-header">
-        <button type="button" className="btn btn-small" onClick={() => go('menu')}>
+        <button
+          type="button"
+          className="btn btn-small"
+          onClick={() => go('menu')}
+          title="Back to menu (Esc)"
+        >
           ← menu
         </button>
         <h2>Armory</h2>
@@ -35,8 +51,9 @@ export function Armory(): React.JSX.Element {
             aria-selected={tab === 'squads'}
             className={`armory-tab ${tab === 'squads' ? 'active' : ''}`}
             onClick={() => setTab('squads')}
+            title="Squads (1)"
           >
-            Squads
+            Squads <span className="hotkey-hint mono">1</span>
           </button>
           <button
             type="button"
@@ -44,8 +61,9 @@ export function Armory(): React.JSX.Element {
             aria-selected={tab === 'templates'}
             className={`armory-tab ${tab === 'templates' ? 'active' : ''}`}
             onClick={() => setTab('templates')}
+            title="Templates (2)"
           >
-            Templates
+            Templates <span className="hotkey-hint mono">2</span>
           </button>
         </nav>
       </div>
@@ -64,6 +82,29 @@ function SquadsTab(): React.JSX.Element {
   );
   const [selectedSquadId, setSelectedSquadId] = useState<string | null>(squads[0]?.id ?? null);
   const [selectedOperatorId, setSelectedOperatorId] = useState<string | null>(null);
+
+  // Arrow-key navigation across squads. J/K are vim-style aliases.
+  const moveSelection = useCallback(
+    (delta: number) => {
+      if (squads.length === 0) return;
+      const idx = squads.findIndex((s) => s.id === selectedSquadId);
+      const base = idx < 0 ? 0 : idx;
+      const next = (base + delta + squads.length) % squads.length;
+      setSelectedSquadId(squads[next].id);
+      setSelectedOperatorId(null);
+    },
+    [squads, selectedSquadId],
+  );
+  const hotkeys = useMemo(
+    () => [
+      { key: 'ArrowDown', handler: () => moveSelection(1) },
+      { key: 'ArrowUp', handler: () => moveSelection(-1) },
+      { key: 'j', handler: () => moveSelection(1) },
+      { key: 'k', handler: () => moveSelection(-1) },
+    ],
+    [moveSelection],
+  );
+  useHotkeys(hotkeys);
 
   const bundle = getContent();
   const selectedSquad = selectedSquadId ? (squadMap.get(selectedSquadId) ?? null) : null;
