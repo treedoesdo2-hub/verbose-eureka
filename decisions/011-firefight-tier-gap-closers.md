@@ -147,3 +147,93 @@ Work the pillars in this order — each one gives the next a real target to eval
 - `spec/06-loadout-system.md` — the spec this pillar D finally implements
 - `refs/firefight.md` — map scale + objective flavor reference
 - `refs/never-second-in-rome.md` — UX density reference for the stats panel
+
+---
+
+## Addendum — Research grounding (2026-04-21)
+
+Four parallel Opus agents inspected the actual reference games on disk. The original ADR was written off pitch-deck memory; this addendum is the corrections ground-truth forced.
+
+### Pillar A — Firefight is not what I wrote
+
+- **Location:** `C:\Users\User\Downloads\Firefight.v9.0.2\Firefight.v9.0.2\` (Sean O'Connor's Firefight, WW2 operational). Not Steam-installed.
+- **Scale:** every map is `4096 × 4096` world cells (per the `-world.dat` header `0x1000 × 0x1000`). The "250 × 250 m suburban" claim in the original body was me looking at a contour PNG, not the playfield. At 1 cell ≈ 1 m these are 4 km × 4 km operational-scale maps.
+- **Authoring:** 27 hand-drawn theaters, ~80 bespoke scenarios with hand-placed units (coordinates in `-scenarios.dat`). **Firefight is not procedural.** The DNA we're invoking for procgen is authored-volume; we're substituting procgen-over-authored-blocks because 27 hand-painted maps is out of budget.
+- **Vocabulary target:** Firefight ships ~80 building props + ~20 object categories + 100+ tree assets. Block library floor **40**, target **60** across 3–4 biomes.
+- **Engagement scale for us:** 128–256 tiles per side, not Firefight's 4096. Firefight's map is operational; our engagement is the *slice* Firefight renders at close zoom.
+- **Add to schema:** `generationSeed: string` + `generationVersion: number` on GameMap so regenerated maps are replay-stable across generator changes.
+
+### Pillar B — Objective taxonomy is incomplete; AI wiring is wrong
+
+- **Battle Brothers** (installed at `C:\Program Files (x86)\Steam\steamapps\common\Battle Brothers\`, mod zips are unpacked Squirrel): contracts are state machines with named `m.States` (e.g. `"Running"`), not static objective lists. Useful pattern for multi-scene contracts.
+- **Menace** (uninstalled but `C:\Users\User\AppData\LocalLow\Overhype Studios\Menace\Saves\latest.save` ASCII-readable): canonical mission verbs are `interdict / secure / defeat / hunt / seize / sabotage / collect / rescue / contain / clear / reclaim / contaminate / protect`. Objective zones are first-class renderable regions.
+- **Missing objective kinds** from the original list (`destroy / extract / hold / capture / eliminate`):
+  - `escort(who, zone)` — ally-powered, fails on ally death (vs `extract` which is self-powered)
+  - `defend(entity, duration)` — moving/stationary target, not a zone
+  - `interact(target, duration)` — Touch/Photograph/Plant/Collect family (JA3/Menace)
+  - `survive(duration)` — stay alive, no spatial objective (ambush/retreat missions)
+  - `preserve(entity)` — negative objective, fail-on-destruction, no duration
+  - `destroy` should take a **filter**, not a concrete id (JA3 "destroy all bridges")
+- **AI "stands there" fix** — the original ADR said `assignedObjective` on a Unit overrides waypoints. That doesn't fix the idle terminal in `bt.ts:248-254`, which fires when waypoints empty AND no threat. Correct design: an `ObjectiveDriver` layer runs *before* `decide()` and **regenerates waypoints dynamically** when the unit's queue is empty and the objective isn't complete. The BT stays reactive; the driver refills movement goals. Do not add new AiState values.
+
+### Pillar C — Schema is too flat; the hardwired 4 is in exactly one place
+
+- **BT is not on disk** (not installed, no save data). Web-grounded. `Clutch Legend Demo` is installed but it's an Electron wrapper — nothing to mine.
+- **The hardwired 4 is a single UI lie** at `app/src/renderer/src/screens/briefing.tsx:9`: `const ELEMENT_ROLES = ['Primary', 'Secondary', 'Support', 'Reserve']`. The sim layer (`scenario.ts:79`) is already size-agnostic; `schema/contract.ts:32` already carries `minOperators/maxOperators`. Training-yard map has 6 player spawns. Fix is UI-only in one file.
+- **Schema needs more shape:**
+  - Replace `payout: number` with `ContractPayout { cash, salvagePriorityPicks, reputationDelta, secondaryBonusCash, goodFaithFraction }` — BT decomposes payout three ways and we shouldn't re-key every contract file twice.
+  - `deployCost` isn't flat — split into `fixedPerContract` (insertion/extraction, biome-scaled) and a **per-operator cost that lives on the operator record** (`operator.dailyWage`, `operator.insurancePremium`). Veterans cost more than greenhorns — that's the JA3 economic loop.
+  - `recommendedOperators: number` → tier-keyed band `{ green, regular, veteran }`. "Recommended 6 green or 3 veteran" is the real decision.
+  - Add `difficultyRating: 1-5` (BT's skull rating) for the P(success) readback.
+  - Add `modifiers: { extractionSeats, requiredRoleTags }` — stealth infil forces small teams; some contracts need a medic.
+- **Migration:** Zod `.or()` union accepts old+new for one release, codemod `app/scripts/migrate-contracts-011c.ts` writes canonical new JSON back. Snapshot-test determinism pre/post.
+
+### Pillar D — MWO back-brief is mostly right; Duckov is the better reference
+
+- **No MechWarrior titles installed** — MWO, MW5 Mercenaries, MW5 Clans, YAML all absent. Relied on web.
+- **Escape from Duckov IS installed** (`C:\Program Files (x86)\Steam\steamapps\common\Escape from Duckov\`) — Unity Mono, decompiled to `C:\Users\User\AppData\Local\Temp\duckov_decomp\`. This is the direct Tarkov-style indie analogue. Load-bearing findings:
+  - `ItemStatsSystem.Slot` (`itemstats.cs:5222`) uses `requireTags: List<Tag>` + `excludeTags: List<Tag>` — **tag-based slot matching**, not a narrow hardpoint enum.
+  - `Inventory` (`itemstats.cs:2220`) is a **flat `List<Item>` with `int capacity`** — Duckov skips the tetris grid. The "Tarkov feel" is UI affectation; we shouldn't copy the grid.
+  - Containers-within-containers: a chest rig is itself an `Item` whose child `SlotCollection` has pouch-tagged slots. This matches spec/06's "physical chest rig" intent.
+- **Corrections to the MWO back-brief:**
+  1. **Hardpoint sizing is a 4th axis** in vanilla MWO (small/medium/large per type). YAML removes this. Our proposal matches YAML, not vanilla — call that out explicitly.
+  2. Engine consumes CT + side-torso crit slots in bigger ratings. Not porting to infantry (no engine) but the "item spans multiple locations" concept must NOT leak into the infantry editor.
+  3. Fixed components (cockpit, gyro, shoulder actuator) render as grayed-locked slots. Infantry analogue: hand grips are fixed-locked slots.
+  4. Omnipods exist in MWO Clan mechs. Explicitly NOT porting.
+- **The infantry port is tag-based**, not enum-based: current `HardpointType = enum [primary, sidearm, melee]` in `schema/common.ts:59` is too narrow. Replace with `SlotTag` union including `grip, plate_hard, plate_soft, helmet, optics, comms, rig, pouch, holster, ifak, sleeve_pad, large, pack_anchor, cyberware_limb`. Weapons/armor/utility get `tags: SlotTag[]` + `slotFootprint: number`. Add `ZONE_SLOT_CAPACITY` and `ZONE_ACCEPTED_TAGS` tables next to `ZONE_CAPACITY_KG` at `common.ts:42`.
+- **Proposed slot + tag table:**
+
+| Zone | kg (unchanged) | Slots | Accepted tags |
+|---|---|---|---|
+| head | 2 | 2 | helmet, optics, comms |
+| torso_front | 8 | 6 | plate_hard, plate_soft, rig, pouch |
+| torso_back | 8 | 4 | plate_hard, plate_soft, pack_anchor |
+| left_arm / right_arm | 2 | 2 | sleeve_pad, cyberware_limb |
+| left_hand / right_hand | 5 | 1 (fixed grip) | grip |
+| waist | 4 | 4 | holster, pouch, ifak |
+| left_leg / right_leg | 3 | 2 | holster, plate_soft, cyberware_limb |
+| back_mount | 15 | 1 (fixed large) | large |
+
+- **UI spec:** 3-column layout (schematic / inventory / stats). Click-an-item-then-click-a-zone as peer to drag-drop. ADR 009-compliant feedback is 1-px solid `var(--ok)` border + 8%-alpha tint, not MWO's soft glow.
+
+### Four open decisions blocking implementation
+
+Each pillar surfaced exactly one question where I need a call from you before I can build without guessing:
+
+**A. Engagement-scale target in meters.** The ADR hedges 128–256. Firefight doesn't answer this (it's 4 km operational). Lock one number — 150, 200, or 250 m per side — and everything else (BSP cut sizes, block footprints, cover-density bands, spawn-distance tests) becomes a parameter on it.
+
+**B. Objective runtime state: inside `SimState` or beside it.** Two viable shapes:
+- *Inside* — `state.objectives: Map<ObjectiveId, ObjectiveRuntimeState>` mutated between perception and BT, affects determinism hash, sim is still meaningful standalone.
+- *Beside* — separate `MatchState` wraps `SimState` + objectives, sim stays pure, cleaner layering, but headless playtesting loses an end condition.
+
+**C. Where does `P(success)` come from?**
+- (a) Authored `difficultyRating` vs committed force — cheap, opaque, BT-faithful.
+- (b) **Monte Carlo over the deterministic sim** at briefing-commit — run N headless simulations, report win rate. Your sim is fast + deterministic so this is actually tractable; would be genuinely novel for an autobattler.
+- (c) Closed-form estimator from stats+loadout+opposition — cheapest runtime, brittle to author.
+
+**D. Rig/pouch model: tag-only or container-within-container.**
+- (A) **Tag-only** — chest rig occupies 1 `rig` slot, pouches independently occupy `pouch` slots in the same zone. Cheap. But "wearing a rig" doesn't physically enable pouch slots; they exist unconditionally.
+- (B) **Container** (Duckov truth) — the rig item owns a child inventory; pouches only exist *inside* a slotted-on rig. Matches spec/06 intent and the shipped indie-Tarkov-clone reference. Costs a recursive walk in validate + derive, adds a nav layer to UI.
+
+Agent recommendation: (A) for MVP, (B) as a schema-compatible follow-up. But the call needs to be made once, before schema churn starts, or backfill happens twice.
+
