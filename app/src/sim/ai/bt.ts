@@ -5,7 +5,6 @@ import type { AiState, Unit, UnitAction } from '../unit';
 import { canFight, isDowned } from '../unit';
 import type { PerceptionResult } from './perception';
 
-const REPOSITION_COOLDOWN_TICKS = SIM_HZ * 3;
 const AIM_TICKS = Math.round(SIM_HZ * 0.6);
 
 function distance(ax: number, ay: number, bx: number, by: number): number {
@@ -13,7 +12,7 @@ function distance(ax: number, ay: number, bx: number, by: number): number {
 }
 
 function hasMedkit(u: Unit): boolean {
-  return u.combat.utilityIds.some((id) => id.includes('medkit') || id.includes('med'));
+  return u.combat.hasMedkit;
 }
 
 function nearestDownedAlly(unit: Unit, state: SimState): Unit | null {
@@ -191,4 +190,3 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
   };
 }
 
-void REPOSITION_COOLDOWN_TICKS;

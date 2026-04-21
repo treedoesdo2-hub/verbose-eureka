@@ -156,7 +156,7 @@ function processFiring(
     target,
     weapon,
     shooterAim: shooter.stats.aim,
-    targetArmor: target.combat.armor,
+    targetZoneDr: target.combat.zoneDr,
     rng,
     tick,
     nextWoundId,

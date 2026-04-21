@@ -1,6 +1,6 @@
-import type { Armor } from '@schema/armor';
+import type { BodyZone } from '@schema/common';
 import type { Weapon } from '@schema/weapon';
-import { asArmorId, asUnitId, asWeaponId } from '@shared/ids';
+import { asUnitId, asWeaponId } from '@shared/ids';
 import { describe, expect, it } from 'vitest';
 import { resolveShot } from './hit';
 import { Rng } from './rng';
@@ -23,38 +23,33 @@ const rifle: Weapon = {
   magazineSize: 30,
   reloadSeconds: 2.5,
   rangeMeters: 300,
-  tonnage: 4,
-  critSlots: 2,
+  weightKg: 3.6,
+  hands: 2,
   cost: 1200,
 };
 
-const lightArmor: Armor = {
-  id: asArmorId('test-light'),
-  name: 'Light Plates',
-  class: 'light',
-  mobilityPenalty: 5,
-  cost: 400,
-  placements: [
-    { zone: 'torso_front', damageReduction: 20, tonnage: 2 },
-    { zone: 'torso_back', damageReduction: 20, tonnage: 2 },
-  ],
-};
+function zoneDr(overrides: Partial<Record<BodyZone, number>>): Record<BodyZone, number> {
+  return {
+    head: 0,
+    torso_front: 0,
+    torso_back: 0,
+    left_arm: 0,
+    right_arm: 0,
+    left_hand: 0,
+    right_hand: 0,
+    waist: 0,
+    left_leg: 0,
+    right_leg: 0,
+    back_mount: 0,
+    ...overrides,
+  };
+}
 
-const heavyArmor: Armor = {
-  id: asArmorId('test-heavy'),
-  name: 'Heavy Plates',
-  class: 'heavy',
-  mobilityPenalty: 25,
-  cost: 2000,
-  placements: [
-    { zone: 'head', damageReduction: 30, tonnage: 1 },
-    { zone: 'torso_front', damageReduction: 70, tonnage: 4 },
-    { zone: 'torso_back', damageReduction: 70, tonnage: 4 },
-    { zone: 'pelvis', damageReduction: 60, tonnage: 3 },
-  ],
-};
+const noArmor = zoneDr({});
+const lightArmor = zoneDr({ torso_front: 20, torso_back: 20 });
+const heavyArmor = zoneDr({ head: 30, torso_front: 70, torso_back: 70 });
 
-function shoot(iterations: number, armor: Armor | null, seed = 42): Record<string, number> {
+function shoot(iterations: number, targetZoneDr: Record<BodyZone, number>, seed = 42): Record<string, number> {
   const world = makeWorld(64, 64, 1);
   const counts = { miss: 0, block: 0, wound: 0 };
   for (let i = 0; i < iterations; i++) {
@@ -79,7 +74,7 @@ function shoot(iterations: number, armor: Armor | null, seed = 42): Record<strin
       target,
       weapon: rifle,
       shooterAim: 50,
-      targetArmor: armor,
+      targetZoneDr,
       rng,
       tick: 0,
       nextWoundId: 1,
@@ -91,7 +86,7 @@ function shoot(iterations: number, armor: Armor | null, seed = 42): Record<strin
 
 describe('hit resolution', () => {
   it('produces wounds against unarmored target', () => {
-    const r = shoot(200, null);
+    const r = shoot(200, noArmor);
     expect(r.wound).toBeGreaterThan(0);
   });
 

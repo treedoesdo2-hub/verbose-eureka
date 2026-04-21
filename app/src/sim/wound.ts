@@ -3,11 +3,10 @@ import { asWoundId } from '@shared/ids';
 import type { Rng } from './rng';
 import type { Wound, WoundSeverity, WoundType } from './unit';
 
-const BASE_BLEED_BY_ZONE: Record<BodyZone, number> = {
+const BASE_BLEED_BY_ZONE: Partial<Record<BodyZone, number>> = {
   head: 1.2,
   torso_front: 1.5,
   torso_back: 1.5,
-  pelvis: 1.3,
   left_arm: 0.7,
   right_arm: 0.7,
   left_leg: 1.0,
@@ -37,7 +36,7 @@ export function createWound(
   rng: Rng,
 ): Wound {
   const severity = severityFromDamage(damage);
-  const base = BASE_BLEED_BY_ZONE[zone];
+  const base = BASE_BLEED_BY_ZONE[zone] ?? 1.0;
   const jitter = 0.8 + rng.next() * 0.4;
   const bleedRatePerSec = base * SEVERITY_MULT[severity] * jitter;
   return {

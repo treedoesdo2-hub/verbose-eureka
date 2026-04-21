@@ -1,4 +1,3 @@
-import type { Armor, ArmorPlacement } from '@schema/armor';
 import type { BodyZone } from '@schema/common';
 import type { Weapon } from '@schema/weapon';
 import { effectivePenetration } from './ballistics';
@@ -15,7 +14,7 @@ export type ShotContext = {
   target: Unit;
   weapon: Weapon;
   shooterAim: number;
-  targetArmor: Armor | null;
+  targetZoneDr: Readonly<Record<BodyZone, number>>;
   rng: Rng;
   tick: number;
   nextWoundId: number;
@@ -26,26 +25,26 @@ export type ShotOutcome =
   | { kind: 'block'; zone: BodyZone; effectivePen: number; dr: number }
   | { kind: 'wound'; zone: BodyZone; wound: Wound; effectivePen: number; dr: number };
 
-const ZONE_WEIGHTS_FRONT: Record<BodyZone, number> = {
+type ZoneWeightMap = Partial<Record<BodyZone, number>>;
+
+const ZONE_WEIGHTS_FRONT: ZoneWeightMap = {
   head: 0.08,
-  torso_front: 0.38,
+  torso_front: 0.44,
   torso_back: 0.02,
-  pelvis: 0.1,
-  left_arm: 0.1,
-  right_arm: 0.1,
+  left_arm: 0.12,
+  right_arm: 0.12,
   left_leg: 0.11,
   right_leg: 0.11,
 };
 
-const ZONE_WEIGHTS_BACK: Record<BodyZone, number> = {
+const ZONE_WEIGHTS_BACK: ZoneWeightMap = {
   head: 0.08,
   torso_front: 0.02,
-  torso_back: 0.38,
-  pelvis: 0.08,
-  left_arm: 0.1,
-  right_arm: 0.1,
-  left_leg: 0.12,
-  right_leg: 0.12,
+  torso_back: 0.44,
+  left_arm: 0.12,
+  right_arm: 0.12,
+  left_leg: 0.11,
+  right_leg: 0.11,
 };
 
 function facingDotBearing(target: Unit, shooter: Unit): number {
@@ -68,15 +67,6 @@ function pickZone(rng: Rng, target: Unit, shooter: Unit): BodyZone {
   return 'torso_front';
 }
 
-function armorDrForZone(armor: Armor | null, zone: BodyZone): number {
-  if (!armor) return 0;
-  let best = 0;
-  for (const p of armor.placements as readonly ArmorPlacement[]) {
-    if (p.zone === zone && p.damageReduction > best) best = p.damageReduction;
-  }
-  return best;
-}
-
 export function resolveShot(ctx: ShotContext): ShotOutcome {
   const dist = distance(ctx.shooter.position, ctx.target.position);
   const cover = coverScore(ctx.world, ctx.shooter, ctx.target);
@@ -96,7 +86,7 @@ export function resolveShot(ctx: ShotContext): ShotOutcome {
 
   const zone = pickZone(ctx.rng, ctx.target, ctx.shooter);
   const effectivePen = effectivePenetration(ctx.weapon.ballistics, dist);
-  const dr = armorDrForZone(ctx.targetArmor, zone);
+  const dr = ctx.targetZoneDr[zone] ?? 0;
 
   if (dr > 0 && effectivePen < dr) {
     return { kind: 'block', zone, effectivePen, dr };

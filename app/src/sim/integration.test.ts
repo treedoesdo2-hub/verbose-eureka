@@ -20,8 +20,8 @@ const ar: Weapon = {
   magazineSize: 30,
   reloadSeconds: 2.5,
   rangeMeters: 300,
-  tonnage: 4,
-  critSlots: 2,
+  weightKg: 3.6,
+  hands: 2,
   cost: 1200,
 };
 
@@ -29,11 +29,10 @@ const light: Armor = {
   id: asArmorId('light'),
   name: 'Light',
   class: 'light',
-  mobilityPenalty: 5,
   cost: 400,
   placements: [
-    { zone: 'torso_front', damageReduction: 20, tonnage: 2 },
-    { zone: 'torso_back', damageReduction: 20, tonnage: 2 },
+    { zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' },
+    { zone: 'torso_back', damageReduction: 20, weightKg: 2, plate: 'soft' },
   ],
 };
 
@@ -52,10 +51,11 @@ function spawnUnit(id: number, teamId: number, x: number, y: number, facing: num
     facing,
     combat: deriveCombatProfile(
       {
-        primaryWeaponId: ar.id,
-        sidearmId: null,
-        armorId: light.id,
-        utilityIds: [],
+        items: [
+          { type: 'weapon', id: ar.id, zone: 'right_hand' },
+          { type: 'armor', id: light.id, zone: 'torso_front' },
+          { type: 'armor', id: light.id, zone: 'torso_back' },
+        ],
       },
       content,
     ),

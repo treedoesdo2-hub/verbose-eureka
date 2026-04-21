@@ -3,7 +3,7 @@ import type { Weapon } from '@schema/weapon';
 import { asArmorId, asUnitId, asWeaponId } from '@shared/ids';
 import { describe, expect, it } from 'vitest';
 import { hashState } from './hash';
-import type { ContentLookup } from './loadout';
+import type { ContentLookup, Loadout } from './loadout';
 import { deriveCombatProfile } from './loadout';
 import { castRay } from './los';
 import { RecordingSim, replay } from './replay';
@@ -23,8 +23,8 @@ const ar: Weapon = {
   magazineSize: 30,
   reloadSeconds: 2.5,
   rangeMeters: 300,
-  tonnage: 4,
-  critSlots: 2,
+  weightKg: 3.6,
+  hands: 2,
   cost: 1200,
 };
 
@@ -32,11 +32,10 @@ const light: Armor = {
   id: asArmorId('light'),
   name: 'Light',
   class: 'light',
-  mobilityPenalty: 5,
   cost: 400,
   placements: [
-    { zone: 'torso_front', damageReduction: 20, tonnage: 2 },
-    { zone: 'torso_back', damageReduction: 20, tonnage: 2 },
+    { zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' },
+    { zone: 'torso_back', damageReduction: 20, weightKg: 2, plate: 'soft' },
   ],
 };
 
@@ -44,13 +43,12 @@ const heavy: Armor = {
   id: asArmorId('heavy'),
   name: 'Heavy',
   class: 'heavy',
-  mobilityPenalty: 28,
   cost: 2000,
   placements: [
-    { zone: 'head', damageReduction: 30, tonnage: 1 },
-    { zone: 'torso_front', damageReduction: 70, tonnage: 4 },
-    { zone: 'torso_back', damageReduction: 65, tonnage: 3.5 },
-    { zone: 'pelvis', damageReduction: 55, tonnage: 2.5 },
+    { zone: 'head', damageReduction: 30, weightKg: 1, plate: 'hard' },
+    { zone: 'torso_front', damageReduction: 70, weightKg: 4, plate: 'hard' },
+    { zone: 'torso_back', damageReduction: 65, weightKg: 3.5, plate: 'hard' },
+    { zone: 'waist', damageReduction: 55, weightKg: 2.5, plate: 'hard' },
   ],
 };
 
@@ -59,6 +57,18 @@ const content: ContentLookup = {
   armor: (id) => (id === light.id ? light : id === heavy.id ? heavy : undefined),
   utility: () => undefined,
 };
+
+function loadoutFor(armor: Armor | null): Loadout {
+  const items: Array<Loadout['items'][number]> = [
+    { type: 'weapon', id: ar.id, zone: 'right_hand' },
+  ];
+  if (armor) {
+    for (const p of armor.placements) {
+      items.push({ type: 'armor', id: armor.id, zone: p.zone });
+    }
+  }
+  return { items };
+}
 
 function unit(
   id: number,
@@ -74,15 +84,7 @@ function unit(
     operatorId: null,
     position: { x, y },
     facing,
-    combat: deriveCombatProfile(
-      {
-        primaryWeaponId: ar.id,
-        sidearmId: null,
-        armorId: armor?.id ?? null,
-        utilityIds: [],
-      },
-      content,
-    ),
+    combat: deriveCombatProfile(loadoutFor(armor), content),
   });
 }
 

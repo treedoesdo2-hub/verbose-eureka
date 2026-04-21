@@ -4,11 +4,11 @@ import type { Utility } from '@schema/utility';
 import type { Weapon } from '@schema/weapon';
 import { asArmorId, asUtilityId, asWeaponId } from '@shared/ids';
 import { describe, expect, it } from 'vitest';
-import type { ContentLookup } from './loadout';
+import type { ContentLookup, Loadout } from './loadout';
 import {
   deriveCombatProfile,
   emptyLoadout,
-  INFANTRY_TONNAGE_BUDGET,
+  INFANTRY_WEIGHT_KG_BUDGET,
   loadoutFromTemplate,
   validateLoadout,
 } from './loadout';
@@ -24,8 +24,8 @@ const rifle: Weapon = {
   magazineSize: 30,
   reloadSeconds: 2.5,
   rangeMeters: 300,
-  tonnage: 4,
-  critSlots: 2,
+  weightKg: 3.6,
+  hands: 2,
   cost: 1200,
 };
 
@@ -33,8 +33,8 @@ const lmg: Weapon = {
   ...rifle,
   id: asWeaponId('lmg-01'),
   name: 'LMG-01',
-  tonnage: 10,
-  critSlots: 4,
+  weightKg: 11.5,
+  hands: 2,
 };
 
 const pistol: Weapon = {
@@ -42,19 +42,18 @@ const pistol: Weapon = {
   id: asWeaponId('p-01'),
   name: 'Pistol',
   hardpoint: 'sidearm',
-  tonnage: 1,
-  critSlots: 1,
+  weightKg: 1.0,
+  hands: 1,
 };
 
 const lightArmor: Armor = {
   id: asArmorId('light'),
   name: 'Light',
   class: 'light',
-  mobilityPenalty: 5,
   cost: 400,
   placements: [
-    { zone: 'torso_front', damageReduction: 20, tonnage: 2 },
-    { zone: 'torso_back', damageReduction: 20, tonnage: 2 },
+    { zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' },
+    { zone: 'torso_back', damageReduction: 20, weightKg: 2, plate: 'soft' },
   ],
 };
 
@@ -62,13 +61,14 @@ const heavyArmor: Armor = {
   id: asArmorId('heavy'),
   name: 'Heavy',
   class: 'heavy',
-  mobilityPenalty: 25,
   cost: 2000,
   placements: [
-    { zone: 'head', damageReduction: 30, tonnage: 1 },
-    { zone: 'torso_front', damageReduction: 70, tonnage: 4 },
-    { zone: 'torso_back', damageReduction: 70, tonnage: 4 },
-    { zone: 'pelvis', damageReduction: 60, tonnage: 3 },
+    { zone: 'head', damageReduction: 30, weightKg: 1.5, plate: 'hard' },
+    { zone: 'torso_front', damageReduction: 70, weightKg: 5, plate: 'hard' },
+    { zone: 'torso_back', damageReduction: 70, weightKg: 5, plate: 'hard' },
+    { zone: 'waist', damageReduction: 60, weightKg: 3, plate: 'hard' },
+    { zone: 'left_arm', damageReduction: 40, weightKg: 1.5, plate: 'hard' },
+    { zone: 'right_arm', damageReduction: 40, weightKg: 1.5, plate: 'hard' },
   ],
 };
 
@@ -76,8 +76,9 @@ const medkit: Utility = {
   id: asUtilityId('medkit'),
   name: 'Medkit',
   kind: 'medkit',
-  critSlots: 2,
-  tonnage: 1,
+  mount: 'consumable',
+  allowedZones: ['waist', 'torso_back', 'back_mount'],
+  weightKg: 1.4,
   uses: 3,
   params: {},
   cost: 200,
@@ -93,47 +94,81 @@ describe('loadout validation', () => {
   it('empty loadout passes', () => {
     const v = validateLoadout(emptyLoadout(), content);
     expect(v.valid).toBe(true);
-    expect(v.tonnage).toBe(0);
+    expect(v.totalWeightKg).toBe(0);
   });
 
   it('basic loadout under budget', () => {
-    const v = validateLoadout(
-      {
-        primaryWeaponId: rifle.id,
-        sidearmId: pistol.id,
-        armorId: lightArmor.id,
-        utilityIds: [medkit.id],
-      },
-      content,
-    );
+    const l: Loadout = {
+      items: [
+        { type: 'weapon', id: rifle.id, zone: 'right_hand' },
+        { type: 'weapon', id: pistol.id, zone: 'waist' },
+        { type: 'armor', id: lightArmor.id, zone: 'torso_front' },
+        { type: 'armor', id: lightArmor.id, zone: 'torso_back' },
+        { type: 'utility', id: medkit.id, zone: 'waist' },
+      ],
+    };
+    const v = validateLoadout(l, content);
     expect(v.valid).toBe(true);
-    expect(v.tonnage).toBe(4 + 1 + 4 + 1);
+    expect(v.totalWeightKg).toBeCloseTo(3.6 + 1.0 + 2 + 2 + 1.4, 3);
   });
 
-  it('heavy loadout exceeds tonnage budget', () => {
-    const v = validateLoadout(
-      {
-        primaryWeaponId: lmg.id,
-        sidearmId: pistol.id,
-        armorId: heavyArmor.id,
-        utilityIds: [medkit.id, medkit.id, medkit.id, medkit.id, medkit.id],
-      },
-      content,
-    );
+  it('heavy loadout exceeds weight budget', () => {
+    const l: Loadout = {
+      items: [
+        { type: 'weapon', id: lmg.id, zone: 'right_hand' },
+        { type: 'armor', id: heavyArmor.id, zone: 'head' },
+        { type: 'armor', id: heavyArmor.id, zone: 'torso_front' },
+        { type: 'armor', id: heavyArmor.id, zone: 'torso_back' },
+        { type: 'armor', id: heavyArmor.id, zone: 'waist' },
+        { type: 'armor', id: heavyArmor.id, zone: 'left_arm' },
+        { type: 'armor', id: heavyArmor.id, zone: 'right_arm' },
+        { type: 'utility', id: medkit.id, zone: 'back_mount' },
+        { type: 'utility', id: medkit.id, zone: 'torso_back' },
+      ],
+    };
+    const v = validateLoadout(l, content);
     expect(v.valid).toBe(false);
-    expect(v.tonnage).toBeGreaterThan(INFANTRY_TONNAGE_BUDGET);
+    expect(v.totalWeightKg).toBeGreaterThan(INFANTRY_WEIGHT_KG_BUDGET);
+  });
+
+  it('two-handed weapons occupy both hand slots — adding sidearm to a hand is a hand-budget error', () => {
+    const l: Loadout = {
+      items: [
+        { type: 'weapon', id: rifle.id, zone: 'right_hand' },
+        { type: 'weapon', id: pistol.id, zone: 'left_hand' },
+      ],
+    };
+    const v = validateLoadout(l, content);
+    expect(v.valid).toBe(false);
+    expect(v.errors.some((e) => e.includes('hand'))).toBe(true);
+  });
+
+  it('two armor pieces at same zone is an error', () => {
+    const l: Loadout = {
+      items: [
+        { type: 'armor', id: lightArmor.id, zone: 'torso_front' },
+        { type: 'armor', id: heavyArmor.id, zone: 'torso_front' },
+      ],
+    };
+    const v = validateLoadout(l, content);
+    expect(v.valid).toBe(false);
+    expect(v.errors.some((e) => e.includes('torso_front'))).toBe(true);
+  });
+
+  it('utility at disallowed zone is an error', () => {
+    const l: Loadout = {
+      items: [{ type: 'utility', id: medkit.id, zone: 'head' }],
+    };
+    const v = validateLoadout(l, content);
+    expect(v.valid).toBe(false);
+    expect(v.errors.some((e) => e.includes('Medkit'))).toBe(true);
   });
 
   it('unknown item id fails', () => {
-    const v = validateLoadout(
-      {
-        primaryWeaponId: asWeaponId('does-not-exist'),
-        sidearmId: null,
-        armorId: null,
-        utilityIds: [],
-      },
-      content,
-    );
+    const l: Loadout = {
+      items: [{ type: 'weapon', id: 'does-not-exist', zone: 'right_hand' }],
+    };
+    const v = validateLoadout(l, content);
     expect(v.valid).toBe(false);
     expect(v.errors[0]).toContain('not found');
   });
@@ -141,46 +176,57 @@ describe('loadout validation', () => {
 
 describe('combat profile', () => {
   it('derives per-zone DR from armor placements', () => {
-    const profile = deriveCombatProfile(
-      {
-        primaryWeaponId: rifle.id,
-        sidearmId: null,
-        armorId: heavyArmor.id,
-        utilityIds: [],
-      },
-      content,
-    );
+    const l: Loadout = {
+      items: [
+        { type: 'weapon', id: rifle.id, zone: 'right_hand' },
+        { type: 'armor', id: heavyArmor.id, zone: 'head' },
+        { type: 'armor', id: heavyArmor.id, zone: 'torso_front' },
+        { type: 'armor', id: heavyArmor.id, zone: 'torso_back' },
+      ],
+    };
+    const profile = deriveCombatProfile(l, content);
     expect(profile.zoneDr.torso_front).toBe(70);
     expect(profile.zoneDr.head).toBe(30);
     expect(profile.zoneDr.left_arm).toBe(0);
   });
 
   it('heavy loadout has higher mobility penalty than light', () => {
-    const lightProfile = deriveCombatProfile(
-      { primaryWeaponId: rifle.id, sidearmId: null, armorId: lightArmor.id, utilityIds: [] },
-      content,
-    );
-    const heavyProfile = deriveCombatProfile(
-      { primaryWeaponId: rifle.id, sidearmId: null, armorId: heavyArmor.id, utilityIds: [] },
-      content,
-    );
+    const lightL: Loadout = {
+      items: [
+        { type: 'weapon', id: rifle.id, zone: 'right_hand' },
+        { type: 'armor', id: lightArmor.id, zone: 'torso_front' },
+        { type: 'armor', id: lightArmor.id, zone: 'torso_back' },
+      ],
+    };
+    const heavyL: Loadout = {
+      items: [
+        { type: 'weapon', id: rifle.id, zone: 'right_hand' },
+        { type: 'armor', id: heavyArmor.id, zone: 'head' },
+        { type: 'armor', id: heavyArmor.id, zone: 'torso_front' },
+        { type: 'armor', id: heavyArmor.id, zone: 'torso_back' },
+        { type: 'armor', id: heavyArmor.id, zone: 'waist' },
+      ],
+    };
+    const lightProfile = deriveCombatProfile(lightL, content);
+    const heavyProfile = deriveCombatProfile(heavyL, content);
     expect(heavyProfile.mobilityPenalty).toBeGreaterThan(lightProfile.mobilityPenalty);
   });
 });
 
 describe('loadout from template', () => {
-  it('converts template to loadout', () => {
+  it('converts template to zone-placed loadout', () => {
     const t: LoadoutTemplate = {
       id: 'rifleman-light',
       name: 'Rifleman (Light)',
       role: 'rifleman',
-      primaryWeaponId: 'ar-01',
-      sidearmId: 'p-01',
-      armorId: 'light',
-      utilityIds: ['medkit'],
+      primaryWeaponId: rifle.id,
+      sidearmId: pistol.id,
+      armorId: lightArmor.id,
+      utilityIds: [medkit.id],
     };
-    const l = loadoutFromTemplate(t);
-    expect(l.primaryWeaponId).toBe('ar-01');
-    expect(l.armorId).toBe('light');
+    const l = loadoutFromTemplate(t, content);
+    expect(l.items.some((i) => i.type === 'weapon' && i.id === rifle.id)).toBe(true);
+    expect(l.items.some((i) => i.type === 'armor' && i.id === lightArmor.id)).toBe(true);
+    expect(l.items.some((i) => i.type === 'utility' && i.id === medkit.id)).toBe(true);
   });
 });
