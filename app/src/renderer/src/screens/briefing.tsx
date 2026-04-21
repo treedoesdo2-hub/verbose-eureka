@@ -5,6 +5,9 @@ import { getSimBridge } from '../sim-bridge';
 import { useAppState } from '../stores/app-state';
 import { useSquads } from '../stores/squads';
 
+const ELEMENT_ROLES = ['Primary', 'Secondary', 'Support', 'Reserve'] as const;
+const EMPTY_SLOT = '';
+
 export function Briefing(): React.JSX.Element {
   const go = useAppState((s) => s.go);
   const contractId = useAppState((s) => s.selectedContractId);
@@ -17,30 +20,41 @@ export function Briefing(): React.JSX.Element {
     [squadMap, order],
   );
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Deployment-order slots: each element is either a squad id or the empty
+  // string. This is the form-filling primitive — commanders fill in numbered
+  // elements, they don't check boxes on a grid.
+  const [slots, setSlots] = useState<string[]>(() => ELEMENT_ROLES.map(() => EMPTY_SLOT));
 
-  const deployedOperators = useMemo(() => {
+  function assign(slotIdx: number, squadId: string): void {
+    setSlots((prev) => {
+      const next = [...prev];
+      // Clear duplicates — a squad can only occupy one slot at a time.
+      for (let i = 0; i < next.length; i++) {
+        if (next[i] === squadId) next[i] = EMPTY_SLOT;
+      }
+      next[slotIdx] = squadId;
+      return next;
+    });
+  }
+
+  const assignedSquads = useMemo(
+    () => slots.map((id) => squadMap.get(id)).filter((s): s is NonNullable<typeof s> => !!s),
+    [slots, squadMap],
+  );
+
+  const deployedOperatorIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const sq of squads) {
-      if (!selected.has(sq.id)) continue;
+    for (const sq of assignedSquads) {
       for (const m of sq.members) ids.add(m.operatorId);
     }
     return ids;
-  }, [squads, selected]);
-
-  function toggle(id: string): void {
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelected(next);
-  }
+  }, [assignedSquads]);
 
   function launch(): void {
     if (!contract) return;
     const perOperatorLoadouts: ScenarioRequest['perOperatorLoadouts'] = {};
     const deployedIds: string[] = [];
-    for (const sq of squads) {
-      if (!selected.has(sq.id)) continue;
+    for (const sq of assignedSquads) {
       for (const m of sq.members) {
         deployedIds.push(m.operatorId);
         const wire: WireLoadout = {
@@ -82,108 +96,135 @@ export function Briefing(): React.JSX.Element {
     );
   }
 
-  const opCount = deployedOperators.size;
+  const opCount = deployedOperatorIds.size;
   const canLaunch = opCount >= contract.minOperators && opCount <= contract.maxOperators;
   const underCap = opCount < contract.minOperators;
   const overCap = opCount > contract.maxOperators;
 
   return (
-    <div className="screen">
+    <div className="screen deployment-order">
       <div className="screen-header">
         <button type="button" className="btn btn-small" onClick={() => go('board')}>
           ← board
         </button>
-        <h2>Briefing · {contract.name}</h2>
+        <h2>Deployment Order · {contract.name}</h2>
       </div>
-      <p className="briefing">{contract.briefing}</p>
 
-      <section className="briefing-spec">
-        <dl>
+      <section className="order-doc">
+        <header className="order-doc-header">
+          <span className="order-doc-seal mono">OP-{contract.id.toUpperCase()}</span>
+          <span className="order-doc-title">Commander's Deployment Order</span>
+        </header>
+
+        <dl className="order-fields">
+          <dt>contract</dt>
+          <dd>{contract.name}</dd>
+          <dt>briefing</dt>
+          <dd className="briefing-narrative">{contract.briefing}</dd>
           <dt>payout</dt>
           <dd>
-            <span className="accent">${contract.payout.toLocaleString()}</span>
+            <span className="accent mono">${contract.payout.toLocaleString()}</span>
           </dd>
           <dt>map</dt>
-          <dd>
-            <span className="mono">{contract.mapId}</span>
-          </dd>
-          <dt>operators</dt>
+          <dd className="mono">{bundle.maps.get(contract.mapId)?.name ?? contract.mapId}</dd>
+          <dt>team size</dt>
           <dd className="mono">
-            {contract.minOperators}–{contract.maxOperators}
+            {contract.minOperators}–{contract.maxOperators} operators
           </dd>
           <dt>objectives</dt>
           <dd>
-            <ul className="obj-list">
+            <ol className="order-objectives">
               {contract.objectives.map((o) => (
                 <li key={o.description}>
                   <span className="mono dim">{o.kind}</span> {o.description}
                 </li>
               ))}
-            </ul>
+            </ol>
           </dd>
         </dl>
       </section>
 
-      <h3>
-        Deployment · {opCount} operator{opCount === 1 ? '' : 's'} across {selected.size} squad
-        {selected.size === 1 ? '' : 's'}{' '}
-        {underCap ? (
-          <span className="danger">(need {contract.minOperators - opCount} more)</span>
-        ) : overCap ? (
-          <span className="danger">(over cap by {opCount - contract.maxOperators})</span>
+      <section className="order-elements">
+        <h3>Element assignment</h3>
+        {squads.length === 0 ? (
+          <div className="briefing-no-squads">
+            <p>No squads exist yet. Head to the Armory to form a squad before deploying.</p>
+            <button type="button" className="btn" onClick={() => go('armory')}>
+              → Armory
+            </button>
+          </div>
         ) : (
-          <span className="ok">(ready)</span>
+          <table className="order-slot-table">
+            <tbody>
+              {ELEMENT_ROLES.map((role, idx) => {
+                const currentId = slots[idx];
+                const sq = currentId ? squadMap.get(currentId) : null;
+                return (
+                  <tr key={role}>
+                    <th scope="row">
+                      <span className="mono dim">0{idx + 1}</span>
+                      <span className="order-slot-role">{role}</span>
+                    </th>
+                    <td>
+                      <select
+                        className="order-slot-select"
+                        value={currentId}
+                        onChange={(e) => assign(idx, e.target.value)}
+                      >
+                        <option value={EMPTY_SLOT}>— no element assigned —</option>
+                        {squads.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.members.length} op
+                            {s.members.length === 1 ? '' : 's'})
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="mono dim order-slot-roster">
+                      {sq
+                        ? sq.members.length === 0
+                          ? '— empty —'
+                          : sq.members
+                              .map(
+                                (m) =>
+                                  `"${bundle.operators.get(m.operatorId)?.callsign ?? m.operatorId}"`,
+                              )
+                              .join(' · ')
+                        : ''}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
-      </h3>
-      {squads.length === 0 ? (
-        <div className="briefing-no-squads">
-          <p>No squads exist yet. Head to the Armory to form a squad before deploying.</p>
+      </section>
+
+      <section className="order-footer">
+        <div className="order-totals">
+          <span className="mono dim">total strength</span>{' '}
+          <span className="mono accent">{opCount}</span>{' '}
+          <span className="mono dim">
+            op{opCount === 1 ? '' : 's'} across {assignedSquads.length} element
+            {assignedSquads.length === 1 ? '' : 's'}
+          </span>{' '}
+          {underCap ? (
+            <span className="danger">need {contract.minOperators - opCount} more</span>
+          ) : overCap ? (
+            <span className="danger">over cap by {opCount - contract.maxOperators}</span>
+          ) : (
+            <span className="ok">ready</span>
+          )}
+        </div>
+        <div className="actions">
           <button type="button" className="btn" onClick={() => go('armory')}>
-            → Armory
+            Edit Armory
+          </button>
+          <button type="button" className="btn btn-primary" disabled={!canLaunch} onClick={launch}>
+            Deploy
           </button>
         </div>
-      ) : (
-        <div className="squad-picker-grid">
-          {squads.map((sq) => {
-            const isSelected = selected.has(sq.id);
-            return (
-              <label key={sq.id} className={`squad-card${isSelected ? ' selected' : ''}`}>
-                <input type="checkbox" checked={isSelected} onChange={() => toggle(sq.id)} />
-                <header>
-                  <span className="squad-name">{sq.name}</span>
-                  <span className="mono dim">
-                    {sq.members.length} op{sq.members.length === 1 ? '' : 's'}
-                  </span>
-                </header>
-                <ul className="squad-members mono">
-                  {sq.members.length === 0 ? (
-                    <li className="dim">— empty —</li>
-                  ) : (
-                    sq.members.map((m) => {
-                      const op = bundle.operators.get(m.operatorId);
-                      return (
-                        <li key={m.operatorId}>
-                          "{op?.callsign ?? m.operatorId}"{' '}
-                          <span className="dim">{op?.name ?? ''}</span>
-                        </li>
-                      );
-                    })
-                  )}
-                </ul>
-              </label>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="actions">
-        <button type="button" className="btn" onClick={() => go('armory')}>
-          Edit Armory
-        </button>
-        <button type="button" className="btn btn-primary" disabled={!canLaunch} onClick={launch}>
-          Deploy
-        </button>
-      </div>
+      </section>
     </div>
   );
 }

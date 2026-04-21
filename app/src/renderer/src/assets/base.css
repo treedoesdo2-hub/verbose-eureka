@@ -743,46 +743,135 @@ dd {
   font-size: 12px;
 }
 
-.squad-picker-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 8px;
-}
-.squad-card {
+/* Briefing redesigned as a filled-in deployment order (NSiR DNA): fields
+   read as a paper form, elements are numbered slots with dropdowns, not
+   a checkbox grid of cards. */
+.deployment-order .order-doc {
   background: var(--bg-1);
   border: 1px solid var(--border);
-  padding: 10px;
-  cursor: pointer;
+  border-left: 3px solid var(--accent-dim);
+  padding: 14px 18px;
+  margin: 10px 0 16px 0;
+}
+.order-doc-header {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.squad-card input[type="checkbox"] {
-  display: none;
-}
-.squad-card.selected {
-  border-color: var(--accent);
-  background: var(--bg-2);
-}
-.squad-card header {
-  display: flex;
-  justify-content: space-between;
   align-items: baseline;
+  gap: 12px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px dashed var(--border);
 }
-.squad-name {
+.order-doc-seal {
+  background: var(--bg-2);
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  padding: 2px 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.order-doc-title {
+  font-size: 13px;
   font-weight: 600;
-  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-1);
 }
-.squad-members {
-  list-style: none;
+.order-fields {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 4px 14px;
+  margin: 0;
+}
+.order-fields dt {
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+.order-fields dd {
+  margin: 0;
+  color: var(--fg-0);
+}
+.briefing-narrative {
+  font-style: italic;
+  color: var(--fg-1);
+}
+.order-objectives {
+  list-style: decimal inside;
   padding: 0;
   margin: 0;
-  font-size: 11px;
   color: var(--fg-1);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  font-size: 12px;
 }
+
+.order-elements h3 {
+  margin: 16px 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-1);
+}
+.order-slot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.order-slot-table th,
+.order-slot-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.order-slot-table th[scope="row"] {
+  width: 130px;
+  font-weight: 500;
+  color: var(--fg-1);
+  white-space: nowrap;
+}
+.order-slot-role {
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+.order-slot-select {
+  width: 100%;
+  background: var(--bg-1);
+  color: var(--fg-0);
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  font-family: var(--sans);
+  font-size: 13px;
+}
+.order-slot-select:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.order-slot-roster {
+  font-size: 11px;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-footer {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.order-totals {
+  font-size: 12px;
+}
+
 .briefing-no-squads {
   padding: 14px;
   background: var(--bg-1);
