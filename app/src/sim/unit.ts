@@ -83,7 +83,7 @@ export function isDowned(u: Unit): boolean {
 export function woundsByZone(u: Unit): ReadonlyMap<BodyZone, readonly Wound[]> {
   const out = new Map<BodyZone, Wound[]>();
   for (const z of ALL_BODY_ZONES) out.set(z, []);
-  for (const w of u.wounds) out.get(w.zone)!.push(w);
+  for (const w of u.wounds) out.get(w.zone)?.push(w);
   return out;
 }
 
