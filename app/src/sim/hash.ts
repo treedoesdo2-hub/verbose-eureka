@@ -61,6 +61,8 @@ export function hashState(state: SimState): string {
     h.f64(u.velocity.x);
     h.f64(u.velocity.y);
     h.f64(u.bloodVolume);
+    h.f64(u.suppression);
+    h.f64(u.morale);
     h.str(u.action.kind);
     h.str(u.aiState);
     h.byte(u.alerted ? 1 : 0);

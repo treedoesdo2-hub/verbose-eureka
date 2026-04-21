@@ -2,7 +2,7 @@ import type { UnitId } from '@shared/ids';
 import type { SimState } from '../state';
 import { SIM_HZ } from '../state';
 import type { AiState, Unit, UnitAction, Vec2 } from '../unit';
-import { canFight, isDowned } from '../unit';
+import { canFight, isDowned, MORALE_PANIC_THRESHOLD } from '../unit';
 import type { PerceptionResult } from './perception';
 
 const AIM_TICKS = Math.round(SIM_HZ * 0.6);
@@ -68,6 +68,18 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
     return {
       aiState: unit.aiState,
       action: isDowned(unit) ? { kind: 'downed' } : unit.action,
+      currentTarget: null,
+      alerted: unit.alerted,
+      advanceWaypoint: false,
+    };
+  }
+
+  // Morale collapse: panicked units stop fighting and go to ground until
+  // morale recovers (see processStress rally threshold in tick.ts).
+  if (unit.morale <= MORALE_PANIC_THRESHOLD) {
+    return {
+      aiState: 'panic',
+      action: { kind: 'idle' },
       currentTarget: null,
       alerted: unit.alerted,
       advanceWaypoint: false,

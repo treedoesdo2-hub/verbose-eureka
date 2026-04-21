@@ -5,7 +5,7 @@ import { coverScore, MAX_COVER_SCORE } from './cover';
 import { distance } from './los';
 import type { Rng } from './rng';
 import type { Unit, Wound } from './unit';
-import { bloodTier, bloodTierModifiers } from './unit';
+import { bloodTier, bloodTierModifiers, suppressionAimMultiplier } from './unit';
 import type { World } from './world';
 import { createWound } from './wound';
 
@@ -74,7 +74,9 @@ export function resolveShot(ctx: ShotContext): ShotOutcome {
 
   const rangePenalty = Math.max(0, (dist - ctx.weapon.rangeMeters * 0.5) * 0.1);
   const coverPenalty = (cover / MAX_COVER_SCORE) * 60;
-  const aimMult = bloodTierModifiers(bloodTier(ctx.shooter)).aimMultiplier;
+  const bloodAim = bloodTierModifiers(bloodTier(ctx.shooter)).aimMultiplier;
+  const supAim = suppressionAimMultiplier(ctx.shooter.suppression);
+  const aimMult = bloodAim * supAim;
   const accuracyFinal = Math.max(
     5,
     Math.min(

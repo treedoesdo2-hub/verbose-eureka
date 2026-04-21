@@ -12,6 +12,18 @@ import {
   canFight,
   isAlive,
   isDowned,
+  MAX_MORALE,
+  MAX_SUPPRESSION,
+  MORALE_ALLY_DIED_LOSS,
+  MORALE_ALLY_DOWN_LOSS,
+  MORALE_ALLY_DOWN_RADIUS_M,
+  MORALE_HEAVY_SUP_LOSS_PER_SEC,
+  MORALE_PANIC_THRESHOLD,
+  MORALE_RECOVER_THRESHOLD,
+  MORALE_RECOVERY_PER_SEC,
+  SUPPRESSION_DECAY_PER_SEC,
+  SUPPRESSION_HEAVY_THRESHOLD,
+  SUPPRESSION_PER_SHOT,
   totalBleedRate,
 } from './unit';
 import { inBounds, terrainAt } from './world';
@@ -179,6 +191,12 @@ function processFiring(
 
   events.push({ kind: 'unit-fired', shooter: shooter.id, target: target.id, tick });
 
+  const targetFirePatch = patches.get(target.id) ?? { id: target.id };
+  const curSup = (targetFirePatch.suppression as number | undefined) ?? target.suppression;
+  mergePatch(patches, target.id, {
+    suppression: Math.min(MAX_SUPPRESSION, curSup + SUPPRESSION_PER_SHOT),
+  });
+
   const outcome = resolveShot({
     world: state.world,
     shooter,
@@ -259,6 +277,71 @@ function processStabilize(
   mergePatch(patches, patient.id, { wounds: nextWounds });
   mergePatch(patches, medic.id, { action: { kind: 'idle' } });
   events.push({ kind: 'unit-stabilized', medicId: medic.id, targetId: patient.id, tick });
+}
+
+/**
+ * Suppression decay, morale shifts, pin/break/rally transitions.
+ * Runs after action + bleed so this tick's unit-downed/unit-died events
+ * are already in the event list and can drive ally morale hits.
+ */
+function processStress(
+  prev: ReadonlyMap<UnitId, Unit>,
+  postAction: ReadonlyMap<UnitId, Unit>,
+  events: SimEvent[],
+  tick: number,
+  patches: Map<UnitId, UnitPatch>,
+): void {
+  const allyDrops: { pos: Vec2; teamId: number; loss: number }[] = [];
+  for (const e of events) {
+    if (e.kind !== 'unit-downed' && e.kind !== 'unit-died') continue;
+    const victim = postAction.get(e.unitId);
+    if (!victim) continue;
+    allyDrops.push({
+      pos: victim.position,
+      teamId: victim.teamId,
+      loss: e.kind === 'unit-died' ? MORALE_ALLY_DIED_LOSS : MORALE_ALLY_DOWN_LOSS,
+    });
+  }
+
+  for (const unit of postAction.values()) {
+    if (!isAlive(unit) || isDowned(unit)) continue;
+
+    // "Was" values come from the tick-start state so threshold-crossing
+    // events fire exactly once when incoming fire or a morale hit lands.
+    const prevUnit = prev.get(unit.id);
+    const prevSup = prevUnit?.suppression ?? unit.suppression;
+    const prevMorale = prevUnit?.morale ?? unit.morale;
+
+    // The firing pass already folded SUPPRESSION_PER_SHOT into unit.suppression;
+    // now apply decay on top.
+    const nextSup = Math.max(0, unit.suppression - SUPPRESSION_DECAY_PER_SEC * SIM_DT);
+
+    let moraleDelta = 0;
+    for (const d of allyDrops) {
+      if (d.teamId !== unit.teamId) continue;
+      const dx = d.pos.x - unit.position.x;
+      const dy = d.pos.y - unit.position.y;
+      if (Math.hypot(dx, dy) <= MORALE_ALLY_DOWN_RADIUS_M) moraleDelta -= d.loss;
+    }
+    if (nextSup >= SUPPRESSION_HEAVY_THRESHOLD) {
+      moraleDelta -= MORALE_HEAVY_SUP_LOSS_PER_SEC * SIM_DT;
+    } else if (nextSup < 20 && !unit.alerted) {
+      moraleDelta += MORALE_RECOVERY_PER_SEC * SIM_DT;
+    }
+    const nextMorale = Math.max(0, Math.min(MAX_MORALE, unit.morale + moraleDelta));
+
+    if (prevSup < SUPPRESSION_HEAVY_THRESHOLD && nextSup >= SUPPRESSION_HEAVY_THRESHOLD) {
+      events.push({ kind: 'unit-pinned', unitId: unit.id, tick });
+    }
+    if (prevMorale > MORALE_PANIC_THRESHOLD && nextMorale <= MORALE_PANIC_THRESHOLD) {
+      events.push({ kind: 'unit-broke', unitId: unit.id, tick });
+    }
+    if (prevMorale < MORALE_RECOVER_THRESHOLD && nextMorale >= MORALE_RECOVER_THRESHOLD) {
+      events.push({ kind: 'unit-rallied', unitId: unit.id, tick });
+    }
+
+    mergePatch(patches, unit.id, { suppression: nextSup, morale: nextMorale });
+  }
 }
 
 function processMovement(unit: Unit, state: SimState, patches: Map<UnitId, UnitPatch>): void {
@@ -348,6 +431,8 @@ export function tick(state: SimState, rng: Rng): SimState {
       }
     }
   }
+
+  processStress(state.units, postAction, events, state.tick, patches);
 
   const finalUnits = applyPatches({ ...state, units: postAction }, patches);
 

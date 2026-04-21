@@ -14,7 +14,10 @@ export type SimEvent =
   | { kind: 'unit-hit'; shooter: UnitId; target: UnitId; woundId: number; tick: number }
   | { kind: 'unit-downed'; unitId: UnitId; tick: number }
   | { kind: 'unit-died'; unitId: UnitId; tick: number }
-  | { kind: 'unit-stabilized'; medicId: UnitId; targetId: UnitId; tick: number };
+  | { kind: 'unit-stabilized'; medicId: UnitId; targetId: UnitId; tick: number }
+  | { kind: 'unit-pinned'; unitId: UnitId; tick: number }
+  | { kind: 'unit-broke'; unitId: UnitId; tick: number }
+  | { kind: 'unit-rallied'; unitId: UnitId; tick: number };
 
 export type SimState = {
   readonly tick: number;

@@ -15,6 +15,22 @@ export const BLOOD_TIER_THRESHOLDS = {
 } as const;
 export const BLOODOUT_THRESHOLD = BLOOD_TIER_THRESHOLDS.critical;
 
+// Menace DNA: suppression accumulates from incoming fire and decays when
+// the unit isn't under threat. Morale collapses when allies fall or when
+// the unit is pinned for too long. Panic triggers at the morale floor.
+export const MAX_SUPPRESSION = 100;
+export const MAX_MORALE = 100;
+export const SUPPRESSION_PER_SHOT = 15;
+export const SUPPRESSION_DECAY_PER_SEC = 8;
+export const SUPPRESSION_HEAVY_THRESHOLD = 60;
+export const MORALE_ALLY_DOWN_RADIUS_M = 8;
+export const MORALE_ALLY_DOWN_LOSS = 25;
+export const MORALE_ALLY_DIED_LOSS = 35;
+export const MORALE_HEAVY_SUP_LOSS_PER_SEC = 0.5;
+export const MORALE_RECOVERY_PER_SEC = 2;
+export const MORALE_PANIC_THRESHOLD = 30;
+export const MORALE_RECOVER_THRESHOLD = 55;
+
 export type BloodTier = 'healthy' | 'wounded' | 'heavy' | 'critical' | 'bleedout';
 
 export type WoundType = 'gunshot' | 'fragmentation' | 'blunt' | 'burn' | 'cut';
@@ -80,6 +96,8 @@ export type Unit = {
   readonly facing: number;
   readonly velocity: Vec2;
   readonly bloodVolume: number;
+  readonly suppression: number;
+  readonly morale: number;
   readonly wounds: readonly Wound[];
   readonly ammo: number;
   readonly action: UnitAction;
@@ -113,6 +131,8 @@ export function makeUnit(params: {
     facing: params.facing,
     velocity: { x: 0, y: 0 },
     bloodVolume: MAX_BLOOD_VOLUME,
+    suppression: 0,
+    morale: MAX_MORALE,
     wounds: [],
     ammo: combat.primaryWeapon?.magazineSize ?? 0,
     action: { kind: 'idle' },
@@ -192,6 +212,15 @@ export function woundsByZone(u: Unit): ReadonlyMap<BodyZone, readonly Wound[]> {
   for (const z of ALL_BODY_ZONES) out.set(z, []);
   for (const w of u.wounds) out.get(w.zone)?.push(w);
   return out;
+}
+
+/**
+ * Aim penalty from suppression. Stacks multiplicatively with blood tier.
+ * 100 suppression → 0.5x aim contribution; 0 suppression → 1.0x.
+ */
+export function suppressionAimMultiplier(suppression: number): number {
+  const s = Math.max(0, Math.min(MAX_SUPPRESSION, suppression));
+  return 1 - s / 200;
 }
 
 export function totalBleedRate(u: Unit): number {
