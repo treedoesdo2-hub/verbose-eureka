@@ -2,8 +2,9 @@
   "id": "frag",
   "name": "Fragmentation Grenade",
   "kind": "grenade",
-  "critSlots": 1,
-  "tonnage": 0.6,
+  "mount": "consumable",
+  "allowedZones": ["waist", "torso_front"],
+  "weightKg": 0.45,
   "uses": 1,
   "params": {
     "radiusMeters": 8,

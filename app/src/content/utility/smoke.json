@@ -2,8 +2,9 @@
   "id": "smoke",
   "name": "Smoke Grenade",
   "kind": "smoke",
-  "critSlots": 1,
-  "tonnage": 0.5,
+  "mount": "consumable",
+  "allowedZones": ["waist", "torso_front"],
+  "weightKg": 0.55,
   "uses": 1,
   "params": {
     "radiusMeters": 10,

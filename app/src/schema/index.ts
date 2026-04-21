@@ -4,6 +4,7 @@ export * from './contract';
 export * from './faction';
 export * from './map';
 export * from './operator';
+export * from './squad';
 export * from './template';
 export * from './utility';
 export * from './weapon';

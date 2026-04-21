@@ -14,7 +14,7 @@
   "magazineSize": 100,
   "reloadSeconds": 6.0,
   "rangeMeters": 500,
-  "tonnage": 11,
-  "critSlots": 5,
+  "weightKg": 11.5,
+  "hands": 2,
   "cost": 4200
 }

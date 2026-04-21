@@ -2,14 +2,14 @@
   "id": "heavy-01",
   "name": "Line Plates Mk III",
   "class": "heavy",
-  "mobilityPenalty": 30,
   "cost": 2800,
   "placements": [
-    { "zone": "head", "damageReduction": 35, "tonnage": 1.5 },
-    { "zone": "torso_front", "damageReduction": 75, "tonnage": 4 },
-    { "zone": "torso_back", "damageReduction": 65, "tonnage": 3.5 },
-    { "zone": "pelvis", "damageReduction": 55, "tonnage": 2.5 },
-    { "zone": "left_arm", "damageReduction": 25, "tonnage": 1 },
-    { "zone": "right_arm", "damageReduction": 25, "tonnage": 1 }
+    { "zone": "head", "damageReduction": 35, "weightKg": 1.5, "plate": "hard" },
+    { "zone": "torso_front", "damageReduction": 75, "weightKg": 4.5, "plate": "hard" },
+    { "zone": "torso_back", "damageReduction": 65, "weightKg": 4.0, "plate": "hard" },
+    { "zone": "left_arm", "damageReduction": 25, "weightKg": 1.2, "plate": "soft" },
+    { "zone": "right_arm", "damageReduction": 25, "weightKg": 1.2, "plate": "soft" },
+    { "zone": "left_leg", "damageReduction": 30, "weightKg": 1.5, "plate": "soft" },
+    { "zone": "right_leg", "damageReduction": 30, "weightKg": 1.5, "plate": "soft" }
   ]
 }

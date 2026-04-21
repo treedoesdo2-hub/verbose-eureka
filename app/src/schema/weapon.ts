@@ -20,8 +20,8 @@ export const Weapon = z.object({
   magazineSize: z.number().int().positive(),
   reloadSeconds: z.number().nonnegative(),
   rangeMeters: z.number().positive(),
-  tonnage: z.number().nonnegative(),
-  critSlots: z.number().int().nonnegative(),
+  weightKg: z.number().positive(),
+  hands: z.union([z.literal(1), z.literal(2)]),
   cost: z.number().int().nonnegative(),
 });
 export type Weapon = z.infer<typeof Weapon>;
