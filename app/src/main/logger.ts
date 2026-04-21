@@ -5,6 +5,17 @@ import { app, ipcMain } from 'electron';
 type Level = 'info' | 'warn' | 'error';
 type Source = 'main' | 'renderer' | 'worker';
 
+export type LogEntry = {
+  ts: string;
+  source: Source;
+  level: Level;
+  msg: string;
+  meta?: unknown;
+};
+
+const RING_CAPACITY = 32;
+const errorRing: LogEntry[] = [];
+
 let logPath = '';
 let prevPath = '';
 let writing = false;
@@ -26,11 +37,23 @@ function write(level: Level, source: Source, msg: string, meta?: unknown): void 
     const ts = new Date().toISOString();
     const metaStr = meta !== undefined ? ` ${JSON.stringify(meta)}` : '';
     appendFileSync(logPath, `${ts} [${source}:${level}] ${msg}${metaStr}\n`);
+    if (level === 'error' || level === 'warn') {
+      errorRing.push({ ts, source, level, msg, meta });
+      if (errorRing.length > RING_CAPACITY) errorRing.shift();
+    }
   } catch {
     // swallow: if disk I/O is bad there's nothing useful to do here
   } finally {
     writing = false;
   }
+}
+
+export function recentErrors(): LogEntry[] {
+  return [...errorRing];
+}
+
+export function currentLogPath(): string {
+  return logPath;
 }
 
 export function initLogger(): string {
@@ -90,6 +113,9 @@ export function initLogger(): string {
     const lvl: Level = payload.level === 'warn' || payload.level === 'error' ? payload.level : 'info';
     write(lvl, 'renderer', payload.msg, payload.meta);
   });
+
+  ipcMain.handle('log:recentErrors', () => recentErrors());
+  ipcMain.handle('log:path', () => logPath);
 
   origLog(`[log] session log: ${logPath}`);
   return logPath;

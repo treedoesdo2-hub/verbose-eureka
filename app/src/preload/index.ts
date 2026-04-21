@@ -7,6 +7,10 @@ const api = {
   log: (level: LogLevel, msg: string, meta?: unknown): void => {
     ipcRenderer.send('log:write', { level, msg, meta });
   },
+  recentErrors: (): Promise<
+    Array<{ ts: string; source: string; level: string; msg: string; meta?: unknown }>
+  > => ipcRenderer.invoke('log:recentErrors'),
+  logPath: (): Promise<string> => ipcRenderer.invoke('log:path'),
 };
 
 // Use `contextBridge` APIs to expose Electron APIs to
