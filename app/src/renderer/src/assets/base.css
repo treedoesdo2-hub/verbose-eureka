@@ -1,4 +1,5 @@
-:root {
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
   --bg-0: #0b0d10;
   --bg-1: #13161a;
@@ -14,6 +15,75 @@
   --border: #2a2f36;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: Inter, system-ui, -apple-system, sans-serif;
+
+  /* Density scale — multiplies gutter / padding / gap tokens. Density-aware
+     rules read --pad-sm / --pad-md / --gap directly. */
+  --pad-xs: 4px;
+  --pad-sm: 6px;
+  --pad-md: 10px;
+  --pad-lg: 14px;
+  --gap: 10px;
+  --row-tight: 4px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: #f5f5f2;
+  --bg-1: #ffffff;
+  --bg-2: #ebece8;
+  --bg-3: #d9dad5;
+  --fg-0: #16181c;
+  --fg-1: #3c4048;
+  --fg-dim: #6a7280;
+  --accent: #b46b10;
+  --accent-dim: #8c4e08;
+  --danger: #c0392b;
+  --ok: #3a7c4e;
+  --border: #c9cac4;
+}
+
+:root[data-density="compact"] {
+  --pad-xs: 2px;
+  --pad-sm: 4px;
+  --pad-md: 6px;
+  --pad-lg: 8px;
+  --gap: 6px;
+  --row-tight: 2px;
+}
+:root[data-density="spacious"] {
+  --pad-xs: 6px;
+  --pad-sm: 10px;
+  --pad-md: 16px;
+  --pad-lg: 22px;
+  --gap: 16px;
+  --row-tight: 6px;
+}
+
+:root[data-density="compact"] body {
+  font-size: 13px;
+}
+:root[data-density="spacious"] body {
+  font-size: 15px;
+}
+:root[data-density="compact"] .screen {
+  padding: var(--pad-md) var(--pad-lg);
+}
+:root[data-density="spacious"] .screen {
+  padding: 28px 32px;
+}
+:root[data-density="compact"] .armory-grid {
+  gap: 8px;
+}
+:root[data-density="spacious"] .armory-grid {
+  gap: 20px;
+}
+:root[data-density="compact"] .order-fields,
+:root[data-density="compact"] .template-spec {
+  gap: 2px 10px;
+}
+:root[data-density="spacious"] .order-fields,
+:root[data-density="spacious"] .template-spec {
+  gap: 8px 16px;
 }
 
 * {
@@ -57,6 +127,23 @@ body,
   color: var(--fg-dim);
   font-family: var(--mono);
   font-size: 11px;
+}
+.shell-prefs {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.pref-select {
+  background: var(--bg-2);
+  color: var(--fg-0);
+  border: 1px solid var(--border);
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.pref-select:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
 }
 .app-shell > main {
   flex: 1;
