@@ -18,10 +18,7 @@ export const useLoadouts = create<LoadoutsState>()(
     byOperator: new Map(),
     set: (operatorId, loadout) =>
       set((s) => {
-        s.byOperator.set(operatorId, {
-          ...loadout,
-          utilityIds: [...loadout.utilityIds],
-        });
+        s.byOperator.set(operatorId, { items: [...loadout.items] });
       }),
     clear: (operatorId) =>
       set((s) => {

@@ -18,8 +18,8 @@ const rifle: Weapon = {
   magazineSize: 30,
   reloadSeconds: 2.5,
   rangeMeters: 300,
-  tonnage: 4,
-  critSlots: 2,
+  weightKg: 3.6,
+  hands: 2,
   cost: 1200,
 };
 
@@ -27,9 +27,8 @@ const lightArmor: Armor = {
   id: asArmorId('light'),
   name: 'Light',
   class: 'light',
-  mobilityPenalty: 5,
   cost: 400,
-  placements: [{ zone: 'torso_front', damageReduction: 20, tonnage: 2 }],
+  placements: [{ zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' }],
 };
 
 const content: ContentLookup = {
@@ -39,10 +38,10 @@ const content: ContentLookup = {
 };
 
 const ld: Loadout = {
-  primaryWeaponId: rifle.id,
-  sidearmId: null,
-  armorId: lightArmor.id,
-  utilityIds: [],
+  items: [
+    { type: 'weapon', id: rifle.id, zone: 'right_hand' },
+    { type: 'armor', id: lightArmor.id, zone: 'torso_front' },
+  ],
 };
 
 describe('equip service', () => {
@@ -63,7 +62,8 @@ describe('equip service', () => {
     expect(r.ok).toBe(true);
     expect(useStockpile.getState().available(rifle.id)).toBe(0);
     expect(useStockpile.getState().available(lightArmor.id)).toBe(0);
-    expect(useLoadouts.getState().get('op-1').armorId).toBe(lightArmor.id);
+    const stored = useLoadouts.getState().get('op-1');
+    expect(stored.items.some((i) => i.id === lightArmor.id)).toBe(true);
   });
 
   it('unequip returns items to stockpile', () => {
@@ -73,15 +73,14 @@ describe('equip service', () => {
     unequipLoadout('op-1');
     expect(useStockpile.getState().available(rifle.id)).toBe(1);
     expect(useStockpile.getState().available(lightArmor.id)).toBe(1);
-    expect(useLoadouts.getState().get('op-1').primaryWeaponId).toBe(null);
+    expect(useLoadouts.getState().get('op-1').items.length).toBe(0);
   });
 
-  it('swapping loadouts diffs correctly', () => {
+  it('swapping identical loadouts is a no-op diff', () => {
     useStockpile.getState().add(rifle.id, 1);
     useStockpile.getState().add(lightArmor.id, 2);
     equipLoadout('op-1', ld, content);
-    const next: Loadout = { ...ld };
-    const r = equipLoadout('op-1', next, content);
+    const r = equipLoadout('op-1', { items: [...ld.items] }, content);
     expect(r.ok).toBe(true);
     expect(useStockpile.getState().available(lightArmor.id)).toBe(1);
   });

@@ -1,18 +1,9 @@
 import type { ContentLookup, Loadout } from '@sim/loadout';
-import { validateLoadout } from '@sim/loadout';
+import { itemCounts, validateLoadout } from '@sim/loadout';
 import { useLoadouts } from '../stores/loadouts';
 import { useStockpile } from '../stores/stockpile';
 
 type EquipResult = { ok: true } | { ok: false; error: string };
-
-function itemCounts(l: Loadout): Map<string, number> {
-  const m = new Map<string, number>();
-  if (l.primaryWeaponId) m.set(l.primaryWeaponId, (m.get(l.primaryWeaponId) ?? 0) + 1);
-  if (l.sidearmId) m.set(l.sidearmId, (m.get(l.sidearmId) ?? 0) + 1);
-  if (l.armorId) m.set(l.armorId, (m.get(l.armorId) ?? 0) + 1);
-  for (const uid of l.utilityIds) m.set(uid, (m.get(uid) ?? 0) + 1);
-  return m;
-}
 
 function diff(
   prev: Loadout,

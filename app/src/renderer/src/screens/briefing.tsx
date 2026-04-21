@@ -1,19 +1,27 @@
-import type { ScenarioRequest } from '@shared/messages';
-import { useState } from 'react';
+import type { ScenarioRequest, WireLoadout } from '@shared/messages';
+import { useMemo, useState } from 'react';
 import { getContent } from '../content';
 import { getSimBridge } from '../sim-bridge';
 import { useAppState } from '../stores/app-state';
-import { useLoadouts } from '../stores/loadouts';
+import { useSquads } from '../stores/squads';
 
 export function Briefing(): React.JSX.Element {
   const go = useAppState((s) => s.go);
   const contractId = useAppState((s) => s.selectedContractId);
   const bundle = getContent();
   const contract = contractId ? bundle.contracts.get(contractId) : null;
-  const loadoutsStore = useLoadouts((s) => s.byOperator);
+  const squads = useSquads((s) => s.list());
 
-  const operators = [...bundle.operators.values()].slice(0, contract?.maxOperators ?? 6);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(operators.map((o) => o.id)));
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const deployedOperators = useMemo(() => {
+    const ids = new Set<string>();
+    for (const sq of squads) {
+      if (!selected.has(sq.id)) continue;
+      for (const m of sq.members) ids.add(m.operatorId);
+    }
+    return ids;
+  }, [squads, selected]);
 
   function toggle(id: string): void {
     const next = new Set(selected);
@@ -24,42 +32,33 @@ export function Briefing(): React.JSX.Element {
 
   function launch(): void {
     if (!contract) return;
-    const deployed = operators.filter((o) => selected.has(o.id));
     const perOperatorLoadouts: ScenarioRequest['perOperatorLoadouts'] = {};
-    for (const op of deployed) {
-      const l = loadoutsStore.get(op.id);
-      if (l) {
-        perOperatorLoadouts[op.id] = {
-          primaryWeaponId: l.primaryWeaponId,
-          sidearmId: l.sidearmId,
-          armorId: l.armorId,
-          utilityIds: [...l.utilityIds],
+    const deployedIds: string[] = [];
+    for (const sq of squads) {
+      if (!selected.has(sq.id)) continue;
+      for (const m of sq.members) {
+        deployedIds.push(m.operatorId);
+        const wire: WireLoadout = {
+          items: [...m.loadout.items],
+          templateId: m.templateId,
         };
-      } else {
-        const tpl = bundle.templates.get(op.defaultTemplateId);
-        if (tpl) {
-          perOperatorLoadouts[op.id] = {
-            primaryWeaponId: tpl.primaryWeaponId,
-            sidearmId: tpl.sidearmId,
-            armorId: tpl.armorId,
-            utilityIds: [...tpl.utilityIds],
-          };
-        }
+        perOperatorLoadouts[m.operatorId] = wire;
       }
     }
 
     const bridge = getSimBridge();
+    const seed = Date.now() & 0xffff;
     bridge.send({
       type: 'startSim',
       payload: {
-        seed: Date.now() & 0xffff,
+        seed,
         contractId: contract.id,
-        simSpeedMultiplier: 1,
+        simSpeedMultiplier: 4,
         scenarioRequest: {
-          seed: Date.now() & 0xffff,
+          seed,
           contractId: contract.id,
           mapId: contract.mapId,
-          deployedOperatorIds: deployed.map((o) => o.id),
+          deployedOperatorIds: deployedIds,
           perOperatorLoadouts,
         },
       },
@@ -78,8 +77,10 @@ export function Briefing(): React.JSX.Element {
     );
   }
 
-  const canLaunch =
-    selected.size >= contract.minOperators && selected.size <= contract.maxOperators;
+  const opCount = deployedOperators.size;
+  const canLaunch = opCount >= contract.minOperators && opCount <= contract.maxOperators;
+  const underCap = opCount < contract.minOperators;
+  const overCap = opCount > contract.maxOperators;
 
   return (
     <div className="screen">
@@ -90,28 +91,99 @@ export function Briefing(): React.JSX.Element {
         <h2>Briefing · {contract.name}</h2>
       </div>
       <p className="briefing">{contract.briefing}</p>
-      <h3>Deploy operators ({selected.size} selected)</h3>
-      <div className="operator-grid">
-        {operators.map((op) => {
-          const tpl = bundle.templates.get(op.defaultTemplateId);
-          return (
-            <label key={op.id} className={`operator-card${selected.has(op.id) ? ' selected' : ''}`}>
-              <input type="checkbox" checked={selected.has(op.id)} onChange={() => toggle(op.id)} />
-              <header>
-                <span className="callsign">"{op.callsign}"</span>
-                <span className="name">{op.name}</span>
-                <span className={`tier tier-${op.tier}`}>{op.tier}</span>
-              </header>
-              <div className="stats mono">
-                AIM {op.stats.aim} · MOV {op.stats.move} · GRT {op.stats.grit} · AWR{' '}
-                {op.stats.awareness} · MED {op.stats.medical}
-              </div>
-              <div className="loadout mono">{tpl?.name ?? op.defaultTemplateId}</div>
-            </label>
-          );
-        })}
-      </div>
+
+      <section className="briefing-spec">
+        <dl>
+          <dt>payout</dt>
+          <dd>
+            <span className="accent">${contract.payout.toLocaleString()}</span>
+          </dd>
+          <dt>map</dt>
+          <dd>
+            <span className="mono">{contract.mapId}</span>
+          </dd>
+          <dt>operators</dt>
+          <dd className="mono">
+            {contract.minOperators}–{contract.maxOperators}
+          </dd>
+          <dt>objectives</dt>
+          <dd>
+            <ul className="obj-list">
+              {contract.objectives.map((o) => (
+                <li key={o.description}>
+                  <span className="mono dim">{o.kind}</span> {o.description}
+                </li>
+              ))}
+            </ul>
+          </dd>
+        </dl>
+      </section>
+
+      <h3>
+        Deployment · {opCount} operator{opCount === 1 ? '' : 's'} across {selected.size} squad
+        {selected.size === 1 ? '' : 's'}{' '}
+        {underCap ? (
+          <span className="danger">
+            (need {contract.minOperators - opCount} more)
+          </span>
+        ) : overCap ? (
+          <span className="danger">(over cap by {opCount - contract.maxOperators})</span>
+        ) : (
+          <span className="ok">(ready)</span>
+        )}
+      </h3>
+      {squads.length === 0 ? (
+        <div className="briefing-no-squads">
+          <p>No squads exist yet. Head to the Armory to form a squad before deploying.</p>
+          <button type="button" className="btn" onClick={() => go('armory')}>
+            → Armory
+          </button>
+        </div>
+      ) : (
+        <div className="squad-picker-grid">
+          {squads.map((sq) => {
+            const isSelected = selected.has(sq.id);
+            return (
+              <label
+                key={sq.id}
+                className={`squad-card${isSelected ? ' selected' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggle(sq.id)}
+                />
+                <header>
+                  <span className="squad-name">{sq.name}</span>
+                  <span className="mono dim">
+                    {sq.members.length} op{sq.members.length === 1 ? '' : 's'}
+                  </span>
+                </header>
+                <ul className="squad-members mono">
+                  {sq.members.length === 0 ? (
+                    <li className="dim">— empty —</li>
+                  ) : (
+                    sq.members.map((m) => {
+                      const op = bundle.operators.get(m.operatorId);
+                      return (
+                        <li key={m.operatorId}>
+                          "{op?.callsign ?? m.operatorId}"{' '}
+                          <span className="dim">{op?.name ?? ''}</span>
+                        </li>
+                      );
+                    })
+                  )}
+                </ul>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
       <div className="actions">
+        <button type="button" className="btn" onClick={() => go('armory')}>
+          Edit Armory
+        </button>
         <button type="button" className="btn btn-primary" disabled={!canLaunch} onClick={launch}>
           Deploy
         </button>

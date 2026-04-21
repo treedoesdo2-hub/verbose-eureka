@@ -1,3 +1,4 @@
+import type { BodyZone } from '@schema/common';
 import type { SimSnapshot, WorldSnapshot } from './snapshot';
 
 export type StartSimPayload = {
@@ -7,20 +8,23 @@ export type StartSimPayload = {
   readonly scenarioRequest: ScenarioRequest;
 };
 
+export type WireLoadoutItem = {
+  readonly type: 'weapon' | 'armor' | 'utility';
+  readonly id: string;
+  readonly zone: BodyZone;
+};
+
+export type WireLoadout = {
+  readonly items: readonly WireLoadoutItem[];
+  readonly templateId?: string;
+};
+
 export type ScenarioRequest = {
   readonly seed: number;
   readonly contractId: string;
   readonly mapId: string;
   readonly deployedOperatorIds: readonly string[];
-  readonly perOperatorLoadouts: Record<
-    string,
-    {
-      primaryWeaponId: string | null;
-      sidearmId: string | null;
-      armorId: string | null;
-      utilityIds: readonly string[];
-    }
-  >;
+  readonly perOperatorLoadouts: Record<string, WireLoadout>;
 };
 
 export type RendererToWorker =

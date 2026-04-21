@@ -16,7 +16,7 @@ function post(msg: WorkerToRenderer): void {
 }
 
 let sim: RecordingSim | null = null;
-let speedMultiplier = 1;
+let speedMultiplier = 4;
 let paused = false;
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
 const BASE_HZ = 30;
@@ -36,30 +36,28 @@ function statsForOperator(opId: string): UnitStats {
 }
 
 function buildDeployments(req: ScenarioRequest): ScenarioDeployment[] {
+  const lookup = buildLookup(bundle);
   const out: ScenarioDeployment[] = [];
   for (const opId of req.deployedOperatorIds) {
     const op = bundle.operators.get(opId);
     if (!op) continue;
-    const loadout = req.perOperatorLoadouts[opId];
-    if (!loadout) {
+    const wire = req.perOperatorLoadouts[opId];
+    if (!wire) {
       const tpl = bundle.templates.get(op.defaultTemplateId);
       if (!tpl) continue;
       out.push({
         operatorId: opId,
         stats: statsForOperator(opId),
-        loadout: loadoutFromTemplate(tpl),
+        loadout: loadoutFromTemplate(tpl, lookup),
+        templateId: op.defaultTemplateId,
       });
     } else {
-      const l: Loadout = {
-        primaryWeaponId: loadout.primaryWeaponId,
-        sidearmId: loadout.sidearmId,
-        armorId: loadout.armorId,
-        utilityIds: [...loadout.utilityIds],
-      };
+      const l: Loadout = { items: [...wire.items] };
       out.push({
         operatorId: opId,
         stats: statsForOperator(opId),
         loadout: l,
+        templateId: wire.templateId,
       });
     }
   }
