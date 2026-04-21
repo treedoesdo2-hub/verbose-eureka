@@ -78,6 +78,7 @@ export function hashState(state: SimState): string {
       h.str(w.zone);
       h.str(w.type);
       h.str(w.severity);
+      h.f64(w.severityPct);
       h.str(w.treatment);
       h.f64(w.bleedRatePerSec);
       h.u32(w.tickInflicted);

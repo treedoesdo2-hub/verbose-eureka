@@ -5,7 +5,15 @@ import { resolveShot } from './hit';
 import { Rng } from './rng';
 import { SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
 import type { LastSeen, Unit, UnitAction, Vec2, Wound } from './unit';
-import { canFight, isAlive, isDowned, totalBleedRate } from './unit';
+import {
+  BLOODOUT_THRESHOLD,
+  bloodTier,
+  bloodTierModifiers,
+  canFight,
+  isAlive,
+  isDowned,
+  totalBleedRate,
+} from './unit';
 import { inBounds, terrainAt } from './world';
 
 const MAX_SPEED_MPS = 4.5;
@@ -69,7 +77,8 @@ function executeMovement(
     };
   }
   const mobilityMult = Math.max(0.4, 1 - mobilityPenalty / 100);
-  const speed = Math.min(MAX_SPEED_MPS * mobilityMult, dist / SIM_DT);
+  const bloodMoveMult = bloodTierModifiers(bloodTier(unit)).moveMultiplier;
+  const speed = Math.min(MAX_SPEED_MPS * mobilityMult * bloodMoveMult, dist / SIM_DT);
   const velocity = { x: (dx / dist) * speed, y: (dy / dist) * speed };
   const facing = Math.atan2(dy, dx);
   const candidate: Vec2 = {
@@ -330,7 +339,7 @@ export function tick(state: SimState, rng: Rng): SimState {
     if (
       isAlive(unit) &&
       !isDowned(unit) &&
-      unit.bloodVolume <= 30 &&
+      unit.bloodVolume <= BLOODOUT_THRESHOLD &&
       unit.action.kind !== 'downed'
     ) {
       if (isDowned({ ...unit, ...(patches.get(unit.id) ?? {}) })) {

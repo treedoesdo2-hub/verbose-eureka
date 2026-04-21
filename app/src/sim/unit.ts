@@ -5,7 +5,17 @@ import type { CombatProfile } from './loadout';
 import { emptyCombatProfile } from './loadout';
 
 export const MAX_BLOOD_VOLUME = 100;
-export const BLOODOUT_THRESHOLD = 30;
+// Spec/07: five blood tiers with mechanical effects. Downed transition
+// happens at the BLEEDOUT floor; above it, progressive penalties apply.
+export const BLOOD_TIER_THRESHOLDS = {
+  healthy: 70,
+  wounded: 40,
+  heavy: 20,
+  critical: 10,
+} as const;
+export const BLOODOUT_THRESHOLD = BLOOD_TIER_THRESHOLDS.critical;
+
+export type BloodTier = 'healthy' | 'wounded' | 'heavy' | 'critical' | 'bleedout';
 
 export type WoundType = 'gunshot' | 'fragmentation' | 'blunt' | 'burn' | 'cut';
 export type WoundSeverity = 'graze' | 'light' | 'serious' | 'critical';
@@ -16,6 +26,9 @@ export type Wound = {
   readonly zone: BodyZone;
   readonly type: WoundType;
   readonly severity: WoundSeverity;
+  // Continuous 0–100 severity. Wounds in the same zone aggregate toward 100
+  // (spec/07: two zone-30 wounds ≈ one zone-60 wound for downstream effects).
+  readonly severityPct: number;
   readonly bleedRatePerSec: number;
   readonly treatment: TreatmentState;
   readonly tickInflicted: number;
@@ -125,6 +138,53 @@ export function isDowned(u: Unit): boolean {
 
 export function canFight(u: Unit): boolean {
   return isAlive(u) && !isDowned(u);
+}
+
+export function bloodTier(u: Unit): BloodTier {
+  const b = u.bloodVolume;
+  if (b >= BLOOD_TIER_THRESHOLDS.healthy) return 'healthy';
+  if (b >= BLOOD_TIER_THRESHOLDS.wounded) return 'wounded';
+  if (b >= BLOOD_TIER_THRESHOLDS.heavy) return 'heavy';
+  if (b >= BLOOD_TIER_THRESHOLDS.critical) return 'critical';
+  return 'bleedout';
+}
+
+/**
+ * Progressive accuracy + movement penalties from blood loss. Multiplies with
+ * the loadout weight mobility penalty, so a heavy-armored wounded unit moves
+ * slower than a heavy-armored healthy one AND slower than a light-armored
+ * wounded one.
+ */
+export function bloodTierModifiers(tier: BloodTier): {
+  aimMultiplier: number;
+  moveMultiplier: number;
+} {
+  switch (tier) {
+    case 'healthy':
+      return { aimMultiplier: 1.0, moveMultiplier: 1.0 };
+    case 'wounded':
+      return { aimMultiplier: 0.9, moveMultiplier: 0.85 };
+    case 'heavy':
+      return { aimMultiplier: 0.7, moveMultiplier: 0.6 };
+    case 'critical':
+      return { aimMultiplier: 0.5, moveMultiplier: 0.4 };
+    case 'bleedout':
+      return { aimMultiplier: 0.0, moveMultiplier: 0.0 };
+  }
+}
+
+/**
+ * Aggregate severityPct for a given zone. Caps at 100 — two zone-60 wounds
+ * in the same zone is "this zone is fully compromised," not 120%.
+ */
+export function zoneSeverityPct(u: Unit, zone: BodyZone): number {
+  let sum = 0;
+  for (const w of u.wounds) {
+    if (w.zone !== zone) continue;
+    sum += w.severityPct;
+    if (sum >= 100) return 100;
+  }
+  return sum;
 }
 
 export function woundsByZone(u: Unit): ReadonlyMap<BodyZone, readonly Wound[]> {
