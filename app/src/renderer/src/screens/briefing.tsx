@@ -10,7 +10,12 @@ export function Briefing(): React.JSX.Element {
   const contractId = useAppState((s) => s.selectedContractId);
   const bundle = getContent();
   const contract = contractId ? bundle.contracts.get(contractId) : null;
-  const squads = useSquads((s) => s.list());
+  const squadMap = useSquads((s) => s.squads);
+  const order = useSquads((s) => s.order);
+  const squads = useMemo(
+    () => order.map((id) => squadMap.get(id)).filter((x): x is NonNullable<typeof x> => !!x),
+    [squadMap, order],
+  );
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
