@@ -1,0 +1,36 @@
+import type { UnitId } from '@shared/ids';
+import type { RngSnapshot } from './rng';
+import type { Unit } from './unit';
+import type { World } from './world';
+
+export const SIM_HZ = 30;
+export const SIM_DT = 1 / SIM_HZ;
+
+export type SimEvent =
+  | { kind: 'unit-spawned'; unitId: UnitId; tick: number }
+  | { kind: 'unit-moved'; unitId: UnitId; tick: number }
+  | { kind: 'unit-spotted'; observer: UnitId; target: UnitId; tick: number }
+  | { kind: 'unit-fired'; shooter: UnitId; target: UnitId; tick: number }
+  | { kind: 'unit-hit'; shooter: UnitId; target: UnitId; woundId: number; tick: number }
+  | { kind: 'unit-downed'; unitId: UnitId; tick: number }
+  | { kind: 'unit-died'; unitId: UnitId; tick: number }
+  | { kind: 'unit-stabilized'; medicId: UnitId; targetId: UnitId; tick: number };
+
+export type SimState = {
+  readonly tick: number;
+  readonly rngSnapshot: RngSnapshot;
+  readonly world: World;
+  readonly units: ReadonlyMap<UnitId, Unit>;
+  readonly events: readonly SimEvent[];
+  readonly nextWoundId: number;
+  readonly ended: boolean;
+  readonly endReason?: string;
+};
+
+export type SimInput =
+  | { kind: 'none' }
+  | { kind: 'pause' }
+  | { kind: 'resume' }
+  | { kind: 'set-speed'; multiplier: number }
+  | { kind: 'command-retreat'; unitIds: readonly UnitId[] }
+  | { kind: 'command-hold'; unitIds: readonly UnitId[] };
