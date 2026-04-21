@@ -9,31 +9,34 @@ import {
   loadoutFromTemplate,
   validateLoadout,
 } from '@sim/loadout';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { contentLookup, getContent } from '../content';
 import { useAppState } from '../stores/app-state';
 import { useSquads } from '../stores/squads';
 
 export function Armory(): React.JSX.Element {
   const go = useAppState((s) => s.go);
-  const squads = useSquads((s) => s.list());
+  const squadMap = useSquads((s) => s.squads);
+  const order = useSquads((s) => s.order);
   const createSquad = useSquads((s) => s.create);
+  const squads = useMemo(
+    () => order.map((id) => squadMap.get(id)).filter((x): x is NonNullable<typeof x> => !!x),
+    [squadMap, order],
+  );
   const [selectedSquadId, setSelectedSquadId] = useState<string | null>(squads[0]?.id ?? null);
   const [selectedOperatorId, setSelectedOperatorId] = useState<string | null>(null);
 
   const bundle = getContent();
-  const selectedSquad = selectedSquadId
-    ? useSquads.getState().squads.get(selectedSquadId) ?? null
-    : null;
+  const selectedSquad = selectedSquadId ? squadMap.get(selectedSquadId) ?? null : null;
   const selectedMember =
     selectedSquad && selectedOperatorId
       ? selectedSquad.members.find((m) => m.operatorId === selectedOperatorId) ?? null
       : null;
 
-  function handleCreate(): void {
-    const name = window.prompt('Squad name', `Squad ${squads.length + 1}`)?.trim();
-    if (!name) return;
-    const id = createSquad(name);
+  function handleCreate(name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const id = createSquad(trimmed);
     setSelectedSquadId(id);
     setSelectedOperatorId(null);
   }
@@ -54,6 +57,7 @@ export function Armory(): React.JSX.Element {
             setSelectedSquadId(id);
             setSelectedOperatorId(null);
           }}
+          defaultNewName={`Squad ${squads.length + 1}`}
           onCreate={handleCreate}
         />
         <SquadDetailPane
@@ -74,61 +78,167 @@ export function Armory(): React.JSX.Element {
   );
 }
 
+function InlineNameInput({
+  defaultValue,
+  placeholder,
+  onSubmit,
+  onCancel,
+}: {
+  defaultValue: string;
+  placeholder?: string;
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
+}): React.JSX.Element {
+  const [value, setValue] = useState(defaultValue);
+  const ref = useRef<HTMLInputElement | null>(null);
+  const doneRef = useRef(false);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const finish = (action: 'submit' | 'cancel', v: string): void => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    if (action === 'submit') onSubmit(v);
+    else onCancel();
+  };
+  return (
+    <input
+      ref={ref}
+      className="inline-name-input mono"
+      type="text"
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finish('submit', value);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          finish('cancel', value);
+        }
+      }}
+      onBlur={() => finish('submit', value)}
+    />
+  );
+}
+
 function SquadListPane({
   squads,
   selectedId,
   onSelect,
+  defaultNewName,
   onCreate,
 }: {
   squads: ReturnType<typeof useSquads.getState>['list'] extends () => infer R ? R : never;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onCreate: () => void;
+  defaultNewName: string;
+  onCreate: (name: string) => void;
 }): React.JSX.Element {
   const rename = useSquads((s) => s.rename);
   const remove = useSquads((s) => s.remove);
+  const [creating, setCreating] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   return (
     <aside className="armory-squads">
       <header className="pane-header">
         <h3>Squads</h3>
-        <button type="button" className="btn btn-small" onClick={onCreate}>
-          + new
-        </button>
+        {creating ? null : (
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => {
+              setCreating(true);
+              setRenamingId(null);
+              setConfirmDeleteId(null);
+            }}
+          >
+            + new
+          </button>
+        )}
       </header>
-      {squads.length === 0 ? (
+      {creating ? (
+        <div className="squad-row-actions">
+          <InlineNameInput
+            defaultValue={defaultNewName}
+            placeholder="squad name"
+            onSubmit={(name) => {
+              setCreating(false);
+              onCreate(name);
+            }}
+            onCancel={() => setCreating(false)}
+          />
+        </div>
+      ) : null}
+      {squads.length === 0 && !creating ? (
         <p className="mono dim">No squads yet. Create one to start.</p>
       ) : (
         <ul className="op-list">
           {squads.map((sq) => (
             <li key={sq.id} className={selectedId === sq.id ? 'active' : ''}>
-              <button type="button" onClick={() => onSelect(sq.id)}>
-                {sq.name}{' '}
-                <span className="mono dim">
-                  · {sq.members.length} {sq.members.length === 1 ? 'op' : 'ops'}
-                </span>
-              </button>
-              {selectedId === sq.id ? (
+              {renamingId === sq.id ? (
+                <InlineNameInput
+                  defaultValue={sq.name}
+                  onSubmit={(next) => {
+                    const trimmed = next.trim();
+                    if (trimmed) rename(sq.id, trimmed);
+                    setRenamingId(null);
+                  }}
+                  onCancel={() => setRenamingId(null)}
+                />
+              ) : (
+                <button type="button" onClick={() => onSelect(sq.id)}>
+                  {sq.name}{' '}
+                  <span className="mono dim">
+                    · {sq.members.length} {sq.members.length === 1 ? 'op' : 'ops'}
+                  </span>
+                </button>
+              )}
+              {selectedId === sq.id && renamingId !== sq.id ? (
                 <div className="squad-row-actions">
                   <button
                     type="button"
                     className="btn btn-small"
                     onClick={() => {
-                      const next = window.prompt('Rename squad', sq.name)?.trim();
-                      if (next) rename(sq.id, next);
+                      setRenamingId(sq.id);
+                      setConfirmDeleteId(null);
                     }}
                   >
                     rename
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-small danger"
-                    onClick={() => {
-                      if (window.confirm(`Delete squad "${sq.name}"?`)) remove(sq.id);
-                    }}
-                  >
-                    delete
-                  </button>
+                  {confirmDeleteId === sq.id ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-small danger"
+                        onClick={() => {
+                          remove(sq.id);
+                          setConfirmDeleteId(null);
+                        }}
+                      >
+                        confirm delete
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => setConfirmDeleteId(null)}
+                      >
+                        cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-small danger"
+                      onClick={() => setConfirmDeleteId(sq.id)}
+                    >
+                      delete
+                    </button>
+                  )}
                 </div>
               ) : null}
             </li>
