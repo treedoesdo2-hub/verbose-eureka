@@ -1,41 +1,15 @@
-import type { Armor } from '@schema/armor';
-import type { Weapon } from '@schema/weapon';
-import { asArmorId, asWeaponId } from '@shared/ids';
-import type { ContentLookup, Loadout } from '@sim/loadout';
+import type { Loadout } from '@sim/loadout';
+import { makeContent, makeLightArmor, makeWeapon } from '@test-helpers/fixtures';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useLoadouts } from '../stores/loadouts';
 import { useStockpile } from '../stores/stockpile';
 import { equipLoadout, unequipLoadout } from './equip';
 
-const rifle: Weapon = {
-  id: asWeaponId('ar-01'),
-  name: 'AR-01',
-  hardpoint: 'primary',
-  damageType: 'ballistic',
-  ballistics: { caliberMm: 5.56, velocityMps: 900, massGrams: 4, penetration: 45 },
-  baseAccuracy: 65,
-  rpm: 600,
-  magazineSize: 30,
-  reloadSeconds: 2.5,
-  rangeMeters: 300,
-  weightKg: 3.6,
-  hands: 2,
-  cost: 1200,
-};
-
-const lightArmor: Armor = {
-  id: asArmorId('light'),
-  name: 'Light',
-  class: 'light',
-  cost: 400,
+const rifle = makeWeapon();
+const lightArmor = makeLightArmor({
   placements: [{ zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' }],
-};
-
-const content: ContentLookup = {
-  weapon: (id) => (id === rifle.id ? rifle : undefined),
-  armor: (id) => (id === lightArmor.id ? lightArmor : undefined),
-  utility: () => undefined,
-};
+});
+const content = makeContent([rifle], [lightArmor]);
 
 const ld: Loadout = {
   items: [

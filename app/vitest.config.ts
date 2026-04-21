@@ -8,6 +8,7 @@ export default defineConfig({
       '@sim': resolve(__dirname, 'src/sim'),
       '@schema': resolve(__dirname, 'src/schema'),
       '@shared': resolve(__dirname, 'src/shared'),
+      '@test-helpers': resolve(__dirname, 'src/__test-helpers__'),
     },
   },
   test: {

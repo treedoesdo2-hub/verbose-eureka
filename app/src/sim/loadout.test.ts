@@ -1,10 +1,15 @@
-import type { Armor } from '@schema/armor';
 import type { LoadoutTemplate } from '@schema/template';
-import type { Utility } from '@schema/utility';
-import type { Weapon } from '@schema/weapon';
-import { asArmorId, asUtilityId, asWeaponId } from '@shared/ids';
+import {
+  makeContent,
+  makeHeavyArmor,
+  makeLightArmor,
+  makeLmg,
+  makeMedkit,
+  makePistol,
+  makeWeapon,
+} from '@test-helpers/fixtures';
 import { describe, expect, it } from 'vitest';
-import type { ContentLookup, Loadout } from './loadout';
+import type { Loadout } from './loadout';
 import {
   deriveCombatProfile,
   emptyLoadout,
@@ -13,82 +18,13 @@ import {
   validateLoadout,
 } from './loadout';
 
-const rifle: Weapon = {
-  id: asWeaponId('ar-01'),
-  name: 'AR-01',
-  hardpoint: 'primary',
-  damageType: 'ballistic',
-  ballistics: { caliberMm: 5.56, velocityMps: 900, massGrams: 4, penetration: 45 },
-  baseAccuracy: 65,
-  rpm: 600,
-  magazineSize: 30,
-  reloadSeconds: 2.5,
-  rangeMeters: 300,
-  weightKg: 3.6,
-  hands: 2,
-  cost: 1200,
-};
-
-const lmg: Weapon = {
-  ...rifle,
-  id: asWeaponId('lmg-01'),
-  name: 'LMG-01',
-  weightKg: 11.5,
-  hands: 2,
-};
-
-const pistol: Weapon = {
-  ...rifle,
-  id: asWeaponId('p-01'),
-  name: 'Pistol',
-  hardpoint: 'sidearm',
-  weightKg: 1.0,
-  hands: 1,
-};
-
-const lightArmor: Armor = {
-  id: asArmorId('light'),
-  name: 'Light',
-  class: 'light',
-  cost: 400,
-  placements: [
-    { zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' },
-    { zone: 'torso_back', damageReduction: 20, weightKg: 2, plate: 'soft' },
-  ],
-};
-
-const heavyArmor: Armor = {
-  id: asArmorId('heavy'),
-  name: 'Heavy',
-  class: 'heavy',
-  cost: 2000,
-  placements: [
-    { zone: 'head', damageReduction: 30, weightKg: 1.5, plate: 'hard' },
-    { zone: 'torso_front', damageReduction: 70, weightKg: 5, plate: 'hard' },
-    { zone: 'torso_back', damageReduction: 70, weightKg: 5, plate: 'hard' },
-    { zone: 'waist', damageReduction: 60, weightKg: 3, plate: 'hard' },
-    { zone: 'left_arm', damageReduction: 40, weightKg: 1.5, plate: 'hard' },
-    { zone: 'right_arm', damageReduction: 40, weightKg: 1.5, plate: 'hard' },
-  ],
-};
-
-const medkit: Utility = {
-  id: asUtilityId('medkit'),
-  name: 'Medkit',
-  kind: 'medkit',
-  mount: 'consumable',
-  allowedZones: ['waist', 'torso_back', 'back_mount'],
-  weightKg: 1.4,
-  uses: 3,
-  params: {},
-  cost: 200,
-};
-
-const content: ContentLookup = {
-  weapon: (id) => [rifle, lmg, pistol].find((w) => w.id === id),
-  armor: (id) => [lightArmor, heavyArmor].find((a) => a.id === id),
-  utility: (id) => [medkit].find((u) => u.id === id),
-};
+const rifle = makeWeapon();
+const lmg = makeLmg();
+const pistol = makePistol();
+const lightArmor = makeLightArmor();
+const heavyArmor = makeHeavyArmor();
+const medkit = makeMedkit();
+const content = makeContent([rifle, lmg, pistol], [lightArmor, heavyArmor], [medkit]);
 
 describe('loadout validation', () => {
   it('empty loadout passes', () => {

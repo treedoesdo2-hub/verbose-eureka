@@ -1,53 +1,16 @@
 import type { BodyZone } from '@schema/common';
-import type { Weapon } from '@schema/weapon';
-import { asUnitId, asWeaponId } from '@shared/ids';
+import { asUnitId } from '@shared/ids';
+import { makeWeapon, makeZoneDr } from '@test-helpers/fixtures';
 import { describe, expect, it } from 'vitest';
 import { resolveShot } from './hit';
 import { Rng } from './rng';
 import { makeUnit } from './unit';
 import { makeWorld } from './world';
 
-const rifle: Weapon = {
-  id: asWeaponId('test-ar'),
-  name: 'Test AR',
-  hardpoint: 'primary',
-  damageType: 'ballistic',
-  ballistics: {
-    caliberMm: 5.56,
-    velocityMps: 900,
-    massGrams: 4,
-    penetration: 45,
-  },
-  baseAccuracy: 65,
-  rpm: 600,
-  magazineSize: 30,
-  reloadSeconds: 2.5,
-  rangeMeters: 300,
-  weightKg: 3.6,
-  hands: 2,
-  cost: 1200,
-};
-
-function zoneDr(overrides: Partial<Record<BodyZone, number>>): Record<BodyZone, number> {
-  return {
-    head: 0,
-    torso_front: 0,
-    torso_back: 0,
-    left_arm: 0,
-    right_arm: 0,
-    left_hand: 0,
-    right_hand: 0,
-    waist: 0,
-    left_leg: 0,
-    right_leg: 0,
-    back_mount: 0,
-    ...overrides,
-  };
-}
-
-const noArmor = zoneDr({});
-const lightArmor = zoneDr({ torso_front: 20, torso_back: 20 });
-const heavyArmor = zoneDr({ head: 30, torso_front: 70, torso_back: 70 });
+const rifle = makeWeapon({ name: 'Test AR' });
+const noArmor = makeZoneDr();
+const lightArmor = makeZoneDr({ torso_front: 20, torso_back: 20 });
+const heavyArmor = makeZoneDr({ head: 30, torso_front: 70, torso_back: 70 });
 
 function shoot(
   iterations: number,

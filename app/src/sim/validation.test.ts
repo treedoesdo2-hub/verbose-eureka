@@ -1,9 +1,9 @@
 import type { Armor } from '@schema/armor';
-import type { Weapon } from '@schema/weapon';
-import { asArmorId, asUnitId, asWeaponId } from '@shared/ids';
+import { asUnitId } from '@shared/ids';
+import { makeContent, makeHeavyArmor, makeLightArmor, makeWeapon } from '@test-helpers/fixtures';
 import { describe, expect, it } from 'vitest';
 import { hashState } from './hash';
-import type { ContentLookup, Loadout } from './loadout';
+import type { Loadout } from './loadout';
 import { deriveCombatProfile } from './loadout';
 import { castRay } from './los';
 import { RecordingSim, replay } from './replay';
@@ -12,51 +12,17 @@ import { makeInitialState } from './tick';
 import { canFight, makeUnit } from './unit';
 import { makeWorld, setTerrain } from './world';
 
-const ar: Weapon = {
-  id: asWeaponId('ar-01'),
-  name: 'AR',
-  hardpoint: 'primary',
-  damageType: 'ballistic',
-  ballistics: { caliberMm: 5.56, velocityMps: 900, massGrams: 4, penetration: 45 },
-  baseAccuracy: 70,
-  rpm: 600,
-  magazineSize: 30,
-  reloadSeconds: 2.5,
-  rangeMeters: 300,
-  weightKg: 3.6,
-  hands: 2,
-  cost: 1200,
-};
-
-const light: Armor = {
-  id: asArmorId('light'),
-  name: 'Light',
-  class: 'light',
-  cost: 400,
-  placements: [
-    { zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' },
-    { zone: 'torso_back', damageReduction: 20, weightKg: 2, plate: 'soft' },
-  ],
-};
-
-const heavy: Armor = {
-  id: asArmorId('heavy'),
-  name: 'Heavy',
-  class: 'heavy',
-  cost: 2000,
+const ar = makeWeapon({ name: 'AR', baseAccuracy: 70 });
+const light = makeLightArmor();
+const heavy = makeHeavyArmor({
   placements: [
     { zone: 'head', damageReduction: 30, weightKg: 1, plate: 'hard' },
     { zone: 'torso_front', damageReduction: 70, weightKg: 4, plate: 'hard' },
     { zone: 'torso_back', damageReduction: 65, weightKg: 3.5, plate: 'hard' },
     { zone: 'waist', damageReduction: 55, weightKg: 2.5, plate: 'hard' },
   ],
-};
-
-const content: ContentLookup = {
-  weapon: (id) => (id === ar.id ? ar : undefined),
-  armor: (id) => (id === light.id ? light : id === heavy.id ? heavy : undefined),
-  utility: () => undefined,
-};
+});
+const content = makeContent([ar], [light, heavy]);
 
 function loadoutFor(armor: Armor | null): Loadout {
   const items: Array<Loadout['items'][number]> = [

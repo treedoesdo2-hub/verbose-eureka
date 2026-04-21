@@ -1,46 +1,15 @@
-import type { Armor } from '@schema/armor';
-import type { Weapon } from '@schema/weapon';
-import { asArmorId, asUnitId, asWeaponId } from '@shared/ids';
+import { asUnitId } from '@shared/ids';
+import { makeContent, makeLightArmor, makeWeapon } from '@test-helpers/fixtures';
 import { describe, expect, it } from 'vitest';
-import type { ContentLookup } from './loadout';
 import { deriveCombatProfile, emptyCombatProfile } from './loadout';
 import { RecordingSim } from './replay';
 import { makeInitialState } from './tick';
 import { canFight, makeUnit } from './unit';
 import { makeWorld } from './world';
 
-const ar: Weapon = {
-  id: asWeaponId('ar-01'),
-  name: 'AR',
-  hardpoint: 'primary',
-  damageType: 'ballistic',
-  ballistics: { caliberMm: 5.56, velocityMps: 900, massGrams: 4, penetration: 45 },
-  baseAccuracy: 70,
-  rpm: 600,
-  magazineSize: 30,
-  reloadSeconds: 2.5,
-  rangeMeters: 300,
-  weightKg: 3.6,
-  hands: 2,
-  cost: 1200,
-};
-
-const light: Armor = {
-  id: asArmorId('light'),
-  name: 'Light',
-  class: 'light',
-  cost: 400,
-  placements: [
-    { zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' },
-    { zone: 'torso_back', damageReduction: 20, weightKg: 2, plate: 'soft' },
-  ],
-};
-
-const content: ContentLookup = {
-  weapon: (id) => (id === ar.id ? ar : undefined),
-  armor: (id) => (id === light.id ? light : undefined),
-  utility: () => undefined,
-};
+const ar = makeWeapon({ name: 'AR', baseAccuracy: 70 });
+const light = makeLightArmor();
+const content = makeContent([ar], [light]);
 
 function spawnUnit(id: number, teamId: number, x: number, y: number, facing: number) {
   return makeUnit({
