@@ -1,0 +1,10 @@
+{
+  "id": "scavenger-clan",
+  "name": "Blackstar Scavenger Clan",
+  "roster": [
+    { "archetype": "runner", "tier": "green", "loadoutTemplateId": "rifleman-light" },
+    { "archetype": "gunner", "tier": "regular", "loadoutTemplateId": "rifleman-light" },
+    { "archetype": "heavy", "tier": "regular", "loadoutTemplateId": "rifleman-heavy" },
+    { "archetype": "lmg", "tier": "veteran", "loadoutTemplateId": "lmg-heavy" }
+  ]
+}

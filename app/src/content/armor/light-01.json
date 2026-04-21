@@ -1,0 +1,12 @@
+{
+  "id": "light-01",
+  "name": "Scout Harness",
+  "class": "light",
+  "mobilityPenalty": 8,
+  "cost": 600,
+  "placements": [
+    { "zone": "torso_front", "damageReduction": 25, "tonnage": 2 },
+    { "zone": "torso_back", "damageReduction": 20, "tonnage": 2 },
+    { "zone": "pelvis", "damageReduction": 15, "tonnage": 1 }
+  ]
+}

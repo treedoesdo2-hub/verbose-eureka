@@ -1,0 +1,9 @@
+{
+  "id": "rifleman-light",
+  "name": "Rifleman (Light)",
+  "role": "rifleman",
+  "primaryWeaponId": "ar-01",
+  "sidearmId": "sidearm-01",
+  "armorId": "light-01",
+  "utilityIds": ["frag", "smoke"]
+}

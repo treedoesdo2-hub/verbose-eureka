@@ -1,0 +1,9 @@
+{
+  "id": "rifleman-heavy",
+  "name": "Rifleman (Heavy)",
+  "role": "rifleman",
+  "primaryWeaponId": "ar-01",
+  "sidearmId": "sidearm-01",
+  "armorId": "heavy-01",
+  "utilityIds": ["frag"]
+}

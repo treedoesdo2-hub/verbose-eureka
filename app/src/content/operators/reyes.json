@@ -1,0 +1,11 @@
+{
+  "id": "reyes",
+  "name": "Elena Reyes",
+  "callsign": "Broadcast",
+  "tier": "regular",
+  "stats": { "aim": 63, "move": 55, "grit": 58, "awareness": 75, "medical": 35 },
+  "defaultTemplateId": "rifleman-light",
+  "origin": "SIGINT operator",
+  "bio": "Reads the tactical radio like it's a personality test. Hears things others don't.",
+  "cost": 1900
+}

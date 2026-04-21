@@ -1,0 +1,20 @@
+{
+  "id": "ar-01",
+  "name": "Commonwealth AR-7",
+  "hardpoint": "primary",
+  "damageType": "ballistic",
+  "ballistics": {
+    "caliberMm": 5.56,
+    "velocityMps": 920,
+    "massGrams": 4.0,
+    "penetration": 45
+  },
+  "baseAccuracy": 70,
+  "rpm": 750,
+  "magazineSize": 30,
+  "reloadSeconds": 2.4,
+  "rangeMeters": 300,
+  "tonnage": 4,
+  "critSlots": 2,
+  "cost": 1800
+}

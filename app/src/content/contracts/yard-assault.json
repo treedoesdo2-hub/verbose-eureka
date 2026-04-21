@@ -1,0 +1,21 @@
+{
+  "id": "yard-assault",
+  "name": "Yard Assault",
+  "mapId": "training-yard",
+  "payout": 6200,
+  "briefing": "Second contract on the yard. Bigger crew, heavier gear. A veteran LMG and a heavy rifleman are dug in with the usual rabble.",
+  "objectives": [
+    { "kind": "eliminate", "description": "Neutralize all Blackstar defenders at the yard" }
+  ],
+  "enemies": {
+    "factionId": "scavenger-clan",
+    "archetypes": [
+      { "archetype": "runner", "count": 2 },
+      { "archetype": "gunner", "count": 2 },
+      { "archetype": "heavy", "count": 1 },
+      { "archetype": "lmg", "count": 1 }
+    ]
+  },
+  "minOperators": 4,
+  "maxOperators": 6
+}

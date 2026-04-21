@@ -1,0 +1,12 @@
+{
+  "id": "medkit",
+  "name": "Field Medkit",
+  "kind": "medkit",
+  "critSlots": 2,
+  "tonnage": 1.2,
+  "uses": 3,
+  "params": {
+    "stabilizeSeconds": 3
+  },
+  "cost": 250
+}

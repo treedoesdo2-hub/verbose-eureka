@@ -1,0 +1,11 @@
+{
+  "id": "ito",
+  "name": "Haru Ito",
+  "callsign": "Kite",
+  "tier": "green",
+  "stats": { "aim": 50, "move": 65, "grit": 45, "awareness": 58, "medical": 30 },
+  "defaultTemplateId": "rifleman-light",
+  "origin": "Corporate auxiliary recruit",
+  "bio": "Signed on last year after the food riots. Fast learner, hasn't been shot at yet.",
+  "cost": 1200
+}

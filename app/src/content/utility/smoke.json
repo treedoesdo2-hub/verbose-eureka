@@ -1,0 +1,13 @@
+{
+  "id": "smoke",
+  "name": "Smoke Grenade",
+  "kind": "smoke",
+  "critSlots": 1,
+  "tonnage": 0.5,
+  "uses": 1,
+  "params": {
+    "radiusMeters": 10,
+    "durationSeconds": 20
+  },
+  "cost": 40
+}

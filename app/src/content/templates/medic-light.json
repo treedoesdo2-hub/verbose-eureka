@@ -1,0 +1,9 @@
+{
+  "id": "medic-light",
+  "name": "Medic (Light)",
+  "role": "medic",
+  "primaryWeaponId": "ar-01",
+  "sidearmId": "sidearm-01",
+  "armorId": "light-01",
+  "utilityIds": ["medkit", "medkit", "smoke"]
+}

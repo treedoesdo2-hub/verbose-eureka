@@ -1,0 +1,20 @@
+{
+  "id": "lmg-01",
+  "name": "Commonwealth LMG-12",
+  "hardpoint": "primary",
+  "damageType": "ballistic",
+  "ballistics": {
+    "caliberMm": 7.62,
+    "velocityMps": 850,
+    "massGrams": 9.5,
+    "penetration": 55
+  },
+  "baseAccuracy": 55,
+  "rpm": 650,
+  "magazineSize": 100,
+  "reloadSeconds": 6.0,
+  "rangeMeters": 500,
+  "tonnage": 11,
+  "critSlots": 5,
+  "cost": 4200
+}

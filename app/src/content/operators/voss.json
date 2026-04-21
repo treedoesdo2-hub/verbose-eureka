@@ -1,0 +1,11 @@
+{
+  "id": "voss",
+  "name": "Leni Voss",
+  "callsign": "Sawbones",
+  "tier": "veteran",
+  "stats": { "aim": 60, "move": 54, "grit": 65, "awareness": 60, "medical": 85 },
+  "defaultTemplateId": "medic-light",
+  "origin": "Field-hospital triage",
+  "bio": "Ran triage through three campaigns. The only one who will yell at you for bleeding.",
+  "cost": 2700
+}

@@ -1,0 +1,9 @@
+{
+  "id": "lmg-heavy",
+  "name": "LMG (Heavy)",
+  "role": "lmg",
+  "primaryWeaponId": "lmg-01",
+  "sidearmId": "sidearm-01",
+  "armorId": "heavy-01",
+  "utilityIds": []
+}

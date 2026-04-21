@@ -1,0 +1,13 @@
+{
+  "id": "frag",
+  "name": "Fragmentation Grenade",
+  "kind": "grenade",
+  "critSlots": 1,
+  "tonnage": 0.6,
+  "uses": 1,
+  "params": {
+    "radiusMeters": 8,
+    "damage": 35
+  },
+  "cost": 80
+}

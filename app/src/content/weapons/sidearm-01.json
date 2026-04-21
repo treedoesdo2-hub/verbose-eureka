@@ -1,0 +1,20 @@
+{
+  "id": "sidearm-01",
+  "name": "Commonwealth M9",
+  "hardpoint": "sidearm",
+  "damageType": "ballistic",
+  "ballistics": {
+    "caliberMm": 9,
+    "velocityMps": 390,
+    "massGrams": 8,
+    "penetration": 20
+  },
+  "baseAccuracy": 60,
+  "rpm": 300,
+  "magazineSize": 15,
+  "reloadSeconds": 1.8,
+  "rangeMeters": 60,
+  "tonnage": 1,
+  "critSlots": 1,
+  "cost": 400
+}

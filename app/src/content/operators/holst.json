@@ -1,0 +1,11 @@
+{
+  "id": "holst",
+  "name": "Finn Holst",
+  "callsign": "Anchor",
+  "tier": "veteran",
+  "stats": { "aim": 70, "move": 45, "grit": 80, "awareness": 60, "medical": 25 },
+  "defaultTemplateId": "rifleman-heavy",
+  "origin": "Heavy infantry section lead",
+  "bio": "Point man by temperament, heavy by trade. Will not move until the sector is clear.",
+  "cost": 2600
+}
