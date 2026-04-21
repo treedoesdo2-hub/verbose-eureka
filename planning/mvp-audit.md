@@ -2,6 +2,38 @@
 
 Dispatched five Haiku agents to audit the MVP against spec/05, spec/06, spec/07, spec/08, ADR 001, 002, 006, 009, 010. Each covered one axis. Merged findings below.
 
+## Rework pass (2026-04-21) — status update
+
+User intake (planning/mvp-intake.md) declared: "It's broken and also significantly misaligned with the pre-planning commander's intent." Executed a rework to close the gap. Fixed in this pass:
+
+- ✅ **Default sim speed → 4×** (`stores/settings.ts`, worker) — ADR 006 honored.
+- ✅ **Pause button + keyboard shortcuts** (`deploy.tsx`) — space toggles pause, 1–5 set speed.
+- ✅ **Infantry weight unit → kg** (dropped tonnage; tons reserved for chassis tier). Weapons/armor/utility schemas and all content JSON migrated. `INFANTRY_WEIGHT_KG_BUDGET = 30`.
+- ✅ **Hand-occupancy rule** (`sim/loadout.ts validateLoadout`) — 2-hand weapons consume both hands; pistols one; over-2 is an error.
+- ✅ **Back-mount exclusivity** — large-mount utilities limited to 1 on `back_mount`.
+- ✅ **Zone-grid packing** — 11 body zones with per-zone kg capacity (`schema/common.ts ZONE_CAPACITY_KG`). `validateLoadout` enforces per-zone + per-plate + total budget.
+- ✅ **Armory rebuilt as squad manager + zone-grid editor** (`screens/armory.tsx`). Default mode ripped per intake Q17 — only the advanced zone-packing UI exists. Squads are first-class (persistent in `stores/squads.ts`); a squad has members, each member has an operator + zone-packed loadout + optional template id.
+- ✅ **Briefing rework** — now a squad picker (per user: "Squads should be defined in the armory. What is brought to battle should be determined in the combat pre step"). Validates operator count against `contract.minOperators`/`maxOperators`.
+- ✅ **Pixi combat-view rendering** — fixed black-box (grid row collapse + single worldLayer + ResizeObserver + error surface).
+- ✅ **Kind-based medkit lookup** (`CombatProfile.hasMedkit`) — no more `id.includes('medkit')`.
+- ✅ **`REPOSITION_COOLDOWN_TICKS` dead code removed** (`sim/ai/bt.ts`).
+- ✅ **Stockpile fails hard on underflow** — throws; no more silent shortfall fallback.
+- ✅ **Tooltips on AIM/MOV/GRT/AWR/MED, DR, kg, mobility penalty** — HTML `title` attributes in armory.
+- ✅ **Combat view `position: absolute`** — fills host correctly now.
+
+Still deferred (post-MVP, accurately scoped):
+
+- Sim depth: suppression, panic, stance, last-seen memory, alert decay, 5 blood thresholds, wound aggregation, battle drill 1A, drag-to-cover — spec/07 surface at ~50%.
+- Item quality (Stock/Refurbished/Mint/Custom-tuned), rarity tiers, per-instance stockpile tracking.
+- Light theme, density modes, component library, kill-feed event ticker, debrief narrative — ADR 009 surface.
+- `SimInput` kept as replay scaffolding (forward-compatible); not yet routed for in-sim commands.
+
+Tests: 63/63 green after rework (`src/sim/*.test.ts`, `src/renderer/src/**/*.test.ts`).
+
+---
+
+Original findings (pre-rework):
+
 ## Headline
 
 - **Thesis test passes.** All 6 spec/08 non-negotiables honored. All content minimums met. No out-of-scope leakage.

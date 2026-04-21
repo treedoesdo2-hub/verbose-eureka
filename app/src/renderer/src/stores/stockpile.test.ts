@@ -11,9 +11,9 @@ describe('stockpile store', () => {
     expect(useStockpile.getState().available('ar-01')).toBe(2);
   });
 
-  it('removes items and returns true on success', () => {
+  it('removes items', () => {
     useStockpile.getState().add('ar-01', 3);
-    expect(useStockpile.getState().remove('ar-01', 2)).toBe(true);
+    useStockpile.getState().remove('ar-01', 2);
     expect(useStockpile.getState().available('ar-01')).toBe(1);
   });
 
@@ -23,9 +23,9 @@ describe('stockpile store', () => {
     expect(useStockpile.getState().quantities.has('ar-01')).toBe(false);
   });
 
-  it('fails to remove more than available', () => {
+  it('throws when removing more than available', () => {
     useStockpile.getState().add('ar-01', 1);
-    expect(useStockpile.getState().remove('ar-01', 2)).toBe(false);
+    expect(() => useStockpile.getState().remove('ar-01', 2)).toThrow(/underflow/);
     expect(useStockpile.getState().available('ar-01')).toBe(1);
   });
 });

@@ -7,7 +7,7 @@ enableMapSet();
 export type StockpileState = {
   quantities: Map<string, number>;
   add: (itemId: string, count?: number) => void;
-  remove: (itemId: string, count?: number) => boolean;
+  remove: (itemId: string, count?: number) => void;
   available: (itemId: string) => number;
 };
 
@@ -20,13 +20,16 @@ export const useStockpile = create<StockpileState>()(
       }),
     remove: (itemId, count = 1) => {
       const have = get().quantities.get(itemId) ?? 0;
-      if (have < count) return false;
+      if (have < count) {
+        throw new Error(
+          `stockpile underflow: tried to remove ${count}× ${itemId} but only ${have} available`,
+        );
+      }
       set((s) => {
         const next = have - count;
         if (next === 0) s.quantities.delete(itemId);
         else s.quantities.set(itemId, next);
       });
-      return true;
     },
     available: (itemId) => get().quantities.get(itemId) ?? 0,
   })),
