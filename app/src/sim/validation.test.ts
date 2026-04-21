@@ -93,7 +93,7 @@ function runMatch(
   size = 6,
 ): { winner: number | null; ticks: number; casualtiesA: number; casualtiesB: number } {
   const world = makeWorld(80, 80, 1);
-  const units = [];
+  const units: ReturnType<typeof unit>[] = [];
   for (let i = 0; i < size; i++) {
     units.push(unit(i + 1, 0, 10, 20 + i * 2, 0, teamAArmor));
     units.push(unit(100 + i, 1, 35, 20 + i * 2, Math.PI, teamBArmor));
@@ -121,7 +121,7 @@ function runMatch(
 describe('MVP validation — 6 pass/fail criteria', () => {
   it('criterion #1: perf — 16-unit match runs under sim-HZ budget', () => {
     const world = makeWorld(80, 80, 1);
-    const units = [];
+    const units: ReturnType<typeof unit>[] = [];
     for (let i = 0; i < 8; i++) units.push(unit(i + 1, 0, 10, 20 + i * 2, 0, light));
     for (let i = 0; i < 8; i++) units.push(unit(100 + i, 1, 35, 20 + i * 2, Math.PI, light));
     const state = makeInitialState(world, 1, units);

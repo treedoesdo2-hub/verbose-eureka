@@ -298,7 +298,9 @@ dd {
 .deploy-layout {
   display: grid;
   grid-template-columns: 180px 1fr 220px;
+  grid-template-rows: 1fr;
   height: 100%;
+  min-height: 0;
   gap: 0;
 }
 .deploy-hud-left,
@@ -307,6 +309,7 @@ dd {
   padding: 10px 12px;
   border-right: 1px solid var(--border);
   overflow: auto;
+  min-height: 0;
 }
 .deploy-hud-right {
   border-right: none;
@@ -314,10 +317,13 @@ dd {
 }
 .deploy-main {
   position: relative;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
 }
 .combat-view {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
 }
 .loading {
   display: flex;
