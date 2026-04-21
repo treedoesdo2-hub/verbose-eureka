@@ -27,10 +27,3 @@ export type SimState = {
   readonly endReason?: string;
 };
 
-export type SimInput =
-  | { kind: 'none' }
-  | { kind: 'pause' }
-  | { kind: 'resume' }
-  | { kind: 'set-speed'; multiplier: number }
-  | { kind: 'command-retreat'; unitIds: readonly UnitId[] }
-  | { kind: 'command-hold'; unitIds: readonly UnitId[] };

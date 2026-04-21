@@ -3,7 +3,7 @@ import { decide } from './ai/bt';
 import { perceive } from './ai/perception';
 import { resolveShot } from './hit';
 import { Rng } from './rng';
-import { SIM_DT, SIM_HZ, type SimEvent, type SimInput, type SimState } from './state';
+import { SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
 import type { Unit, UnitAction, Vec2, Wound } from './unit';
 import { canFight, isAlive, isDowned, totalBleedRate } from './unit';
 import { inBounds, terrainAt } from './world';
@@ -251,7 +251,7 @@ function processMovement(unit: Unit, state: SimState, patches: Map<UnitId, UnitP
   }
 }
 
-export function tick(state: SimState, input: SimInput, rng: Rng): SimState {
+export function tick(state: SimState, rng: Rng): SimState {
   rng.restore(state.rngSnapshot);
   const events: SimEvent[] = [];
   const patches = new Map<UnitId, UnitPatch>();
@@ -321,8 +321,6 @@ export function tick(state: SimState, input: SimInput, rng: Rng): SimState {
   const team1Alive = [...finalUnits.values()].some((u) => u.teamId === 1 && canFight(u));
   const ended = !team0Alive || !team1Alive;
   const endReason = !team0Alive ? 'team-0-defeated' : !team1Alive ? 'team-1-defeated' : undefined;
-
-  void input;
 
   return {
     tick: state.tick + 1,

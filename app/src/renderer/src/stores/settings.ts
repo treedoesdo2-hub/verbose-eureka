@@ -7,12 +7,10 @@ export type SettingsState = {
   volume: number;
   simSpeed: SimSpeed;
   simPaused: boolean;
-  advancedLoadoutMode: boolean;
   setVolume: (v: number) => void;
   setSimSpeed: (s: SimSpeed) => void;
   togglePause: () => void;
   setPaused: (p: boolean) => void;
-  toggleAdvancedLoadout: () => void;
 };
 
 export const useSettings = create<SettingsState>()(
@@ -20,7 +18,6 @@ export const useSettings = create<SettingsState>()(
     volume: 1,
     simSpeed: 4 as SimSpeed,
     simPaused: false,
-    advancedLoadoutMode: true,
     setVolume: (v) =>
       set((s) => {
         s.volume = Math.max(0, Math.min(1, v));
@@ -36,10 +33,6 @@ export const useSettings = create<SettingsState>()(
     setPaused: (p) =>
       set((s) => {
         s.simPaused = p;
-      }),
-    toggleAdvancedLoadout: () =>
-      set((s) => {
-        s.advancedLoadoutMode = !s.advancedLoadoutMode;
       }),
   })),
 );

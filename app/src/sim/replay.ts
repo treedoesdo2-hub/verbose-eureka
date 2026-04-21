@@ -1,19 +1,17 @@
 import { hashState } from './hash';
 import { Rng } from './rng';
-import type { SimInput, SimState } from './state';
+import type { SimState } from './state';
 import { tick } from './tick';
 
 export type ReplayRecord = {
   readonly seed: number;
   readonly initialHash: string;
-  readonly inputs: ReadonlyMap<number, SimInput>;
   readonly totalTicks: number;
   readonly finalHash: string;
 };
 
 export class RecordingSim {
   private readonly rng: Rng;
-  private readonly inputs = new Map<number, SimInput>();
   private readonly seed: number;
   private readonly initialHash: string;
   private state: SimState;
@@ -25,9 +23,8 @@ export class RecordingSim {
     this.initialHash = hashState(initialState);
   }
 
-  step(input: SimInput = { kind: 'none' }): SimState {
-    if (input.kind !== 'none') this.inputs.set(this.state.tick, input);
-    this.state = tick(this.state, input, this.rng);
+  step(): SimState {
+    this.state = tick(this.state, this.rng);
     return this.state;
   }
 
@@ -39,7 +36,6 @@ export class RecordingSim {
     return {
       seed: this.seed,
       initialHash: this.initialHash,
-      inputs: new Map(this.inputs),
       totalTicks: this.state.tick,
       finalHash: hashState(this.state),
     };
@@ -62,8 +58,7 @@ export function replay(
   let state = initialState;
 
   for (let t = 0; t < record.totalTicks; t++) {
-    const input = record.inputs.get(state.tick) ?? { kind: 'none' as const };
-    state = tick(state, input, rng);
+    state = tick(state, rng);
   }
 
   return {
