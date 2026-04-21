@@ -62,6 +62,11 @@ describe('squads store', () => {
     const a = useSquads.getState().create('A');
     const b = useSquads.getState().create('B');
     const c = useSquads.getState().create('C');
-    expect(useSquads.getState().list().map((s) => s.id)).toEqual([a, b, c]);
+    expect(
+      useSquads
+        .getState()
+        .list()
+        .map((s) => s.id),
+    ).toEqual([a, b, c]);
   });
 });

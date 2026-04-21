@@ -49,7 +49,11 @@ const noArmor = zoneDr({});
 const lightArmor = zoneDr({ torso_front: 20, torso_back: 20 });
 const heavyArmor = zoneDr({ head: 30, torso_front: 70, torso_back: 70 });
 
-function shoot(iterations: number, targetZoneDr: Record<BodyZone, number>, seed = 42): Record<string, number> {
+function shoot(
+  iterations: number,
+  targetZoneDr: Record<BodyZone, number>,
+  seed = 42,
+): Record<string, number> {
   const world = makeWorld(64, 64, 1);
   const counts = { miss: 0, block: 0, wound: 0 };
   for (let i = 0; i < iterations; i++) {

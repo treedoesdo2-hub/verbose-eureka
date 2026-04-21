@@ -33,7 +33,12 @@ const mapStorage = createJSONStorage<{ squads: Map<string, Squad>; order: string
   () => (typeof window !== 'undefined' && window.localStorage ? window.localStorage : noopStorage),
   {
     reviver: (_, value) => {
-      if (value && typeof value === 'object' && '__t' in value && (value as { __t: string }).__t === 'Map') {
+      if (
+        value &&
+        typeof value === 'object' &&
+        '__t' in value &&
+        (value as { __t: string }).__t === 'Map'
+      ) {
         return new Map((value as { __t: string; v: [string, Squad][] }).v);
       }
       return value;

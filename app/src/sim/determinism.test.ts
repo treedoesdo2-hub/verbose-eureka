@@ -89,7 +89,8 @@ describe('sim determinism', () => {
     const state = makeInitialState(world, 1, [start]);
     const sim = new RecordingSim(state, 1);
     for (let i = 0; i < 100; i++) sim.step();
-    const unit = sim.current().units.get(asUnitId(1))!;
+    const unit = sim.current().units.get(asUnitId(1));
+    if (!unit) throw new Error('unit 1 missing from sim state');
     expect(unit.position.x).toBeGreaterThan(5);
   });
 });

@@ -162,8 +162,9 @@ describe('MVP validation — 6 pass/fail criteria', () => {
       sim.step();
       if (sim.current().ended) break;
     }
-    const finalA = sim.current().units.get(asUnitId(1))!;
-    const finalB = sim.current().units.get(asUnitId(2))!;
+    const finalA = sim.current().units.get(asUnitId(1));
+    const finalB = sim.current().units.get(asUnitId(2));
+    if (!finalA || !finalB) throw new Error('units 1+2 missing from sim state');
     const totalWounds = finalA.wounds.length + finalB.wounds.length;
     expect(totalWounds).toBeGreaterThanOrEqual(2);
   });

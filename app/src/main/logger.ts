@@ -103,14 +103,20 @@ export function initLogger(): string {
   });
   process.on('unhandledRejection', (reason) => {
     const r = reason as { message?: string; stack?: string } | string | undefined;
-    write('error', 'main', `unhandledRejection: ${typeof r === 'string' ? r : r?.message ?? 'unknown'}`, {
-      stack: typeof r === 'object' ? r?.stack : undefined,
-    });
+    write(
+      'error',
+      'main',
+      `unhandledRejection: ${typeof r === 'string' ? r : (r?.message ?? 'unknown')}`,
+      {
+        stack: typeof r === 'object' ? r?.stack : undefined,
+      },
+    );
   });
 
   ipcMain.on('log:write', (_event, payload: { level: Level; msg: string; meta?: unknown }) => {
     if (!payload || typeof payload.msg !== 'string') return;
-    const lvl: Level = payload.level === 'warn' || payload.level === 'error' ? payload.level : 'info';
+    const lvl: Level =
+      payload.level === 'warn' || payload.level === 'error' ? payload.level : 'info';
     write(lvl, 'renderer', payload.msg, payload.meta);
   });
 

@@ -128,9 +128,7 @@ export function Briefing(): React.JSX.Element {
         Deployment · {opCount} operator{opCount === 1 ? '' : 's'} across {selected.size} squad
         {selected.size === 1 ? '' : 's'}{' '}
         {underCap ? (
-          <span className="danger">
-            (need {contract.minOperators - opCount} more)
-          </span>
+          <span className="danger">(need {contract.minOperators - opCount} more)</span>
         ) : overCap ? (
           <span className="danger">(over cap by {opCount - contract.maxOperators})</span>
         ) : (
@@ -149,15 +147,8 @@ export function Briefing(): React.JSX.Element {
           {squads.map((sq) => {
             const isSelected = selected.has(sq.id);
             return (
-              <label
-                key={sq.id}
-                className={`squad-card${isSelected ? ' selected' : ''}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => toggle(sq.id)}
-                />
+              <label key={sq.id} className={`squad-card${isSelected ? ' selected' : ''}`}>
+                <input type="checkbox" checked={isSelected} onChange={() => toggle(sq.id)} />
                 <header>
                   <span className="squad-name">{sq.name}</span>
                   <span className="mono dim">

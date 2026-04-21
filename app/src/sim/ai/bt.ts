@@ -189,4 +189,3 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
     advanceWaypoint: false,
   };
 }
-

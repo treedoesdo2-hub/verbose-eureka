@@ -26,4 +26,3 @@ export type SimState = {
   readonly ended: boolean;
   readonly endReason?: string;
 };
-

@@ -27,10 +27,10 @@ export function Armory(): React.JSX.Element {
   const [selectedOperatorId, setSelectedOperatorId] = useState<string | null>(null);
 
   const bundle = getContent();
-  const selectedSquad = selectedSquadId ? squadMap.get(selectedSquadId) ?? null : null;
+  const selectedSquad = selectedSquadId ? (squadMap.get(selectedSquadId) ?? null) : null;
   const selectedMember =
     selectedSquad && selectedOperatorId
-      ? selectedSquad.members.find((m) => m.operatorId === selectedOperatorId) ?? null
+      ? (selectedSquad.members.find((m) => m.operatorId === selectedOperatorId) ?? null)
       : null;
 
   function handleCreate(name: string): void {
@@ -312,9 +312,7 @@ function SquadDetailPane({
                     <span title="MOV: movement speed">MOV {op.stats.move}</span>{' '}
                     <span title="GRT: grit (pain tolerance)">GRT {op.stats.grit}</span>{' '}
                     <span title="AWR: awareness (spotting)">AWR {op.stats.awareness}</span>{' '}
-                    <span title="MED: medical skill (self/buddy aid)">
-                      MED {op.stats.medical}
-                    </span>
+                    <span title="MED: medical skill (self/buddy aid)">MED {op.stats.medical}</span>
                   </div>
                 ) : null}
                 <button

@@ -83,9 +83,7 @@ export function buildScenario(input: BuildScenarioInput): SimState {
     const combat = deriveCombatProfile(deploy.loadout, input.content);
 
     const role = roleFromTemplate(deploy.templateId, input.templates);
-    const waypoints = waypointsFor(input.map, role, 'advance').map((p) =>
-      tileToMeters(p.x, p.y),
-    );
+    const waypoints = waypointsFor(input.map, role, 'advance').map((p) => tileToMeters(p.x, p.y));
 
     units.push(
       makeUnit({

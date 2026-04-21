@@ -83,11 +83,6 @@ body,
   gap: 12px;
   margin-bottom: 16px;
 }
-.screen-header h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
 
 .menu-title {
   font-size: 32px;
@@ -150,6 +145,11 @@ h2 {
   color: var(--fg-1);
   margin: 0 0 10px 0;
   font-weight: 500;
+}
+.screen-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
 }
 h3 {
   font-size: 11px;
@@ -220,6 +220,11 @@ dd {
   font-size: 12px;
   margin: 6px 0 10px 0;
 }
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
 .contract-card .actions {
   margin-top: 10px;
   display: flex;
@@ -287,12 +292,6 @@ dd {
 }
 .operator-card .loadout {
   color: var(--fg-1);
-}
-
-.actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 14px;
 }
 
 .deploy-layout {

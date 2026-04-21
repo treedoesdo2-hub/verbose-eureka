@@ -49,11 +49,10 @@ export function hashState(state: SimState): string {
   h.u32(state.nextWoundId);
   h.byte(state.ended ? 1 : 0);
 
-  const sortedIds = [...state.units.keys()].sort((a, b) => a - b);
-  h.u32(sortedIds.length);
+  const sortedEntries = [...state.units.entries()].sort((a, b) => a[0] - b[0]);
+  h.u32(sortedEntries.length);
 
-  for (const id of sortedIds) {
-    const u = state.units.get(id)!;
+  for (const [, u] of sortedEntries) {
     h.u32(u.id);
     h.u32(u.teamId);
     h.f64(u.position.x);

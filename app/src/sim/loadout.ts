@@ -74,7 +74,9 @@ export function validateLoadout(loadout: Loadout, content: ContentLookup): Loado
         continue;
       }
       if (armorAtZone.has(item.zone)) {
-        errors.push(`two armor pieces at ${item.zone} (${armorAtZone.get(item.zone)} and ${a.name})`);
+        errors.push(
+          `two armor pieces at ${item.zone} (${armorAtZone.get(item.zone)} and ${a.name})`,
+        );
       }
       armorAtZone.set(item.zone, a.name);
       perZone[item.zone] += p.weightKg;
@@ -104,7 +106,9 @@ export function validateLoadout(loadout: Loadout, content: ContentLookup): Loado
   }
 
   if (total > INFANTRY_WEIGHT_KG_BUDGET + 0.001) {
-    errors.push(`total weight ${total.toFixed(1)} kg exceeds budget ${INFANTRY_WEIGHT_KG_BUDGET} kg`);
+    errors.push(
+      `total weight ${total.toFixed(1)} kg exceeds budget ${INFANTRY_WEIGHT_KG_BUDGET} kg`,
+    );
   }
 
   return { valid: errors.length === 0, errors, totalWeightKg: total, perZoneWeightKg: perZone };
@@ -185,10 +189,7 @@ export function emptyCombatProfile(): CombatProfile {
   };
 }
 
-export function loadoutFromTemplate(
-  t: LoadoutTemplate,
-  content: ContentLookup,
-): Loadout {
+export function loadoutFromTemplate(t: LoadoutTemplate, content: ContentLookup): Loadout {
   const items: LoadoutItem[] = [];
 
   if (t.primaryWeaponId) {
@@ -213,7 +214,11 @@ export function loadoutFromTemplate(
     const u = content.utility(uid);
     if (!u) continue;
     const preferred = u.allowedZones.find((z) => utilZoneCycle.includes(z)) ?? u.allowedZones[0];
-    items.push({ type: 'utility', id: u.id, zone: preferred ?? utilZoneCycle[cyc % utilZoneCycle.length] });
+    items.push({
+      type: 'utility',
+      id: u.id,
+      zone: preferred ?? utilZoneCycle[cyc % utilZoneCycle.length],
+    });
     cyc++;
   }
 
