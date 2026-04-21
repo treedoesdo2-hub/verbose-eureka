@@ -1,7 +1,14 @@
-import { Armor, Contract, Faction, GameMap, Operator, Utility, Weapon } from '@schema/index';
+import {
+  Armor,
+  Contract,
+  Faction,
+  GameMap,
+  LoadoutTemplate,
+  Operator,
+  Utility,
+  Weapon,
+} from '@schema/index';
 import type { z } from 'zod';
-
-type Awaited<T> = T extends Promise<infer U> ? U : T;
 
 export type ContentBundle = {
   operators: Map<string, Operator>;
@@ -11,6 +18,7 @@ export type ContentBundle = {
   factions: Map<string, Faction>;
   contracts: Map<string, Contract>;
   maps: Map<string, GameMap>;
+  templates: Map<string, LoadoutTemplate>;
 };
 
 function validateGroup<T extends z.ZodType<{ id: string }>>(
@@ -63,6 +71,10 @@ export function loadContent(): ContentBundle {
     eager: true,
     import: 'default',
   });
+  const templateMods = import.meta.glob<unknown>('../../content/templates/*.json', {
+    eager: true,
+    import: 'default',
+  });
 
   return {
     operators: validateGroup(Operator, operatorMods, 'operators'),
@@ -72,7 +84,6 @@ export function loadContent(): ContentBundle {
     factions: validateGroup(Faction, factionMods, 'factions'),
     contracts: validateGroup(Contract, contractMods, 'contracts'),
     maps: validateGroup(GameMap, mapMods, 'maps'),
+    templates: validateGroup(LoadoutTemplate, templateMods, 'templates'),
   };
 }
-
-export type _AwaitedBundle = Awaited<ContentBundle>;
