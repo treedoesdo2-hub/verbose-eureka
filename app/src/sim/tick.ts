@@ -4,11 +4,31 @@ import { perceive } from './ai/perception';
 import { resolveShot } from './hit';
 import { Rng } from './rng';
 import { SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
-import type { Unit, UnitAction, Vec2, Wound } from './unit';
+import type { LastSeen, Unit, UnitAction, Vec2, Wound } from './unit';
 import { canFight, isAlive, isDowned, totalBleedRate } from './unit';
 import { inBounds, terrainAt } from './world';
 
 const MAX_SPEED_MPS = 4.5;
+
+// Spec/07: last-seen enemy positions fade after ~60s real time so units
+// stop firing at phantom ghosts. Alerted-flag decay lives in bt.ts where
+// threat detection happens.
+export const LAST_SEEN_TTL_TICKS = SIM_HZ * 60;
+
+function updateLastSeen(
+  prev: ReadonlyMap<UnitId, LastSeen>,
+  spottedAt: ReadonlyMap<UnitId, Vec2>,
+  tick: number,
+): ReadonlyMap<UnitId, LastSeen> {
+  const next = new Map<UnitId, LastSeen>();
+  for (const [id, seen] of prev) {
+    if (tick - seen.tick <= LAST_SEEN_TTL_TICKS) next.set(id, seen);
+  }
+  for (const [id, pos] of spottedAt) {
+    next.set(id, { pos, tick });
+  }
+  return next;
+}
 
 function clampToWorld(pos: Vec2, world: SimState['world']): Vec2 {
   const maxX = (world.width - 1) * world.tileSizeMeters;
@@ -263,12 +283,17 @@ export function tick(state: SimState, rng: Rng): SimState {
     const decision = decide(unit, perception, state);
 
     const waypointIndex = decision.advanceWaypoint ? unit.waypointIndex + 1 : unit.waypointIndex;
+    const lastSeen = updateLastSeen(unit.lastSeen, perception.spottedAt, state.tick);
+    const threatenedNow = perception.bestTarget !== null;
     mergePatch(patches, unit.id, {
       aiState: decision.aiState,
       action: decision.action,
       currentTarget: decision.currentTarget,
       alerted: decision.alerted,
-      lastAlertedTick: decision.alerted ? state.tick : unit.lastAlertedTick,
+      // Only refresh the alert timer when there's a *fresh* contact; sticky
+      // alertedness must age off or decay never triggers.
+      lastAlertedTick: threatenedNow ? state.tick : unit.lastAlertedTick,
+      lastSeen,
       waypointIndex,
     });
   }

@@ -64,6 +64,14 @@ export function hashState(state: SimState): string {
     h.str(u.action.kind);
     h.str(u.aiState);
     h.byte(u.alerted ? 1 : 0);
+    const sortedLastSeen = [...u.lastSeen.entries()].sort((a, b) => a[0] - b[0]);
+    h.u32(sortedLastSeen.length);
+    for (const [targetId, seen] of sortedLastSeen) {
+      h.u32(targetId);
+      h.f64(seen.pos.x);
+      h.f64(seen.pos.y);
+      h.u32(seen.tick);
+    }
     h.u32(u.wounds.length);
     for (const w of u.wounds) {
       h.u32(w.id);

@@ -1,11 +1,17 @@
 import type { UnitId } from '@shared/ids';
 import type { SimState } from '../state';
 import { SIM_HZ } from '../state';
-import type { AiState, Unit, UnitAction } from '../unit';
+import type { AiState, Unit, UnitAction, Vec2 } from '../unit';
 import { canFight, isDowned } from '../unit';
 import type { PerceptionResult } from './perception';
 
 const AIM_TICKS = Math.round(SIM_HZ * 0.6);
+// How recently a last-seen entry must be to draw a unit to investigate it.
+// Older entries linger for hash/rendering but don't drive BT behavior.
+const INVESTIGATE_TTL_TICKS = SIM_HZ * 30;
+// Alerted flag decays after no fresh contact for this many ticks (spec/07:
+// ~1–2 min; veterans slower, but MVP is flat).
+const ALERT_DECAY_TICKS = SIM_HZ * 120;
 
 function distance(ax: number, ay: number, bx: number, by: number): number {
   return Math.hypot(bx - ax, by - ay);
@@ -34,6 +40,19 @@ function nearestDownedAlly(unit: Unit, state: SimState): Unit | null {
 function nextWaypoint(unit: Unit): { x: number; y: number } | null {
   if (unit.waypointIndex >= unit.waypoints.length) return null;
   return unit.waypoints[unit.waypointIndex];
+}
+
+function mostRecentInvestigateTarget(unit: Unit, currentTick: number): Vec2 | null {
+  let bestPos: Vec2 | null = null;
+  let bestTick = -1;
+  for (const [, seen] of unit.lastSeen) {
+    if (currentTick - seen.tick > INVESTIGATE_TTL_TICKS) continue;
+    if (seen.tick > bestTick) {
+      bestTick = seen.tick;
+      bestPos = seen.pos;
+    }
+  }
+  return bestPos;
 }
 
 export type Decision = {
@@ -83,7 +102,13 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
   }
 
   const threatened = perception.bestTarget !== null;
-  const alerted = threatened || unit.alerted;
+  const sinceLastAlert =
+    unit.lastAlertedTick >= 0 ? state.tick - unit.lastAlertedTick : Number.POSITIVE_INFINITY;
+  const alerted = threatened
+    ? true
+    : unit.alerted && sinceLastAlert <= ALERT_DECAY_TICKS
+      ? unit.alerted
+      : false;
 
   if (threatened && perception.bestTarget !== null) {
     const target = state.units.get(perception.bestTarget);
@@ -158,6 +183,21 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
       alerted,
       advanceWaypoint: false,
     };
+  }
+
+  // No active contact — investigate last-seen if recent, else advance waypoint.
+  const investigateTo = mostRecentInvestigateTarget(unit, state.tick);
+  if (investigateTo) {
+    const d = distance(unit.position.x, unit.position.y, investigateTo.x, investigateTo.y);
+    if (d > 1.5) {
+      return {
+        aiState: 'advance',
+        action: { kind: 'moving', target: investigateTo },
+        currentTarget: null,
+        alerted,
+        advanceWaypoint: false,
+      };
+    }
   }
 
   const wp = nextWaypoint(unit);

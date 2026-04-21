@@ -23,6 +23,11 @@ export type Wound = {
 
 export type Vec2 = { readonly x: number; readonly y: number };
 
+export type LastSeen = {
+  readonly pos: Vec2;
+  readonly tick: number;
+};
+
 export type UnitAction =
   | { kind: 'idle' }
   | { kind: 'moving'; target: Vec2 }
@@ -68,6 +73,7 @@ export type Unit = {
   readonly aiState: AiState;
   readonly alerted: boolean;
   readonly lastAlertedTick: number;
+  readonly lastSeen: ReadonlyMap<UnitId, LastSeen>;
   readonly currentTarget: UnitId | null;
   readonly waypointIndex: number;
   readonly waypoints: readonly Vec2[];
@@ -100,6 +106,7 @@ export function makeUnit(params: {
     aiState: 'hold',
     alerted: false,
     lastAlertedTick: -1,
+    lastSeen: new Map(),
     currentTarget: null,
     waypointIndex: 0,
     waypoints: params.waypoints ?? [],
