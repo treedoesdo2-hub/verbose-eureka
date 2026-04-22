@@ -8,6 +8,11 @@ import {
 } from './objectives';
 import type { ObjectiveRuntimeState } from './state';
 import { makeUnit, type Unit } from './unit';
+import { makeWorld } from './world';
+
+// Objectives tests use a tiny walkable world so the pathfinder returns
+// the straight-line path and the tests assert on focal-waypoint shape.
+const TEST_WORLD = makeWorld(32, 32, 1);
 
 function mkUnit(args: {
   id: number;
@@ -121,7 +126,7 @@ describe('evaluateObjectives — secure', () => {
 });
 
 describe('regeneratePlayerWaypoints', () => {
-  it('pushes a focal waypoint for team-0 units with empty waypoints', () => {
+  it('routes team-0 units toward the focal zone via pathfinding', () => {
     const extractObj: ObjectiveRuntimeState = {
       id: 'x',
       kind: 'extract',
@@ -131,13 +136,16 @@ describe('regeneratePlayerWaypoints', () => {
       progressTicks: 0,
     };
     const units = mkUnitMap([mkUnit({ id: 1, teamId: 0, x: 0, y: 0 })]);
-    const out = regeneratePlayerWaypoints(units, [extractObj], 1);
+    const out = regeneratePlayerWaypoints(units, [extractObj], 1, TEST_WORLD);
     expect(out.size).toBe(1);
     const wps = out.get(asUnitId(1));
-    expect(wps?.length).toBe(1);
-    // Center of zone 10,10 to 14,14 (tile size 1m) → (12, 12).
-    expect(wps?.[0].x).toBeCloseTo(12);
-    expect(wps?.[0].y).toBeCloseTo(12);
+    expect(wps?.length).toBeGreaterThan(0);
+    // Last waypoint lands inside the focal zone rect (10..14, 10..14).
+    const last = wps?.[wps.length - 1];
+    expect(last?.x).toBeGreaterThanOrEqual(10);
+    expect(last?.x).toBeLessThanOrEqual(14);
+    expect(last?.y).toBeGreaterThanOrEqual(10);
+    expect(last?.y).toBeLessThanOrEqual(14);
   });
 
   it('skips units whose waypoints still have remaining points', () => {
@@ -155,7 +163,7 @@ describe('regeneratePlayerWaypoints', () => {
       extra: { waypoints: [{ x: 5, y: 5 }], waypointIndex: 0 },
     });
     const units = mkUnitMap([withWps]);
-    const out = regeneratePlayerWaypoints(units, [extractObj], 1);
+    const out = regeneratePlayerWaypoints(units, [extractObj], 1, TEST_WORLD);
     expect(out.size).toBe(0);
   });
 });
@@ -177,7 +185,7 @@ describe('focalPoint', () => {
 });
 
 describe('regenerateEnemyWaypoints', () => {
-  it('pushes the objective zone as an attacker waypoint for team 1', () => {
+  it('routes team-1 units toward the contested zone', () => {
     const obj: ObjectiveRuntimeState = {
       id: 'x',
       kind: 'secure',
@@ -186,12 +194,15 @@ describe('regenerateEnemyWaypoints', () => {
       status: 'active',
       progressTicks: 0,
     };
-    const units = mkUnitMap([mkUnit({ id: 2, teamId: 1, x: 100, y: 100 })]);
-    const out = regenerateEnemyWaypoints(units, [obj], 1, { x: 0, y: 0 });
+    // Position within the test world (32x32 tiles at 1m each).
+    const units = mkUnitMap([mkUnit({ id: 2, teamId: 1, x: 25, y: 25 })]);
+    const out = regenerateEnemyWaypoints(units, [obj], 1, { x: 0, y: 0 }, TEST_WORLD);
     expect(out.size).toBe(1);
     const wps = out.get(asUnitId(2));
-    expect(wps?.[0].x).toBeCloseTo(12);
-    expect(wps?.[0].y).toBeCloseTo(12);
+    expect(wps?.length).toBeGreaterThan(0);
+    const last = wps?.[wps.length - 1];
+    expect(last?.x).toBeGreaterThanOrEqual(10);
+    expect(last?.x).toBeLessThanOrEqual(14);
   });
 
   it('skips team-0 units', () => {
@@ -204,7 +215,7 @@ describe('regenerateEnemyWaypoints', () => {
       progressTicks: 0,
     };
     const units = mkUnitMap([mkUnit({ id: 1, teamId: 0, x: 0, y: 0 })]);
-    const out = regenerateEnemyWaypoints(units, [obj], 1, { x: 0, y: 0 });
+    const out = regenerateEnemyWaypoints(units, [obj], 1, { x: 0, y: 0 }, TEST_WORLD);
     expect(out.size).toBe(0);
   });
 });

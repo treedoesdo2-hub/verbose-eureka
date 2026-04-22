@@ -595,12 +595,14 @@ export function tick(state: SimState, rng: Rng): SimState {
     unitsAfterStress,
     nextObjectives,
     state.world.tileSizeMeters,
+    state.world,
   );
   const enemyWpRegens = regenerateEnemyWaypoints(
     unitsAfterStress,
     nextObjectives,
     state.world.tileSizeMeters,
     state.team0HomePos,
+    state.world,
   );
   let finalUnits = unitsAfterStress;
   if (playerWpRegens.size > 0 || enemyWpRegens.size > 0) {

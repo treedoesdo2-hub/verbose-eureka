@@ -102,6 +102,10 @@ export type World = {
   readonly tileSizeMeters: number;
   readonly terrain: Uint8Array;
   readonly groundHeight: Float32Array;
+  // Pillar A pathfinding — bit 0 is WALK_FOOT. Null on authored maps (the
+  // pathfinder falls back to terrainAt().passable when null). Populated
+  // from MapGenResult.walkability on procedurally-generated maps.
+  readonly walkability: Uint8Array | null;
 };
 
 export function makeWorld(
@@ -113,7 +117,7 @@ export function makeWorld(
   const terrain = new Uint8Array(width * height);
   terrain.fill(terrainToByte(fill));
   const groundHeight = new Float32Array(width * height);
-  return { width, height, tileSizeMeters, terrain, groundHeight };
+  return { width, height, tileSizeMeters, terrain, groundHeight, walkability: null };
 }
 
 // Build a World from a mapgen pipeline result — consumes the pre-baked
@@ -123,9 +127,10 @@ export function makeWorldFromBuffers(
   height: number,
   tileSizeMeters: number,
   terrain: Uint8Array,
+  walkability: Uint8Array | null = null,
 ): World {
   const groundHeight = new Float32Array(width * height);
-  return { width, height, tileSizeMeters, terrain, groundHeight };
+  return { width, height, tileSizeMeters, terrain, groundHeight, walkability };
 }
 
 export function tileIndex(world: World, x: number, y: number): number {

@@ -212,32 +212,41 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
     };
   }
 
-  // No visible threat — investigate heard noise (shooter firing from concealment, etc).
+  // No visible threat — investigate heard noise (shooter firing from
+  // concealment, etc). Skip allied noise entirely: teammates walking
+  // past shouldn't override our squad orders; only hostile noise is
+  // worth reacting to. And only heard *above* the investigate threshold
+  // drives the branch — low-confidence heard falls through to waypoint
+  // movement so the unit keeps advancing toward its objective.
   const heard = mostRecentHeard(unit, state.tick);
   if (heard) {
-    const { approxPos } = heard.heard;
-    const bearing =
-      heard.heard.bearing ??
-      Math.atan2(approxPos.y - unit.position.y, approxPos.x - unit.position.x);
-    const d = distance(unit.position.x, unit.position.y, approxPos.x, approxPos.y);
-    if (heard.heard.confidence >= HEARD_INVESTIGATE_MIN_CONFIDENCE && d > 1.5) {
+    const source = state.units.get(heard.sourceId);
+    const isAllied = source !== undefined && source.teamId === unit.teamId;
+    if (!isAllied && heard.heard.confidence >= HEARD_INVESTIGATE_MIN_CONFIDENCE) {
+      const { approxPos } = heard.heard;
+      const bearing =
+        heard.heard.bearing ??
+        Math.atan2(approxPos.y - unit.position.y, approxPos.x - unit.position.x);
+      const d = distance(unit.position.x, unit.position.y, approxPos.x, approxPos.y);
+      if (d > 1.5) {
+        return {
+          aiState: 'advance',
+          action: { kind: 'moving', target: approxPos },
+          currentTarget: null,
+          alerted: true,
+          advanceWaypoint: false,
+          extraFacing: bearing,
+        };
+      }
       return {
-        aiState: 'advance',
-        action: { kind: 'moving', target: approxPos },
+        aiState: 'hold',
+        action: { kind: 'idle' },
         currentTarget: null,
         alerted: true,
         advanceWaypoint: false,
         extraFacing: bearing,
       };
     }
-    return {
-      aiState: 'hold',
-      action: { kind: 'idle' },
-      currentTarget: null,
-      alerted: true,
-      advanceWaypoint: false,
-      extraFacing: bearing,
-    };
   }
 
   // No active contact — investigate last-seen if recent, else advance waypoint.

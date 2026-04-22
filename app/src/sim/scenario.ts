@@ -61,6 +61,7 @@ export function buildGeneratedMap(
     result.height,
     request.tileSizeMeters,
     result.terrain,
+    result.walkability,
   );
   const team0Spawns = sampleSpawns(result.deployZones.team0, spawnCount.team0);
   const team1Spawns = sampleSpawns(result.deployZones.team1, spawnCount.team1);
@@ -167,25 +168,30 @@ export function buildScenario(input: BuildScenarioInput): SimState {
   // already materialized in the world buffer via makeWorldFromBuffers at
   // buildGeneratedMap time. Fall back to the tile-list loader for authored
   // fixture maps (training-yard, test fixtures).
-  const world =
-    input.map.generationSeed !== undefined && input.map.tiles.length === 0
-      ? makeWorldFromBuffers(
-          input.map.width,
-          input.map.height,
-          input.map.tileSizeMeters,
-          // Tile buffer was produced at buildGeneratedMap; the authored path
-          // calls buildWorld. If a caller hands us a seed-tagged map with no
-          // upfront world, regenerate on the fly so the two paths stay
-          // interchangeable.
-          runPipeline({
-            seed: input.map.generationSeed,
-            biome: input.map.biome ?? 'mixed',
-            size: input.map.width,
-            tileSizeMeters: input.map.tileSizeMeters,
-            generationVersion: input.map.generationVersion ?? 1,
-          }).terrain,
-        )
-      : buildWorld(input.map);
+  let world: World;
+  if (input.map.generationSeed !== undefined && input.map.tiles.length === 0) {
+    // Tile buffer was produced at buildGeneratedMap; the authored path
+    // calls buildWorld. If a caller hands us a seed-tagged map with no
+    // upfront world, regenerate on the fly so the two paths stay
+    // interchangeable — and carry the walkability grid with it so the
+    // pathfinder has something to query.
+    const regen = runPipeline({
+      seed: input.map.generationSeed,
+      biome: input.map.biome ?? 'mixed',
+      size: input.map.width,
+      tileSizeMeters: input.map.tileSizeMeters,
+      generationVersion: input.map.generationVersion ?? 1,
+    });
+    world = makeWorldFromBuffers(
+      input.map.width,
+      input.map.height,
+      input.map.tileSizeMeters,
+      regen.terrain,
+      regen.walkability,
+    );
+  } else {
+    world = buildWorld(input.map);
+  }
   const units: Unit[] = [];
   let nextId = 1;
 

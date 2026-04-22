@@ -1,7 +1,9 @@
 import type { UnitId } from '@shared/ids';
+import { findPathMeters, simplifyPath } from './pathfinding';
 import type { ObjectiveRect, ObjectiveRuntimeState, ObjectiveStatus, SimEvent } from './state';
 import type { Unit, Vec2 } from './unit';
 import { canFight } from './unit';
+import type { World } from './world';
 
 function rectContainsUnit(zone: ObjectiveRect, unit: Unit, tileSizeMeters: number): boolean {
   const tx = Math.floor(unit.position.x / tileSizeMeters);
@@ -120,14 +122,28 @@ export function focalPoint(obj: ObjectiveRuntimeState, tileSizeMeters: number): 
 }
 
 /**
- * For player-side units (team 0) with no remaining waypoints, push a single
- * waypoint toward the primary objective's focal point so the AI doesn't
- * stand idle after combat finishes or waypoints are consumed.
+ * Produce an A*-routed path from `from` to `to` in world meters. If the
+ * world has no walkability grid (authored maps) or A* finds no route, falls
+ * back to the single straight-line waypoint so the BT keeps moving the
+ * unit. Path is simplified (collinear waypoints dropped) so the unit
+ * doesn't micro-correct through 100+ tile centers on straight stretches.
+ */
+function routedPath(world: World, from: Vec2, to: Vec2): Vec2[] {
+  const path = findPathMeters(world, from, to, { partial: true });
+  if (path.length === 0) return [to];
+  return simplifyPath(path);
+}
+
+/**
+ * For player-side units (team 0) with no remaining waypoints, route a path
+ * toward the primary objective's focal point so the AI doesn't stand idle
+ * after combat finishes or waypoints are consumed.
  */
 export function regeneratePlayerWaypoints(
   units: ReadonlyMap<UnitId, Unit>,
   objectives: readonly ObjectiveRuntimeState[],
   tileSizeMeters: number,
+  world: World,
 ): Map<UnitId, Vec2[]> {
   const out = new Map<UnitId, Vec2[]>();
   const primary = objectives[0];
@@ -136,23 +152,22 @@ export function regeneratePlayerWaypoints(
   for (const u of units.values()) {
     if (u.teamId !== 0 || !canFight(u)) continue;
     if (u.waypointIndex < u.waypoints.length) continue;
-    out.set(u.id, [focal]);
+    out.set(u.id, routedPath(world, u.position, focal));
   }
   return out;
 }
 
 /**
- * Team-1 (enemy) waypoint regen. Enemies counter the player's primary
- * objective — for secure/extract they converge on the same zone to contest
- * it; for defend they stay near their spawn (their held asset). Without
- * this, enemies on procedurally-generated maps spawn with zero waypoints
- * and the behavior tree terminal idles, which is why units stand still.
+ * Team-1 (enemy) waypoint regen, mirrors the player path. Extract/secure/
+ * defend all resolve to the objective zone center; the distinction lives
+ * in the player behavior (extract is "get in", defend is "hold").
  */
 export function regenerateEnemyWaypoints(
   units: ReadonlyMap<UnitId, Unit>,
   objectives: readonly ObjectiveRuntimeState[],
   tileSizeMeters: number,
   enemyHomePosMeters: Vec2 | null,
+  world: World,
 ): Map<UnitId, Vec2[]> {
   const out = new Map<UnitId, Vec2[]>();
   const primary = objectives[0];
@@ -170,7 +185,7 @@ export function regenerateEnemyWaypoints(
   for (const u of units.values()) {
     if (u.teamId !== 1 || !canFight(u)) continue;
     if (u.waypointIndex < u.waypoints.length) continue;
-    out.set(u.id, [target]);
+    out.set(u.id, routedPath(world, u.position, target));
   }
   return out;
 }
