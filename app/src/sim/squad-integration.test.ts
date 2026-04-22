@@ -151,11 +151,11 @@ describe('squad integration', () => {
       if (!m) continue;
       const d = Math.hypot(m.position.x - leader.position.x, m.position.y - leader.position.y);
       // Leader throttles speed when followers lag (squadCohesionPenalty),
-      // so the pairwise gap stays bounded. 20m ceiling — tight enough to
-      // prove the squad actually moves as a unit, loose enough to absorb
-      // terrain detours where a member has to route around a building
-      // the leader walked past. Pre-throttle the gap blew past 24m.
-      expect(d).toBeLessThan(20);
+      // AND followers now pathfind around buildings (hasLineOfWalk →
+      // A* fallback) instead of pinning against walls. Between the two,
+      // the pairwise gap stays well inside 15m on the urban fixture.
+      // Pre-throttle: >24m; pre-pathfind-follow: ~20m; now <15m.
+      expect(d).toBeLessThan(15);
     }
   });
 
