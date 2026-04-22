@@ -237,3 +237,78 @@ Each pillar surfaced exactly one question where I need a call from you before I 
 
 Agent recommendation: (A) for MVP, (B) as a schema-compatible follow-up. But the call needs to be made once, before schema churn starts, or backfill happens twice.
 
+---
+
+## Addendum 2 — Decisions locked (2026-04-21, user directives)
+
+### A. Map size: 4096 × 4096 tiles. Firefight scale direct match.
+
+Directive: "do the same size map as firefight. I wasnt asking."
+
+- `GameMap.width/height` max raised from 2048 → **4096**. Current schema ceiling is insufficient.
+- Quality floor: every seed must produce a map comparable in content and coherence to a hand-authored Firefight map. Not "inspired by" — comparable. Sparse/incoherent seeds are bugs.
+- Combat-system downstream consequences (longer effective ranges, units spawning at distance, match duration extension) are acknowledged and deferred to implementation — they're not license to shrink the map.
+- Reference for proven procgen-at-authored-quality: **Rimworld** (install path pending user confirmation). The generator agent will inspect Rimworld's biome-painter/terrain-feature/POI-scatter pipeline once located.
+
+### B. Objective runtime state: inside `SimState`.
+
+Directive: user's choice, take it. Taken.
+
+- `state.objectives: Map<ObjectiveId, ObjectiveRuntimeState>` mutated between perception and BT passes.
+- Included in the determinism hash, save/load, replay.
+- `ObjectiveDriver` reads `state` directly and pushes waypoints onto units whose queue is empty.
+
+### C. Success is binary at the game layer; economic judgement is the player's.
+
+Directive: "Success comes from achieving the main objective — so far as the game declares it. For the player, i'm sure the true success thresholds will ultimately be determined on payout and cost."
+
+- The game does NOT estimate `P(success)`. No Monte Carlo, no skull-rating probability math, no authored success number.
+- Match success = primary objective complete. One boolean.
+- Briefing screen surfaces: payout composition (cash / salvage / rep / bonus), deploy cost composition (fixed contract + per-operator variable), opposition intel (force composition, est. count, equipment indicators), committed-force readout (your assigned operators' equivalent summary). Player reads the sheet and decides.
+- **Strike** from the schema: any `estimatedSuccessProbability`, `difficultyToWinRate` mapping, authored probability field.
+- **Keep** `difficultyRating` (1–5) as an authored flavor indicator only — for player pattern-matching, not mechanical computation.
+
+### D. Loadout model: MWO MechLab ported directly to infantry.
+
+Directive: "I told you to use the MWO style... heavy body armor would take crit slots of, the entire torso, some of the arms and waist, depending. Things like ammo count and grenade support are determined by the equipped vest."
+
+This replaces the tag-vs-container framing in §Addendum-1 Pillar D. That framing was wrong on both sides — the correct answer is the MWO model applied unchanged.
+
+**Body = chassis.** The operator's body type declares, per zone:
+- **Crit slot capacity** (fixed integer — head=6, torso_front=10, torso_back=10, left/right_arm=8, left/right_hand=2, waist=6, left/right_leg=6, back_mount=8, with fixed-component reservations in some — numbers to be pinned during implementation against spec/06's Part 2 table).
+- **Hardpoint topology** — what attachment types exist where (plate-mount on torso zones, grip on hands, pouch-mount on waist/rig, comms-mount on head, etc.). Declared at body-type level; variants of body types (augmented, cyber, standard) can differ.
+- **Fixed components** — slots that are present but locked. Hand's grip slot is always there. Head's comms-mount is always there. These appear grayed in the editor.
+
+**Items span multiple zones via crit-slot footprint.** A single "Heavy Body Armor" item has a footprint like `{ torso_front: 4, torso_back: 4, left_arm: 1, right_arm: 1, waist: 2 }`. Equipping it consumes those slots simultaneously across all listed zones; un-equipping frees them all. This matches MWO's XL engine (3 CT + 3 LT + 3 RT) and Endo-Steel (14 slots spread across all 8 locations).
+
+**Items declare their hardpoint needs.** A plate carrier needs plate-mount hardpoints on torso_front AND torso_back. If the body doesn't expose those hardpoints, the item can't equip — same way you can't mount a ballistic weapon on a chassis with no ballistic hardpoints.
+
+**Ammo / grenades / medkits are separate items consumed from shared pools.** This is MWO's ammo-bin semantics ported directly:
+- A "rifle magazine (7.62)" item occupies **1 crit slot** somewhere on the body (waist, rig pouch, back, whatever has a compatible hardpoint and free capacity).
+- Each mag bin contributes to a **global operator-level pool** of its ammo type (e.g., `rifle_7_62: 30 rounds per bin × N bins`).
+- Weapons at fire-time draw from these pools; MWO's serialized consumption order (head → CT → RT → LT → LA → RA → LL → RL) ports naturally to a zone-ordered draw (waist first, torso rig second, back last, etc. — to be pinned).
+- Bin destruction on wounds → ammo loss + small splash damage (CASE analogue = "armored ammo pouches" as a gear variant, later).
+- Grenade-bin and medkit-bin items work the same way against their pools.
+
+**"Equipped vest determines ammo count"** = the vest's multi-zone crit footprint dictates how many crit slots remain across the body for ammo bins to occupy, AND the vest's declared hardpoints dictate what kind of bins can attach. A light rig leaves lots of crit slots free but its hardpoints limit most of them to pouch-compatible bins only (mags, grenades, medkits) — no weapon mounts on a rig. A plate carrier consumes more crit slots globally but its hardpoints enable plate-mounts, rifle-sling on back, and pouch-mount on the cummerbund.
+
+**Constraint stack (all must pass):**
+1. **Global kg** (encumbrance threshold — soft: penalties to move/aim; hard: can't equip).
+2. **Per-zone crit slots** (item footprint sum ≤ zone capacity for every zone the item touches).
+3. **Per-zone hardpoint topology** (item's declared hardpoint needs must be satisfiable by what the body exposes there).
+4. **Fixed components** (certain slots are pre-reserved and the item must not conflict).
+
+**What this kills from earlier proposals:**
+- The tag-only / container-within-container framing — both wrong. Items just have multi-zone crit footprints and declared hardpoint needs.
+- The `HardpointType` enum in `schema/common.ts:59` (too narrow) is replaced by a hardpoint-topology declaration on body types.
+- The per-zone item-count dropdown UI in `armory.tsx` — the visible surface now is slot columns and an inventory panel, same as MWO's expanded MechLab.
+
+**Schema ripples (the minimum diff):**
+- `BodyType` schema: per-zone `{ critSlots: N, hardpoints: [{kind, count}], fixedComponents: [{slot, kind}] }`.
+- `LoadoutItem` gains `critFootprint: Partial<Record<BodyZone, number>>` and `hardpointNeeds: [{zone, kind}]`.
+- New `AmmoBin` / `GrenadeBin` / `UtilityBin` schemas with `ammoType`, `capacity`, `occupiesCritSlots: 1`.
+- New `OperatorPools` derived state: `{ rifle_7_62: N, pistol_9mm: M, frag_grenade: K, ... }` computed from equipped bins at loadout-validate time.
+- Weapons declare `drawsFromPool: AmmoType` — their `.magazineSize` becomes the cap on individual-reload, total carry comes from the pool.
+
+**Spec/06 amendment needed** — the central-mechanic P1 spec gets the MWO-port nailed down explicitly (it currently hedges between paradigm A infantry and paradigm B chassis; the answer is "both paradigms use MWO-style constraint satisfaction, just with different zone geometries and hardpoint vocabularies").
+
