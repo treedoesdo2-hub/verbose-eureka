@@ -7,16 +7,24 @@ import type { MapGenRequest, ObjectiveAnchor } from './types';
 // Pillar A: derive a MapGenRequest from a Contract. Honors contract-authored
 // biomeHint + sizeHint; falls back to a heuristic based on faction + objective
 // mix when unset.
+//
+// `runSeed` (optional) mixes a per-playthrough seed into the map seed so the
+// same contract yields a fresh map on every Deploy. Omit it (or pass undefined)
+// to get the stable contract-only seed — used by tests that want
+// deterministic fixtures and by UI contexts that don't yet know the
+// playthrough seed.
 export function mapGenRequestFromContract(
   contract: Contract,
   tileSizeMeters: number,
   generationVersion: number,
+  runSeed?: number | string,
 ): MapGenRequest {
   const mods = contract.modifiers;
   const biome = mods.biomeHint ?? pickBiomeHeuristic(contract);
   const size = CONTRACT_SIZE_TILES[mods.sizeHint];
+  const seed = runSeed !== undefined ? `${contract.id}:${runSeed}` : contract.id;
   return {
-    seed: contract.id,
+    seed,
     biome,
     size,
     tileSizeMeters,

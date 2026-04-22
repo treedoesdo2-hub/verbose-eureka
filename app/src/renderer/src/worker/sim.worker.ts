@@ -115,9 +115,13 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
     | undefined;
   if (contract.modifiers.biomeHint !== null) {
     const deployments = buildDeployments(req);
-    const genReq = mapGenRequestFromContract(contract, 1.5, 1);
+    // Mix the playthrough seed into the map seed so every Deploy
+    // produces a fresh map for the same contract. Without this the
+    // seed was `contract.id`, making every run of yard-assault play on
+    // the identical map.
+    const genReq = mapGenRequestFromContract(contract, 1.5, 1, seed);
     const enemyCount = contract.enemies.archetypes.reduce((sum, a) => sum + a.count, 0);
-    const gen = buildGeneratedMap(genReq, contract.name, `gen:${contract.id}`, {
+    const gen = buildGeneratedMap(genReq, contract.name, `gen:${genReq.seed}`, {
       team0: Math.max(1, deployments.length),
       team1: Math.max(1, enemyCount),
     });

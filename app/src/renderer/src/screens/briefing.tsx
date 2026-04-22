@@ -33,11 +33,13 @@ export function Briefing(): React.JSX.Element {
     [squadMap, order],
   );
 
-  // COA-4 briefing preview — regenerate the map once for this contract so
-  // both the preview thumbnail and the briefing text interpolation share
-  // the same heroLandmark. Keyed on contractId so switching contracts
-  // regenerates cleanly.
-  const preview = useMapPreview(contract?.id ?? null);
+  // Every briefing mount (or contract switch) rolls a fresh playthrough
+  // seed. The preview thumbnail and the actual Deploy launch share this
+  // seed so what the player sees is what they get — otherwise the map
+  // rolled at briefing-preview time and the map rolled at sim-start time
+  // were decoupled and could differ.
+  const previewSeed = useMemo(() => Date.now() & 0xffff, [contract?.id]);
+  const preview = useMapPreview(contract?.id ?? null, previewSeed);
 
   const initialSlotCount = contract
     ? Math.min(4, contract.modifiers.extractionSeats ?? 4, contract.maxOperators ?? 4)
@@ -136,7 +138,10 @@ export function Briefing(): React.JSX.Element {
     }
 
     const bridge = getSimBridge();
-    const seed = Date.now() & 0xffff;
+    // Use the previewSeed so the launched match plays the map the player
+    // just inspected in the preview. startSim's seed is both the sim RNG
+    // seed AND the map-gen runSeed via mapGenRequestFromContract.
+    const seed = previewSeed;
     bridge.send({
       type: 'startSim',
       payload: {
@@ -154,7 +159,7 @@ export function Briefing(): React.JSX.Element {
       },
     });
     go('deploy');
-  }, [contract, assignedSquads, go]);
+  }, [contract, assignedSquads, go, previewSeed]);
 
   const hotkeys = useMemo(
     () => [
@@ -479,7 +484,7 @@ type MapPreview = {
   readonly height: number;
 };
 
-function useMapPreview(contractId: string | null): MapPreview | null {
+function useMapPreview(contractId: string | null, runSeed: number): MapPreview | null {
   const [preview, setPreview] = useState<MapPreview | null>(null);
   const bundle = getContent();
   useEffect(() => {
@@ -492,8 +497,12 @@ function useMapPreview(contractId: string | null): MapPreview | null {
       setPreview(null);
       return;
     }
-    const req = mapGenRequestFromContract(contract, 1.5, 1);
-    const result = runPipeline({ ...req, size: Math.min(req.size, 96) });
+    // Run the pipeline at the *full* contract size so the thumbnail is
+    // a faithful downsample of the actual map the scenario will load —
+    // not a small map at the same seed, which the pipeline's RNG-per-
+    // tile loops would make visually unrelated.
+    const req = mapGenRequestFromContract(contract, 1.5, 1, runSeed);
+    const result = runPipeline(req);
     const thumb = renderThumbnail(result, 96, { tier: 'briefing' });
     setPreview({
       landmark: result.heroLandmark,
@@ -501,7 +510,7 @@ function useMapPreview(contractId: string | null): MapPreview | null {
       width: thumb.width,
       height: thumb.height,
     });
-  }, [contractId, bundle]);
+  }, [contractId, bundle, runSeed]);
   return preview;
 }
 
