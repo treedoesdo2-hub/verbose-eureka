@@ -20,7 +20,9 @@
   "difficultyRating": 3,
   "modifiers": {
     "extractionSeats": 8,
-    "requiredRoleTags": []
+    "requiredRoleTags": [],
+    "biomeHint": "urban_sparse",
+    "sizeHint": "medium"
   },
   "briefing": "Second contract on the yard. Bigger crew, heavier gear. A veteran LMG and a heavy rifleman are dug in with the usual rabble.",
   "objectives": [

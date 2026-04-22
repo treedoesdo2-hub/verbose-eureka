@@ -1,10 +1,11 @@
 import type { RendererToWorker, ScenarioRequest, WorkerToRenderer } from '@shared/messages';
 import type { ContentLookup, Loadout } from '@sim/loadout';
 import { loadoutFromTemplate } from '@sim/loadout';
+import { mapGenRequestFromContract } from '@sim/mapgen/contract-binder';
 import { MatchStatsAccumulator } from '@sim/match-stats';
 import { RecordingSim } from '@sim/replay';
 import type { ScenarioDeployment } from '@sim/scenario';
-import { buildScenario } from '@sim/scenario';
+import { buildGeneratedMap, buildScenario } from '@sim/scenario';
 import { snapshotState, snapshotWorld } from '@sim/snapshot';
 import type { SimState } from '@sim/state';
 import type { UnitStats } from '@sim/unit';
@@ -68,12 +69,34 @@ function buildDeployments(req: ScenarioRequest): ScenarioDeployment[] {
 
 function startSim(seed: number, req: ScenarioRequest): SimState | null {
   const contract = bundle.contracts.get(req.contractId);
-  const map = bundle.maps.get(req.mapId);
   const faction = contract && bundle.factions.get(contract.enemies.factionId);
-  if (!contract || !map || !faction) {
-    post({ type: 'error', message: 'scenario: missing content' });
+  if (!contract || !faction) {
+    post({ type: 'error', message: 'scenario: missing contract/faction' });
     return null;
   }
+
+  // Pillar A: contracts with a biomeHint generate a procedural map from the
+  // contract seed. Contracts without the hint keep using the authored map
+  // from the content pack.
+  let map: Parameters<typeof buildScenario>[0]['map'];
+  if (contract.modifiers.biomeHint !== null) {
+    const deployments = buildDeployments(req);
+    const genReq = mapGenRequestFromContract(contract, 1.5, 1);
+    const enemyCount = contract.enemies.archetypes.reduce((sum, a) => sum + a.count, 0);
+    const gen = buildGeneratedMap(genReq, contract.name, `gen:${contract.id}`, {
+      team0: Math.max(1, deployments.length),
+      team1: Math.max(1, enemyCount),
+    });
+    map = gen.map;
+  } else {
+    const authored = bundle.maps.get(req.mapId);
+    if (!authored) {
+      post({ type: 'error', message: 'scenario: missing authored map' });
+      return null;
+    }
+    map = authored;
+  }
+
   const state = buildScenario({
     seed,
     contract,
