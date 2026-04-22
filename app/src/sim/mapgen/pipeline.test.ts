@@ -87,6 +87,17 @@ describe('mapgen pipeline', () => {
     expect(r.terrain.length).toBe(512 * 512);
   });
 
+  it('scales to 1024 within a generous per-gen budget', () => {
+    const t0 = performance.now();
+    const r = runPipeline(req({ size: 1024 }));
+    const elapsed = performance.now() - t0;
+    expect(r.width).toBe(1024);
+    expect(r.terrain.length).toBe(1024 * 1024);
+    // Generous ceiling — one-shot pre-match cost, not per-frame. Bail loud
+    // if something regresses into seconds-per-tile territory.
+    expect(elapsed).toBeLessThan(10000);
+  });
+
   it('guarantees reachability between team0 and team1 deploy zones for 20 seeds', () => {
     const seeds = Array.from({ length: 20 }, (_, i) => `reach-seed-${i}`);
     const biomes: Array<'urban_sparse' | 'rural_open' | 'mixed'> = [

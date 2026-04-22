@@ -1,7 +1,10 @@
 import type { Operator } from '@schema/operator';
 import type { ScenarioRequest, WireLoadout } from '@shared/messages';
 import { computeNetEconomics } from '@sim/contract-economics';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { mapGenRequestFromContract } from '@sim/mapgen/contract-binder';
+import { runPipeline } from '@sim/mapgen/pipeline';
+import { generateThumbnail } from '@sim/mapgen/thumbnail';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getContent } from '../content';
 import { useHotkeys } from '../hooks/useHotkeys';
 import { getSimBridge } from '../sim-bridge';
@@ -198,7 +201,19 @@ export function Briefing(): React.JSX.Element {
           <dt>briefing</dt>
           <dd className="briefing-narrative">{contract.briefing}</dd>
           <dt>map</dt>
-          <dd className="mono">{bundle.maps.get(contract.mapId)?.name ?? contract.mapId}</dd>
+          <dd className="mono">
+            {contract.modifiers.biomeHint !== null
+              ? `procedural · ${contract.modifiers.biomeHint} · ${contract.modifiers.sizeHint}`
+              : (bundle.maps.get(contract.mapId)?.name ?? contract.mapId)}
+          </dd>
+          {contract.modifiers.biomeHint !== null ? (
+            <>
+              <dt>preview</dt>
+              <dd>
+                <MapThumbnailPreview contractId={contract.id} />
+              </dd>
+            </>
+          ) : null}
           <dt>team size</dt>
           <dd className="mono">
             {contract.minOperators}–{contract.maxOperators ?? '∞'} operators
@@ -431,5 +446,38 @@ export function Briefing(): React.JSX.Element {
         </div>
       </section>
     </div>
+  );
+}
+
+function MapThumbnailPreview({ contractId }: { contractId: string }): React.JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const bundle = getContent();
+  const contract = bundle.contracts.get(contractId);
+
+  useEffect(() => {
+    if (!contract || contract.modifiers.biomeHint === null) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const req = mapGenRequestFromContract(contract, 1.5, 1);
+    // Small size so the thumbnail render is near-instant.
+    const result = runPipeline({ ...req, size: Math.min(req.size, 96) });
+    const thumb = generateThumbnail(result, 96);
+    canvas.width = thumb.width;
+    canvas.height = thumb.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const imageData = ctx.createImageData(thumb.width, thumb.height);
+    imageData.data.set(thumb.pixels);
+    ctx.putImageData(imageData, 0, 0);
+  }, [contract]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="map-thumbnail"
+      width={96}
+      height={96}
+      style={{ imageRendering: 'pixelated', width: 192, height: 192 }}
+    />
   );
 }
