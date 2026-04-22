@@ -8,9 +8,29 @@ import { Id } from './common';
 export const ObjectiveKind = z.enum(['eliminate', 'extract', 'defend', 'secure']);
 export type ObjectiveKind = z.infer<typeof ObjectiveKind>;
 
+export const ObjectiveZone = z.object({
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+  w: z.number().int().positive(),
+  h: z.number().int().positive(),
+});
+export type ObjectiveZone = z.infer<typeof ObjectiveZone>;
+
+export const ObjectiveParams = z
+  .object({
+    targetTeamId: z.number().int().nonnegative().optional(),
+    zone: ObjectiveZone.optional(),
+    minUnitsInside: z.number().int().positive().optional(),
+    holdTicks: z.number().int().positive().optional(),
+  })
+  .optional();
+export type ObjectiveParams = z.infer<typeof ObjectiveParams>;
+
 export const ContractObjective = z.object({
+  id: z.string().min(1),
   kind: ObjectiveKind,
   description: z.string().min(1),
+  params: ObjectiveParams,
 });
 
 export const EnemyComposition = z.object({

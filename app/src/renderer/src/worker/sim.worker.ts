@@ -110,7 +110,11 @@ function startLoop(): void {
         const final = sim.current();
         const endReason = final.endReason;
         const winner =
-          endReason === 'team-1-defeated' ? 0 : endReason === 'team-0-defeated' ? 1 : null;
+          endReason === 'primary-complete' || endReason === 'team-1-defeated'
+            ? 0
+            : endReason === 'primary-failed' || endReason === 'team-0-defeated'
+              ? 1
+              : null;
         const finalStats = stats
           ? stats.finalize(final.tick)
           : { totalTicks: final.tick, perUnit: [], highlights: [] };

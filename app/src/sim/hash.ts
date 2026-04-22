@@ -100,5 +100,13 @@ export function hashState(state: SimState): string {
     }
   }
 
+  h.u32(state.objectives.length);
+  for (const obj of state.objectives) {
+    h.str(obj.id);
+    h.str(obj.kind);
+    h.str(obj.status);
+    h.u32(obj.progressTicks);
+  }
+
   return h.digest();
 }

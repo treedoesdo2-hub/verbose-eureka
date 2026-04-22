@@ -2,6 +2,7 @@ import type {
   SimSnapshot,
   SnapshotEvent,
   SnapshotLastHeard,
+  SnapshotObjective,
   SnapshotUnit,
   WorldSnapshot,
 } from '@shared/snapshot';
@@ -101,8 +102,31 @@ export function snapshotState(state: SimState): SimSnapshot {
         noiseKind: e.noiseKind,
         tick: e.tick,
       });
+    } else if (e.kind === 'objective-status-changed') {
+      snapshotEvents.push({
+        kind: 'objective-status-changed',
+        objectiveId: e.objectiveId,
+        from: e.from,
+        to: e.to,
+        tick: e.tick,
+      });
     }
   }
+
+  const objectives: SnapshotObjective[] = state.objectives.map((o) => {
+    const hasZone = o.params.kind !== 'eliminate';
+    const holdTicks =
+      o.params.kind === 'defend' || o.params.kind === 'secure' ? o.params.holdTicks : null;
+    return {
+      id: o.id,
+      kind: o.kind,
+      description: o.description,
+      status: o.status,
+      progressTicks: o.progressTicks,
+      holdTicks,
+      zone: hasZone ? o.params.zone : null,
+    };
+  });
 
   return {
     tick: state.tick,
@@ -110,6 +134,7 @@ export function snapshotState(state: SimState): SimSnapshot {
     endReason: state.endReason,
     units,
     events: snapshotEvents,
+    objectives,
   };
 }
 

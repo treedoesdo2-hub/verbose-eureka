@@ -1,4 +1,5 @@
 import type { BodyZone } from '@schema/common';
+import type { ObjectiveKind } from '@schema/contract';
 import type { UnitId } from '@shared/ids';
 import type { NoiseKind } from './noise';
 import type { RngSnapshot } from './rng';
@@ -11,6 +12,24 @@ export const SIM_DT = 1 / SIM_HZ;
 export type ShotOutcomeKind = 'wound' | 'block' | 'miss';
 export type ShotMissReason = 'accuracy' | 'cover' | 'range';
 export type DownedCause = 'bleedout' | 'combat';
+
+export type ObjectiveStatus = 'active' | 'complete' | 'failed';
+export type ObjectiveRect = { x: number; y: number; w: number; h: number };
+
+export type ObjectiveRuntimeParams =
+  | { kind: 'eliminate'; targetTeamId: number }
+  | { kind: 'extract'; zone: ObjectiveRect; minUnitsInside: number }
+  | { kind: 'defend'; zone: ObjectiveRect; holdTicks: number }
+  | { kind: 'secure'; zone: ObjectiveRect; holdTicks: number };
+
+export type ObjectiveRuntimeState = {
+  readonly id: string;
+  readonly kind: ObjectiveKind;
+  readonly description: string;
+  readonly params: ObjectiveRuntimeParams;
+  readonly status: ObjectiveStatus;
+  readonly progressTicks: number;
+};
 
 export type SimEvent =
   | { kind: 'unit-spawned'; unitId: UnitId; tick: number }
@@ -34,7 +53,14 @@ export type SimEvent =
   | { kind: 'unit-pinned'; unitId: UnitId; tick: number }
   | { kind: 'unit-broke'; unitId: UnitId; tick: number }
   | { kind: 'unit-rallied'; unitId: UnitId; tick: number }
-  | { kind: 'noise-emitted'; sourceUnitId: UnitId; pos: Vec2; noiseKind: NoiseKind; tick: number };
+  | { kind: 'noise-emitted'; sourceUnitId: UnitId; pos: Vec2; noiseKind: NoiseKind; tick: number }
+  | {
+      kind: 'objective-status-changed';
+      objectiveId: string;
+      from: ObjectiveStatus;
+      to: ObjectiveStatus;
+      tick: number;
+    };
 
 export type SimState = {
   readonly tick: number;
@@ -43,6 +69,7 @@ export type SimState = {
   readonly units: ReadonlyMap<UnitId, Unit>;
   readonly events: readonly SimEvent[];
   readonly nextWoundId: number;
+  readonly objectives: readonly ObjectiveRuntimeState[];
   readonly ended: boolean;
   readonly endReason?: string;
 };

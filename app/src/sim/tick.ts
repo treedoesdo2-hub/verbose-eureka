@@ -5,8 +5,9 @@ import { perceive } from './ai/perception';
 import { updateLastHeard } from './hearing';
 import { resolveShot } from './hit';
 import { FOOTSTEP_EMIT_EVERY_TICKS, type NoiseKind } from './noise';
+import { evaluateObjectives, regeneratePlayerWaypoints } from './objectives';
 import { Rng } from './rng';
-import { SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
+import { type ObjectiveRuntimeState, SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
 import type { LastSeen, Stance, Unit, UnitAction, Vec2, Wound } from './unit';
 import {
   BLOODOUT_THRESHOLD,
@@ -537,12 +538,52 @@ export function tick(state: SimState, rng: Rng): SimState {
     mergePatch(patches, unit.id, { lastHeard: nextHeard });
   }
 
-  const finalUnits = applyPatches({ ...state, units: postAction }, patches);
+  const unitsAfterStress = applyPatches({ ...state, units: postAction }, patches);
+
+  // Evaluate objectives against the tick's final unit state.
+  const { objectives: nextObjectives, events: objEvents } = evaluateObjectives(
+    state.objectives,
+    unitsAfterStress,
+    state.world.tileSizeMeters,
+    state.tick,
+  );
+  events.push(...objEvents);
+
+  // Regenerate player-side waypoints when objectives point to a focal zone.
+  const wpRegens = regeneratePlayerWaypoints(
+    unitsAfterStress,
+    nextObjectives,
+    state.world.tileSizeMeters,
+  );
+  let finalUnits = unitsAfterStress;
+  if (wpRegens.size > 0) {
+    const nextMap = new Map(unitsAfterStress);
+    for (const [id, wps] of wpRegens) {
+      const u = nextMap.get(id);
+      if (!u) continue;
+      nextMap.set(id, { ...u, waypoints: wps, waypointIndex: 0 });
+    }
+    finalUnits = nextMap;
+  }
 
   const team0Alive = [...finalUnits.values()].some((u) => u.teamId === 0 && canFight(u));
   const team1Alive = [...finalUnits.values()].some((u) => u.teamId === 1 && canFight(u));
-  const ended = !team0Alive || !team1Alive;
-  const endReason = !team0Alive ? 'team-0-defeated' : !team1Alive ? 'team-1-defeated' : undefined;
+  const primary = nextObjectives[0];
+  let ended = false;
+  let endReason: string | undefined;
+  if (primary && primary.status === 'complete') {
+    ended = true;
+    endReason = 'primary-complete';
+  } else if (primary && primary.status === 'failed') {
+    ended = true;
+    endReason = 'primary-failed';
+  } else if (!team0Alive) {
+    ended = true;
+    endReason = 'team-0-defeated';
+  } else if (!team1Alive) {
+    ended = true;
+    endReason = 'team-1-defeated';
+  }
 
   return {
     tick: state.tick + 1,
@@ -551,6 +592,7 @@ export function tick(state: SimState, rng: Rng): SimState {
     units: finalUnits,
     events,
     nextWoundId,
+    objectives: nextObjectives,
     ended,
     endReason,
   };
@@ -560,6 +602,7 @@ export function makeInitialState(
   world: SimState['world'],
   seed: number,
   units: Iterable<Unit>,
+  objectives: readonly ObjectiveRuntimeState[] = [],
 ): SimState {
   const rng = new Rng(seed);
   const unitMap = new Map<UnitId, Unit>();
@@ -571,6 +614,7 @@ export function makeInitialState(
     units: unitMap,
     events: [],
     nextWoundId: 1,
+    objectives,
     ended: false,
   };
 }

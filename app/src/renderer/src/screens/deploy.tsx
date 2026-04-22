@@ -103,6 +103,13 @@ export function Deploy(): React.JSX.Element {
     snapshot?.units.filter((u) => u.teamId === 1 && u.actionKind !== 'dead').length ?? 0;
 
   const hudObjectives = useMemo<readonly HudObjective[]>(() => {
+    if (snapshot?.objectives && snapshot.objectives.length > 0) {
+      return snapshot.objectives.map((o) => ({
+        kind: o.kind,
+        description: o.description,
+        status: o.status,
+      }));
+    }
     if (!contractId) return [];
     const bundle = getContent();
     const contract = bundle.contracts.get(contractId);
@@ -112,7 +119,7 @@ export function Deploy(): React.JSX.Element {
       description: o.description,
       status: 'active' as const,
     }));
-  }, [contractId]);
+  }, [snapshot, contractId]);
 
   return (
     <div className="deploy-layout">

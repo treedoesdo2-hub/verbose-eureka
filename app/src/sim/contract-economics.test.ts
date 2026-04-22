@@ -24,7 +24,7 @@ function contract(overrides: Partial<Contract> = {}): Contract {
     difficultyRating: 2,
     modifiers: { extractionSeats: 4, requiredRoleTags: [] },
     briefing: 'b',
-    objectives: [{ kind: 'eliminate', description: 'go' }],
+    objectives: [{ id: 'obj', kind: 'eliminate', description: 'go' }],
     enemies: { factionId: 'f', archetypes: [{ archetype: 'a', count: 1 }] },
     minOperators: 1,
     maxOperators: 4,

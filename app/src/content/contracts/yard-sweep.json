@@ -25,6 +25,7 @@
   "briefing": "Blackstar has been staging raids out of an abandoned training yard. Go clean it out. Light opposition expected — four runners, maybe a gunner.",
   "objectives": [
     {
+      "id": "obj-eliminate",
       "kind": "eliminate",
       "description": "Eliminate all Blackstar operatives on the training yard"
     }

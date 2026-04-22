@@ -5,7 +5,7 @@ import type { LoadoutTemplate } from '@schema/template';
 import { asUnitId, type UnitId } from '@shared/ids';
 import type { ContentLookup, Loadout } from './loadout';
 import { deriveCombatProfile, loadoutFromTemplate } from './loadout';
-import type { SimState } from './state';
+import type { ObjectiveRuntimeState, SimState } from './state';
 import { makeInitialState } from './tick';
 import type { Unit, UnitStats, Vec2 } from './unit';
 import { DEFAULT_STATS, makeUnit } from './unit';
@@ -64,6 +64,49 @@ function roleFromTemplate(
   const t = templates.get(templateId);
   if (!t) return 'rifleman';
   return t.role === 'sidearm-only' ? 'rifleman' : t.role;
+}
+
+function translateObjectives(contract: Contract): ObjectiveRuntimeState[] {
+  const out: ObjectiveRuntimeState[] = [];
+  for (const o of contract.objectives) {
+    const p = o.params ?? {};
+    if (o.kind === 'eliminate') {
+      out.push({
+        id: o.id,
+        kind: o.kind,
+        description: o.description,
+        params: { kind: 'eliminate', targetTeamId: p.targetTeamId ?? 1 },
+        status: 'active',
+        progressTicks: 0,
+      });
+      continue;
+    }
+    if (!p.zone) {
+      console.warn(`objective ${o.id} of kind ${o.kind} missing params.zone; skipping`);
+      continue;
+    }
+    if (o.kind === 'extract') {
+      out.push({
+        id: o.id,
+        kind: o.kind,
+        description: o.description,
+        params: { kind: 'extract', zone: p.zone, minUnitsInside: p.minUnitsInside ?? 1 },
+        status: 'active',
+        progressTicks: 0,
+      });
+    } else {
+      // defend / secure
+      out.push({
+        id: o.id,
+        kind: o.kind,
+        description: o.description,
+        params: { kind: o.kind, zone: p.zone, holdTicks: p.holdTicks ?? 300 },
+        status: 'active',
+        progressTicks: 0,
+      });
+    }
+  }
+  return out;
 }
 
 export function buildScenario(input: BuildScenarioInput): SimState {
@@ -134,7 +177,7 @@ export function buildScenario(input: BuildScenarioInput): SimState {
     }
   }
 
-  return makeInitialState(world, input.seed, units);
+  return makeInitialState(world, input.seed, units, translateObjectives(input.contract));
 }
 
 export function autoDeploy(

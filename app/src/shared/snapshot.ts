@@ -70,6 +70,13 @@ export type SnapshotEvent =
   | { kind: 'unit-broke'; unitId: number; tick: number }
   | { kind: 'unit-rallied'; unitId: number; tick: number }
   | {
+      kind: 'objective-status-changed';
+      objectiveId: string;
+      from: SnapshotObjectiveStatus;
+      to: SnapshotObjectiveStatus;
+      tick: number;
+    }
+  | {
       kind: 'noise-emitted';
       sourceUnitId: number;
       x: number;
@@ -78,12 +85,26 @@ export type SnapshotEvent =
       tick: number;
     };
 
+export type SnapshotObjectiveStatus = 'active' | 'complete' | 'failed';
+export type SnapshotObjectiveKind = 'eliminate' | 'extract' | 'defend' | 'secure';
+
+export type SnapshotObjective = {
+  readonly id: string;
+  readonly kind: SnapshotObjectiveKind;
+  readonly description: string;
+  readonly status: SnapshotObjectiveStatus;
+  readonly progressTicks: number;
+  readonly holdTicks: number | null;
+  readonly zone: { x: number; y: number; w: number; h: number } | null;
+};
+
 export type SimSnapshot = {
   readonly tick: number;
   readonly ended: boolean;
   readonly endReason?: string;
   readonly units: readonly SnapshotUnit[];
   readonly events: readonly SnapshotEvent[];
+  readonly objectives: readonly SnapshotObjective[];
 };
 
 export type SerializedWorld = {
