@@ -20,7 +20,7 @@ export function ContractBoard(): React.JSX.Element {
           <div key={c.id} className="contract-card">
             <header>
               <span className="title">{c.name}</span>
-              <span className="pay mono">{c.payout.toLocaleString()} cr</span>
+              <span className="pay mono">{c.payout.cash.toLocaleString()} cr</span>
             </header>
             <p className="briefing">{c.briefing}</p>
             <dl>
@@ -28,8 +28,24 @@ export function ContractBoard(): React.JSX.Element {
               <dd>{bundle.maps.get(c.mapId)?.name ?? c.mapId}</dd>
               <dt>team size</dt>
               <dd>
-                {c.minOperators}–{c.maxOperators}
+                {c.minOperators}–{c.maxOperators ?? '∞'}
               </dd>
+              <dt>recommended</dt>
+              <dd className="mono dim">
+                {c.recommendedOperators.veteran}v · {c.recommendedOperators.regular}r ·{' '}
+                {c.recommendedOperators.green}g
+              </dd>
+              <dt>difficulty</dt>
+              <dd className="mono">
+                {'●'.repeat(c.difficultyRating)}
+                {'○'.repeat(5 - c.difficultyRating)}
+              </dd>
+              {c.payout.secondaryBonusCash > 0 ? (
+                <>
+                  <dt>bonus</dt>
+                  <dd className="mono">+{c.payout.secondaryBonusCash.toLocaleString()} cr</dd>
+                </>
+              ) : null}
               <dt>opposition</dt>
               <dd>{c.enemies.archetypes.map((a) => `${a.count}× ${a.archetype}`).join(', ')}</dd>
             </dl>

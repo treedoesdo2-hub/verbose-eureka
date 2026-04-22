@@ -3,9 +3,17 @@
   "name": "Cass Vance",
   "callsign": "Drum",
   "tier": "veteran",
-  "stats": { "aim": 62, "move": 48, "grit": 78, "awareness": 54, "medical": 20 },
+  "stats": {
+    "aim": 62,
+    "move": 48,
+    "grit": 78,
+    "awareness": 54,
+    "medical": 20
+  },
   "defaultTemplateId": "lmg-heavy",
   "origin": "Frontier auxiliaries",
   "bio": "Pulled a drum gun off a wrecked PA and never looked back. Slow but load-bearing.",
-  "cost": 2200
+  "cost": 2200,
+  "dailyWage": 280,
+  "insurancePremium": 160
 }

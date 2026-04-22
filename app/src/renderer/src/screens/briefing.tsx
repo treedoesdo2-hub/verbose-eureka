@@ -1,17 +1,25 @@
+import type { Operator } from '@schema/operator';
 import type { ScenarioRequest, WireLoadout } from '@shared/messages';
-import { useMemo, useState } from 'react';
+import { computeNetEconomics } from '@sim/contract-economics';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getContent } from '../content';
 import { useHotkeys } from '../hooks/useHotkeys';
 import { getSimBridge } from '../sim-bridge';
 import { useAppState } from '../stores/app-state';
 import { useSquads } from '../stores/squads';
 
-const ELEMENT_ROLES = ['Primary', 'Secondary', 'Support', 'Reserve'] as const;
 const EMPTY_SLOT = '';
+
+type Slot = { id: string; key: number };
+let nextSlotKey = 1;
+function makeSlot(): Slot {
+  return { id: EMPTY_SLOT, key: nextSlotKey++ };
+}
 
 export function Briefing(): React.JSX.Element {
   const go = useAppState((s) => s.go);
   const contractId = useAppState((s) => s.selectedContractId);
+  const setDeploySelection = useAppState((s) => s.setDeploySelection);
   const bundle = getContent();
   const contract = contractId ? bundle.contracts.get(contractId) : null;
   const squadMap = useSquads((s) => s.squads);
@@ -21,25 +29,33 @@ export function Briefing(): React.JSX.Element {
     [squadMap, order],
   );
 
-  // Deployment-order slots: each element is either a squad id or the empty
-  // string. This is the form-filling primitive — commanders fill in numbered
-  // elements, they don't check boxes on a grid.
-  const [slots, setSlots] = useState<string[]>(() => ELEMENT_ROLES.map(() => EMPTY_SLOT));
+  const initialSlotCount = contract
+    ? Math.min(4, contract.modifiers.extractionSeats ?? 4, contract.maxOperators ?? 4)
+    : 4;
+  const [slots, setSlots] = useState<Slot[]>(() =>
+    Array.from({ length: Math.max(1, initialSlotCount) }, () => makeSlot()),
+  );
 
-  function assign(slotIdx: number, squadId: string): void {
-    setSlots((prev) => {
-      const next = [...prev];
-      // Clear duplicates — a squad can only occupy one slot at a time.
-      for (let i = 0; i < next.length; i++) {
-        if (next[i] === squadId) next[i] = EMPTY_SLOT;
-      }
-      next[slotIdx] = squadId;
-      return next;
-    });
+  function assign(slotKey: number, squadId: string): void {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.key === slotKey) return { ...s, id: squadId };
+        if (s.id === squadId) return { ...s, id: EMPTY_SLOT };
+        return s;
+      }),
+    );
+  }
+
+  function addSlot(): void {
+    setSlots((prev) => [...prev, makeSlot()]);
+  }
+
+  function removeSlot(slotKey: number): void {
+    setSlots((prev) => prev.filter((s) => s.key !== slotKey));
   }
 
   const assignedSquads = useMemo(
-    () => slots.map((id) => squadMap.get(id)).filter((s): s is NonNullable<typeof s> => !!s),
+    () => slots.map((s) => squadMap.get(s.id)).filter((s): s is NonNullable<typeof s> => !!s),
     [slots, squadMap],
   );
 
@@ -51,7 +67,48 @@ export function Briefing(): React.JSX.Element {
     return ids;
   }, [assignedSquads]);
 
-  function launch(): void {
+  const deployedOperators = useMemo<Operator[]>(() => {
+    const ops: Operator[] = [];
+    for (const id of deployedOperatorIds) {
+      const op = bundle.operators.get(id);
+      if (op) ops.push(op);
+    }
+    return ops;
+  }, [deployedOperatorIds, bundle]);
+
+  useEffect(() => {
+    setDeploySelection([...deployedOperatorIds]);
+  }, [deployedOperatorIds, setDeploySelection]);
+
+  const economics = useMemo(
+    () => (contract ? computeNetEconomics(contract, deployedOperators) : null),
+    [contract, deployedOperators],
+  );
+
+  const opCount = deployedOperatorIds.size;
+  const extractionCap = contract?.modifiers.extractionSeats ?? null;
+  const effectiveMax = (() => {
+    if (!contract) return 0;
+    const caps: number[] = [];
+    if (contract.maxOperators !== null) caps.push(contract.maxOperators);
+    if (extractionCap !== null) caps.push(extractionCap);
+    return caps.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...caps);
+  })();
+  const canAddSlot = contract ? slots.length < effectiveMax : false;
+  const roleTagsSatisfied = (() => {
+    if (!contract) return false;
+    const req = contract.modifiers.requiredRoleTags;
+    if (req.length === 0) return true;
+    for (const tag of req) {
+      const hit = deployedOperators.some((op) => op.defaultTemplateId.startsWith(`${tag}-`));
+      if (!hit) return false;
+    }
+    return true;
+  })();
+  const canLaunch =
+    !!contract && opCount >= contract.minOperators && opCount <= effectiveMax && roleTagsSatisfied;
+
+  const launch = useCallback((): void => {
     if (!contract) return;
     const perOperatorLoadouts: ScenarioRequest['perOperatorLoadouts'] = {};
     const deployedIds: string[] = [];
@@ -84,11 +141,7 @@ export function Briefing(): React.JSX.Element {
       },
     });
     go('deploy');
-  }
-
-  const opCount = deployedOperatorIds.size;
-  const canLaunch =
-    !!contract && opCount >= contract.minOperators && opCount <= contract.maxOperators;
+  }, [contract, assignedSquads, go]);
 
   const hotkeys = useMemo(
     () => [
@@ -101,8 +154,7 @@ export function Briefing(): React.JSX.Element {
         },
       },
     ],
-    // biome-ignore lint/correctness/useExhaustiveDependencies: launch captures live state through closure; rebinding per render is cheap for hotkeys.
-    [canLaunch, go],
+    [canLaunch, go, launch],
   );
   useHotkeys(hotkeys);
 
@@ -118,7 +170,7 @@ export function Briefing(): React.JSX.Element {
   }
 
   const underCap = opCount < contract.minOperators;
-  const overCap = opCount > contract.maxOperators;
+  const overCap = effectiveMax !== Number.POSITIVE_INFINITY && opCount > effectiveMax;
 
   return (
     <div className="screen deployment-order">
@@ -145,15 +197,23 @@ export function Briefing(): React.JSX.Element {
           <dd>{contract.name}</dd>
           <dt>briefing</dt>
           <dd className="briefing-narrative">{contract.briefing}</dd>
-          <dt>payout</dt>
-          <dd>
-            <span className="accent mono">${contract.payout.toLocaleString()}</span>
-          </dd>
           <dt>map</dt>
           <dd className="mono">{bundle.maps.get(contract.mapId)?.name ?? contract.mapId}</dd>
           <dt>team size</dt>
           <dd className="mono">
-            {contract.minOperators}–{contract.maxOperators} operators
+            {contract.minOperators}–{contract.maxOperators ?? '∞'} operators
+            {extractionCap !== null ? ` · ${extractionCap} extraction seats` : ''}
+          </dd>
+          <dt>recommended</dt>
+          <dd className="mono dim">
+            {contract.recommendedOperators.veteran} veteran ·{' '}
+            {contract.recommendedOperators.regular} regular · {contract.recommendedOperators.green}{' '}
+            green
+          </dd>
+          <dt>difficulty</dt>
+          <dd className="mono">
+            {'●'.repeat(contract.difficultyRating)}
+            {'○'.repeat(5 - contract.difficultyRating)}
           </dd>
           <dt>objectives</dt>
           <dd>
@@ -165,8 +225,92 @@ export function Briefing(): React.JSX.Element {
               ))}
             </ol>
           </dd>
+          {contract.modifiers.requiredRoleTags.length > 0 ? (
+            <>
+              <dt>required roles</dt>
+              <dd className="mono">{contract.modifiers.requiredRoleTags.join(', ')}</dd>
+            </>
+          ) : null}
         </dl>
       </section>
+
+      {economics ? (
+        <section className="economic-readout">
+          <h3>Economic tradeoff</h3>
+          <div className="econ-grid">
+            <div className="econ-col">
+              <h4>Payout</h4>
+              <dl className="econ-dl">
+                <dt>cash on success</dt>
+                <dd className="mono accent">{economics.payout.cashFull.toLocaleString()} cr</dd>
+                {economics.payout.secondaryBonusCash > 0 ? (
+                  <>
+                    <dt>secondary bonus</dt>
+                    <dd className="mono">
+                      +{economics.payout.secondaryBonusCash.toLocaleString()} cr
+                    </dd>
+                  </>
+                ) : null}
+                {economics.payout.cashFloor > 0 ? (
+                  <>
+                    <dt>partial failure</dt>
+                    <dd className="mono dim">
+                      {economics.payout.cashFloor.toLocaleString()} cr (good faith)
+                    </dd>
+                  </>
+                ) : null}
+                {economics.payout.salvagePriorityPicks > 0 ? (
+                  <>
+                    <dt>salvage picks</dt>
+                    <dd className="mono">{economics.payout.salvagePriorityPicks}</dd>
+                  </>
+                ) : null}
+                {economics.payout.reputationDelta !== 0 ? (
+                  <>
+                    <dt>reputation</dt>
+                    <dd className="mono">
+                      {economics.payout.reputationDelta > 0 ? '+' : ''}
+                      {economics.payout.reputationDelta}
+                    </dd>
+                  </>
+                ) : null}
+              </dl>
+            </div>
+            <div className="econ-col">
+              <h4>Deploy cost</h4>
+              <dl className="econ-dl">
+                <dt>fixed</dt>
+                <dd className="mono">{economics.deployCost.fixed.toLocaleString()} cr</dd>
+                <dt>wages</dt>
+                <dd className="mono">
+                  {economics.deployCost.perOperatorWages.toLocaleString()} cr
+                </dd>
+                <dt>premiums</dt>
+                <dd className="mono">
+                  {economics.deployCost.perOperatorPremiums.toLocaleString()} cr
+                </dd>
+                <dt>total</dt>
+                <dd className="mono danger">{economics.deployCost.total.toLocaleString()} cr</dd>
+              </dl>
+            </div>
+            <div className="econ-col">
+              <h4>Net</h4>
+              <dl className="econ-dl">
+                <dt>if primary success</dt>
+                <dd className={`mono ${economics.netIfPrimarySuccess < 0 ? 'danger' : 'ok'}`}>
+                  {economics.netIfPrimarySuccess >= 0 ? '+' : ''}
+                  {economics.netIfPrimarySuccess.toLocaleString()} cr
+                </dd>
+                <dt>if primary fails</dt>
+                <dd className={`mono ${economics.netIfPrimaryFailGoodFaith < 0 ? 'danger' : 'ok'}`}>
+                  {economics.netIfPrimaryFailGoodFaith >= 0 ? '+' : ''}
+                  {economics.netIfPrimaryFailGoodFaith.toLocaleString()} cr
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="order-elements">
         <h3>Element assignment</h3>
@@ -178,49 +322,71 @@ export function Briefing(): React.JSX.Element {
             </button>
           </div>
         ) : (
-          <table className="order-slot-table">
-            <tbody>
-              {ELEMENT_ROLES.map((role, idx) => {
-                const currentId = slots[idx];
-                const sq = currentId ? squadMap.get(currentId) : null;
-                return (
-                  <tr key={role}>
-                    <th scope="row">
-                      <span className="mono dim">0{idx + 1}</span>
-                      <span className="order-slot-role">{role}</span>
-                    </th>
-                    <td>
-                      <select
-                        className="order-slot-select"
-                        value={currentId}
-                        onChange={(e) => assign(idx, e.target.value)}
-                      >
-                        <option value={EMPTY_SLOT}>— no element assigned —</option>
-                        {squads.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} ({s.members.length} op
-                            {s.members.length === 1 ? '' : 's'})
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="mono dim order-slot-roster">
-                      {sq
-                        ? sq.members.length === 0
-                          ? '— empty —'
-                          : sq.members
-                              .map(
-                                (m) =>
-                                  `"${bundle.operators.get(m.operatorId)?.callsign ?? m.operatorId}"`,
-                              )
-                              .join(' · ')
-                        : ''}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <>
+            <table className="order-slot-table">
+              <tbody>
+                {slots.map((slot, idx) => {
+                  const sq = slot.id ? squadMap.get(slot.id) : null;
+                  return (
+                    <tr key={slot.key}>
+                      <th scope="row">
+                        <span className="mono dim">{String(idx + 1).padStart(2, '0')}</span>
+                        <span className="order-slot-role">Element</span>
+                      </th>
+                      <td>
+                        <select
+                          className="order-slot-select"
+                          value={slot.id}
+                          onChange={(e) => assign(slot.key, e.target.value)}
+                        >
+                          <option value={EMPTY_SLOT}>— no element assigned —</option>
+                          {squads.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({s.members.length} op
+                              {s.members.length === 1 ? '' : 's'})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="mono dim order-slot-roster">
+                        {sq
+                          ? sq.members.length === 0
+                            ? '— empty —'
+                            : sq.members
+                                .map(
+                                  (m) =>
+                                    `"${bundle.operators.get(m.operatorId)?.callsign ?? m.operatorId}"`,
+                                )
+                                .join(' · ')
+                          : ''}
+                      </td>
+                      <td>
+                        {slots.length > 1 ? (
+                          <button
+                            type="button"
+                            className="btn btn-small"
+                            onClick={() => removeSlot(slot.key)}
+                            title="Remove slot"
+                          >
+                            −
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={addSlot}
+              disabled={!canAddSlot}
+              title={canAddSlot ? 'Add an element slot' : `Already at max (${effectiveMax} seats)`}
+            >
+              + Add element slot
+            </button>
+          </>
         )}
       </section>
 
@@ -235,7 +401,11 @@ export function Briefing(): React.JSX.Element {
           {underCap ? (
             <span className="danger">need {contract.minOperators - opCount} more</span>
           ) : overCap ? (
-            <span className="danger">over cap by {opCount - contract.maxOperators}</span>
+            <span className="danger">over cap by {opCount - effectiveMax}</span>
+          ) : !roleTagsSatisfied ? (
+            <span className="danger">
+              required role missing: {contract.modifiers.requiredRoleTags.join(', ')}
+            </span>
           ) : (
             <span className="ok">ready</span>
           )}
@@ -254,7 +424,7 @@ export function Briefing(): React.JSX.Element {
             className="btn btn-primary"
             disabled={!canLaunch}
             onClick={launch}
-            title={canLaunch ? 'Deploy (D)' : 'Deployment requires the correct team size'}
+            title={canLaunch ? 'Deploy (D)' : 'Deployment requires the correct team size + roles'}
           >
             Deploy <span className="hotkey-hint mono">D</span>
           </button>

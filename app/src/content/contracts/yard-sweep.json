@@ -2,7 +2,26 @@
   "id": "yard-sweep",
   "name": "Yard Sweep",
   "mapId": "training-yard",
-  "payout": 3500,
+  "payout": {
+    "cash": 3500,
+    "salvagePriorityPicks": 1,
+    "reputationDelta": 1,
+    "secondaryBonusCash": 0,
+    "goodFaithFraction": 0.25
+  },
+  "deployCost": {
+    "fixedPerContract": 200
+  },
+  "recommendedOperators": {
+    "green": 6,
+    "regular": 4,
+    "veteran": 3
+  },
+  "difficultyRating": 2,
+  "modifiers": {
+    "extractionSeats": 6,
+    "requiredRoleTags": []
+  },
   "briefing": "Blackstar has been staging raids out of an abandoned training yard. Go clean it out. Light opposition expected — four runners, maybe a gunner.",
   "objectives": [
     {
@@ -12,8 +31,11 @@
   ],
   "enemies": {
     "factionId": "scavenger-clan",
-    "archetypes": [{ "archetype": "runner", "count": 3 }, { "archetype": "gunner", "count": 1 }]
+    "archetypes": [
+      { "archetype": "runner", "count": 3 },
+      { "archetype": "gunner", "count": 1 }
+    ]
   },
-  "minOperators": 3,
+  "minOperators": 2,
   "maxOperators": 6
 }

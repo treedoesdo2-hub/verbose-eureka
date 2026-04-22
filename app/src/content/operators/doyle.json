@@ -3,9 +3,17 @@
   "name": "Benno Doyle",
   "callsign": "Stitches",
   "tier": "regular",
-  "stats": { "aim": 55, "move": 52, "grit": 60, "awareness": 60, "medical": 78 },
+  "stats": {
+    "aim": 55,
+    "move": 52,
+    "grit": 60,
+    "awareness": 60,
+    "medical": 78
+  },
   "defaultTemplateId": "medic-light",
   "origin": "Corporate trauma-response",
   "bio": "Corporate medic who took one too many liability hits and went freelance.",
-  "cost": 1800
+  "cost": 1800,
+  "dailyWage": 150,
+  "insurancePremium": 80
 }

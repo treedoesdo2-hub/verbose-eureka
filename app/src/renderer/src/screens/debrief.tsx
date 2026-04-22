@@ -48,8 +48,15 @@ export function Debrief(): React.JSX.Element {
           <dd>{debrief.endReason ?? '—'}</dd>
           <dt>duration</dt>
           <dd className="mono">{totalMinutes !== null ? `${totalMinutes} min` : '—'}</dd>
-          <dt>payout</dt>
+          <dt>gross payout</dt>
           <dd className="mono accent">{debrief.payout.toLocaleString()} cr</dd>
+          <dt>deploy cost</dt>
+          <dd className="mono danger">−{debrief.deployCost.toLocaleString()} cr</dd>
+          <dt>net</dt>
+          <dd className={`mono ${debrief.netCash < 0 ? 'danger' : 'ok'}`}>
+            {debrief.netCash >= 0 ? '+' : ''}
+            {debrief.netCash.toLocaleString()} cr
+          </dd>
           <dt>enemy down</dt>
           <dd className="mono">
             {enemyKills} killed · {enemyDowns - enemyKills} wounded

@@ -2,7 +2,26 @@
   "id": "yard-assault",
   "name": "Yard Assault",
   "mapId": "training-yard",
-  "payout": 6200,
+  "payout": {
+    "cash": 6200,
+    "salvagePriorityPicks": 2,
+    "reputationDelta": 2,
+    "secondaryBonusCash": 1200,
+    "goodFaithFraction": 0.3
+  },
+  "deployCost": {
+    "fixedPerContract": 450
+  },
+  "recommendedOperators": {
+    "green": 8,
+    "regular": 5,
+    "veteran": 3
+  },
+  "difficultyRating": 3,
+  "modifiers": {
+    "extractionSeats": 8,
+    "requiredRoleTags": []
+  },
   "briefing": "Second contract on the yard. Bigger crew, heavier gear. A veteran LMG and a heavy rifleman are dug in with the usual rabble.",
   "objectives": [
     { "kind": "eliminate", "description": "Neutralize all Blackstar defenders at the yard" }
@@ -16,6 +35,6 @@
       { "archetype": "lmg", "count": 1 }
     ]
   },
-  "minOperators": 4,
-  "maxOperators": 6
+  "minOperators": 3,
+  "maxOperators": 8
 }

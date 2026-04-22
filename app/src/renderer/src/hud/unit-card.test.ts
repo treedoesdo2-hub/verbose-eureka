@@ -37,6 +37,8 @@ function op(id: string, callsign: string, name = 'Name'): Operator {
     origin: '',
     bio: '',
     cost: 0,
+    dailyWage: 0,
+    insurancePremium: 0,
   };
 }
 

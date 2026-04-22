@@ -1,3 +1,4 @@
+import { computeDeployCost, computePayoutBreakdown } from '@sim/contract-economics';
 import { useEffect, useMemo } from 'react';
 import { getContent } from '../content';
 import { useSimSnapshot } from '../hooks/use-sim';
@@ -13,6 +14,7 @@ const SPEEDS: readonly SimSpeed[] = [0.5, 1, 2, 4, 8];
 export function Deploy(): React.JSX.Element {
   const go = useAppState((s) => s.go);
   const contractId = useAppState((s) => s.selectedContractId);
+  const deploySelection = useAppState((s) => s.deploySelection);
   const setDebrief = useAppState((s) => s.setDebrief);
   const simSpeed = useSettings((s) => s.simSpeed);
   const setSimSpeed = useSettings((s) => s.setSimSpeed);
@@ -64,16 +66,36 @@ export function Deploy(): React.JSX.Element {
     const survivors = playerUnits
       .filter((u) => u.actionKind !== 'dead')
       .map((u) => u.operatorId ?? `unit-${u.id}`);
+
+    let gross = 0;
+    let deployCostTotal = 0;
+    if (contract) {
+      const breakdown = computePayoutBreakdown(contract);
+      // Binary success per ADR 011 Addendum 2 §C. TODO(#89): when the
+      // objective runtime lands, gate secondaryBonusCash on all secondary
+      // objectives complete rather than the blanket team-0 win.
+      gross =
+        ended.winner === 0
+          ? breakdown.cashFull + breakdown.secondaryBonusCash
+          : breakdown.cashFloor;
+      const deployedOps = deploySelection
+        .map((id) => bundle.operators.get(id))
+        .filter((o): o is NonNullable<typeof o> => !!o);
+      deployCostTotal = computeDeployCost(contract, deployedOps).total;
+    }
+
     setDebrief({
       winner: ended.winner,
       endReason: ended.endReason,
       casualties,
       survivors,
-      payout: ended.winner === 0 ? (contract?.payout ?? 0) : 0,
+      payout: gross,
+      deployCost: deployCostTotal,
+      netCash: gross - deployCostTotal,
       stats: ended.stats,
     });
     setTimeout(() => go('debrief'), 800);
-  }, [ended, snapshot, contractId, setDebrief, go]);
+  }, [ended, snapshot, contractId, deploySelection, setDebrief, go]);
 
   const team0Alive =
     snapshot?.units.filter((u) => u.teamId === 0 && u.actionKind !== 'dead').length ?? 0;

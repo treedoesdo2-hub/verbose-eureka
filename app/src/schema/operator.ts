@@ -20,5 +20,10 @@ export const Operator = z.object({
   origin: z.string().default(''),
   bio: z.string().default(''),
   cost: z.number().int().nonnegative(),
+  // ADR 011 Pillar C — per-deployment economic weight. Wage and premium
+  // stack with contract.deployCost.fixedPerContract to form the total
+  // deploy cost paid before a contract starts.
+  dailyWage: z.number().int().nonnegative(),
+  insurancePremium: z.number().int().nonnegative(),
 });
 export type Operator = z.infer<typeof Operator>;

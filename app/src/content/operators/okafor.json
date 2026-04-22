@@ -3,9 +3,17 @@
   "name": "Jadesola Okafor",
   "callsign": "Sky",
   "tier": "regular",
-  "stats": { "aim": 65, "move": 62, "grit": 55, "awareness": 72, "medical": 30 },
+  "stats": {
+    "aim": 65,
+    "move": 62,
+    "grit": 55,
+    "awareness": 72,
+    "medical": 30
+  },
   "defaultTemplateId": "rifleman-light",
   "origin": "Drone-corps scout",
   "bio": "Learned to fight because the drones kept crashing. Eyes like a wildfire lookout.",
-  "cost": 2000
+  "cost": 2000,
+  "dailyWage": 150,
+  "insurancePremium": 80
 }

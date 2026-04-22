@@ -3,9 +3,17 @@
   "name": "Dae Park",
   "callsign": "Chalk",
   "tier": "regular",
-  "stats": { "aim": 60, "move": 68, "grit": 55, "awareness": 70, "medical": 25 },
+  "stats": {
+    "aim": 60,
+    "move": 68,
+    "grit": 55,
+    "awareness": 70,
+    "medical": 25
+  },
   "defaultTemplateId": "rifleman-light",
   "origin": "Orbital defense",
   "bio": "Trained for zero-G insertion before the contract market collapsed that specialty.",
-  "cost": 1700
+  "cost": 1700,
+  "dailyWage": 150,
+  "insurancePremium": 80
 }

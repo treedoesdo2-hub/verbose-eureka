@@ -1,11 +1,19 @@
 {
   "id": "kovac",
-  "name": "Ivo Kovač",
+  "name": "Ivo Kova\u010d",
   "callsign": "Sunday",
   "tier": "regular",
-  "stats": { "aim": 58, "move": 58, "grit": 64, "awareness": 62, "medical": 30 },
+  "stats": {
+    "aim": 58,
+    "move": 58,
+    "grit": 64,
+    "awareness": 62,
+    "medical": 30
+  },
   "defaultTemplateId": "rifleman-heavy",
   "origin": "Auxiliary police",
   "bio": "Left the auxiliary beat when the city started paying in script.",
-  "cost": 1600
+  "cost": 1600,
+  "dailyWage": 150,
+  "insurancePremium": 80
 }

@@ -3,9 +3,17 @@
   "name": "Ava Marsh",
   "callsign": "Ten-Spot",
   "tier": "veteran",
-  "stats": { "aim": 72, "move": 58, "grit": 68, "awareness": 65, "medical": 30 },
+  "stats": {
+    "aim": 72,
+    "move": 58,
+    "grit": 68,
+    "awareness": 65,
+    "medical": 30
+  },
   "defaultTemplateId": "rifleman-light",
   "origin": "Ex-Commonwealth Recon",
   "bio": "Six years of recon duty in the Belt; quiet, methodical, carries a grudge against PA suits.",
-  "cost": 2400
+  "cost": 2400,
+  "dailyWage": 280,
+  "insurancePremium": 160
 }
