@@ -7,6 +7,7 @@ import type {
 import { type Container, Graphics, type Ticker } from 'pixi.js';
 import type { AtmosphereState, BuildingDamage } from './atmosphere-state';
 import {
+  casingArcEnd,
   direction,
   jitter,
   missDustColors,
@@ -17,6 +18,8 @@ import {
 import {
   BLOOD_POOL,
   BUILDING_CRACK,
+  CASING_BRASS,
+  CASING_SHADOW,
   CRATER_FLOOR,
   CRATER_RIM,
   CRATER_SCORCH,
@@ -331,6 +334,52 @@ export class FxEmitter {
     this.decals.push(crater);
   }
 
+  spawnShellCasing(origin: { x: number; y: number }, facing: number, seed: FxSeed): void {
+    if (this.disposed) return;
+    const end = casingArcEnd(origin, facing, seed);
+    // Live phase: arc trail from origin to landing point.
+    const live = new Graphics();
+    live.moveTo(origin.x, origin.y);
+    // Render the arc as a small polyline to give an ejection shape.
+    const mx = (origin.x + end.x) / 2;
+    const my = (origin.y + end.y) / 2 - end.peakY;
+    live.lineTo(mx, my);
+    live.lineTo(end.x, end.y);
+    live.stroke({ color: CASING_BRASS, alpha: 0.9, width: 0.06 });
+    // Casing body at the landing.
+    live.circle(end.x, end.y, 0.09);
+    live.fill({ color: CASING_BRASS });
+    this.push('shell-casing', live, 'easeOut');
+
+    // Decal phase: small rotated brass sliver on the decal layer, fades linearly.
+    const target = this.decalLayer ?? this.layer;
+    const decal = new Graphics();
+    const angle = jitter(seed, 9) * Math.PI;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const half = 0.14;
+    const thick = 0.05;
+    const px = -sin;
+    const py = cos;
+    decal.moveTo(end.x + cos * half + px * thick, end.y + sin * half + py * thick);
+    decal.lineTo(end.x + cos * half - px * thick, end.y + sin * half - py * thick);
+    decal.lineTo(end.x - cos * half - px * thick, end.y - sin * half - py * thick);
+    decal.lineTo(end.x - cos * half + px * thick, end.y - sin * half + py * thick);
+    decal.closePath();
+    decal.fill({ color: CASING_BRASS, alpha: 0.95 });
+    decal.moveTo(end.x - cos * half, end.y - sin * half);
+    decal.lineTo(end.x + cos * half, end.y + sin * half);
+    decal.stroke({ color: CASING_SHADOW, alpha: 0.7, width: 0.04 });
+    target.addChild(decal);
+    this.entries.push({
+      kind: 'shell-casing-decal',
+      g: decal,
+      bornMs: this.elapsedMs,
+      ttlMs: TTL_MS['shell-casing-decal'],
+      ease: 'linear',
+    });
+  }
+
   spawnSmokePuff(at: { x: number; y: number }, seed: FxSeed): void {
     if (this.disposed) return;
     const g = new Graphics();
@@ -429,6 +478,7 @@ export class FxEmitter {
         const seed: FxSeed = { tick: e.tick, a: e.shooter, b: e.target };
         this.spawnMuzzleFlash(origin, d.angle, seed);
         this.spawnTracer(origin, { x: t.x, y: t.y }, seed);
+        this.spawnShellCasing(origin, s.facing, seed);
         const smokeSource = this.atmosphere?.recordFire(s.x, s.y, this.elapsedMs);
         if (smokeSource) {
           this.spawnSmokePuff(

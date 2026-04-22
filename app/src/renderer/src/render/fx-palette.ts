@@ -37,3 +37,25 @@ export const CRATER_SCORCH = 0x0a0604;
 
 export const BUILDING_CRACK = 0x1a120a;
 export const RUBBLE_TINT = 0x342c26;
+
+// Morale / panic aura.
+export const MORALE_AURA = 0xff3b6e;
+export const MORALE_AURA_PULSE = 0xff7aa0;
+export const PIN_AURA = 0xff8a1c;
+
+// Wound icon dots (severity ramp).
+export const WOUND_ICON_GRAZE = 0x9a9a9a;
+export const WOUND_ICON_LIGHT = 0xf0c040;
+export const WOUND_ICON_SERIOUS = 0xf08030;
+export const WOUND_ICON_CRITICAL = 0xe03030;
+
+// Bleeding indicator.
+export const BLEED_DOT = 0xd62828;
+
+// Target lock reticle.
+export const TARGET_LOCK = 0xff6060;
+export const TARGET_LOCK_SOFT = 0x881818;
+
+// Shell casing brass.
+export const CASING_BRASS = 0xc8962b;
+export const CASING_SHADOW = 0x5a3f10;

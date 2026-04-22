@@ -1,6 +1,15 @@
 import type { BodyZone } from '@schema/common';
 import type { SnapshotMissReason, SnapshotStance } from '@shared/snapshot';
-import { BLOOD_BRIGHT, BLOOD_DARK, DUST_DARK, DUST_LIGHT } from './fx-palette';
+import {
+  BLOOD_BRIGHT,
+  BLOOD_DARK,
+  DUST_DARK,
+  DUST_LIGHT,
+  WOUND_ICON_CRITICAL,
+  WOUND_ICON_GRAZE,
+  WOUND_ICON_LIGHT,
+  WOUND_ICON_SERIOUS,
+} from './fx-palette';
 
 export type Direction = {
   readonly nx: number;
@@ -108,4 +117,39 @@ export function missDustColors(reason: SnapshotMissReason | null): {
   if (reason === 'cover') return { light: DUST_LIGHT, dark: base };
   if (reason === 'range') return { light: base, dark: DUST_DARK };
   return { light: DUST_LIGHT, dark: DUST_DARK };
+}
+
+export function isBleeding(
+  wounds: readonly { readonly treatment: string; readonly bleedRate: number }[],
+): boolean {
+  for (const w of wounds) {
+    if (w.treatment === 'stabilized' || w.treatment === 'tourniquet') continue;
+    if (w.bleedRate > 0) return true;
+  }
+  return false;
+}
+
+export function woundIconColor(severity: string): number {
+  if (severity === 'critical') return WOUND_ICON_CRITICAL;
+  if (severity === 'serious') return WOUND_ICON_SERIOUS;
+  if (severity === 'light') return WOUND_ICON_LIGHT;
+  return WOUND_ICON_GRAZE;
+}
+
+export function casingArcEnd(
+  origin: { readonly x: number; readonly y: number },
+  facing: number,
+  seed: { tick: number; a: number; b: number },
+): { x: number; y: number; peakY: number } {
+  const cos = Math.cos(facing);
+  const sin = Math.sin(facing);
+  const { px, py } = perp(cos, sin);
+  const j = jitter(seed, 7);
+  const lateral = 0.7 + Math.abs(j) * 0.3;
+  const forward = 0.15 + Math.abs(j) * 0.25;
+  return {
+    x: origin.x + px * lateral + cos * forward,
+    y: origin.y + py * lateral + sin * forward,
+    peakY: 0.4 + Math.abs(jitter(seed, 8)) * 0.2,
+  };
 }

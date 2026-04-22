@@ -16,7 +16,9 @@ export type FxKind =
   | 'explosion-shock'
   | 'explosion-debris'
   | 'smoke-puff'
-  | 'dust-puff';
+  | 'dust-puff'
+  | 'shell-casing'
+  | 'shell-casing-decal';
 
 export const ALL_FX_KINDS: readonly FxKind[] = [
   'tracer',
@@ -37,6 +39,8 @@ export const ALL_FX_KINDS: readonly FxKind[] = [
   'explosion-debris',
   'smoke-puff',
   'dust-puff',
+  'shell-casing',
+  'shell-casing-decal',
 ];
 
 export const TTL_MS: Record<FxKind, number> = {
@@ -58,4 +62,6 @@ export const TTL_MS: Record<FxKind, number> = {
   'explosion-debris': 450,
   'smoke-puff': 2800,
   'dust-puff': 500,
+  'shell-casing': 650,
+  'shell-casing-decal': 4500,
 };

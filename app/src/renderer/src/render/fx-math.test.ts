@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  casingArcEnd,
   direction,
+  isBleeding,
   jitter,
   missDustColors,
   muzzleOffset,
   perp,
   pickMissColor,
   stanceFootprint,
+  woundIconColor,
   woundPaletteForZone,
 } from './fx-math';
 
@@ -155,5 +158,77 @@ describe('missDustColors', () => {
       expect(typeof pair.light).toBe('number');
       expect(typeof pair.dark).toBe('number');
     }
+  });
+});
+
+describe('isBleeding', () => {
+  it('returns false for an empty wound list', () => {
+    expect(isBleeding([])).toBe(false);
+  });
+
+  it('returns false when the only wound is stabilized', () => {
+    expect(isBleeding([{ treatment: 'stabilized', bleedRate: 5 }])).toBe(false);
+  });
+
+  it('returns false when the only wound is tourniqueted', () => {
+    expect(isBleeding([{ treatment: 'tourniquet', bleedRate: 5 }])).toBe(false);
+  });
+
+  it('returns true for an untreated wound with a positive rate', () => {
+    expect(isBleeding([{ treatment: 'none', bleedRate: 0.5 }])).toBe(true);
+  });
+
+  it('returns true for a bandaged wound with a positive rate', () => {
+    expect(isBleeding([{ treatment: 'bandaged', bleedRate: 1 }])).toBe(true);
+  });
+
+  it('returns false when all untreated wounds have zero rate', () => {
+    expect(isBleeding([{ treatment: 'none', bleedRate: 0 }])).toBe(false);
+  });
+
+  it('returns true when any wound is bleeding', () => {
+    expect(
+      isBleeding([
+        { treatment: 'stabilized', bleedRate: 5 },
+        { treatment: 'none', bleedRate: 0.3 },
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe('woundIconColor', () => {
+  it('returns a distinct color per named severity', () => {
+    const colors = new Set(['graze', 'light', 'serious', 'critical'].map((s) => woundIconColor(s)));
+    expect(colors.size).toBe(4);
+  });
+
+  it('falls back to graze for unknown severity', () => {
+    expect(woundIconColor('unknown')).toBe(woundIconColor('graze'));
+  });
+});
+
+describe('casingArcEnd', () => {
+  it('is deterministic under identical inputs', () => {
+    const s = { tick: 5, a: 1, b: 2 };
+    const a = casingArcEnd({ x: 10, y: 10 }, 0, s);
+    const b = casingArcEnd({ x: 10, y: 10 }, 0, s);
+    expect(a.x).toBe(b.x);
+    expect(a.y).toBe(b.y);
+    expect(a.peakY).toBe(b.peakY);
+  });
+
+  it('lands within a sane bracket of the origin', () => {
+    const s = { tick: 5, a: 1, b: 2 };
+    const end = casingArcEnd({ x: 0, y: 0 }, 0, s);
+    const dist = Math.hypot(end.x, end.y);
+    expect(dist).toBeGreaterThan(0.5);
+    expect(dist).toBeLessThan(1.5);
+    expect(end.peakY).toBeGreaterThan(0);
+  });
+
+  it('different seeds produce different outputs', () => {
+    const a = casingArcEnd({ x: 0, y: 0 }, 0, { tick: 1, a: 1, b: 1 });
+    const b = casingArcEnd({ x: 0, y: 0 }, 0, { tick: 2, a: 1, b: 1 });
+    expect(a.x === b.x && a.y === b.y && a.peakY === b.peakY).toBe(false);
   });
 });

@@ -4,8 +4,19 @@ import { Application, Container, Graphics } from 'pixi.js';
 import { useEffect, useRef } from 'react';
 import { AtmosphereState } from './atmosphere-state';
 import { FxEmitter } from './fx-emitter';
-import { stanceFootprint } from './fx-math';
-import { DOWNED_BODY, DOWNED_OUTLINE, SUPPRESSION_HALO, SUPPRESSION_PULSE } from './fx-palette';
+import { isBleeding, stanceFootprint, woundIconColor } from './fx-math';
+import {
+  BLEED_DOT,
+  DOWNED_BODY,
+  DOWNED_OUTLINE,
+  MORALE_AURA,
+  MORALE_AURA_PULSE,
+  PIN_AURA,
+  SUPPRESSION_HALO,
+  SUPPRESSION_PULSE,
+  TARGET_LOCK,
+  TARGET_LOCK_SOFT,
+} from './fx-palette';
 
 const TERRAIN_COLORS: Record<number, number> = {
   0: 0x1a2b1a, // open
@@ -34,6 +45,7 @@ type Scene = {
   visionLayer: Container;
   unitsLayer: Container;
   fxLayer: Container;
+  lockLayer: Container;
   fx: FxEmitter;
   atmosphere: AtmosphereState;
 };
@@ -76,11 +88,13 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
         const visionLayer = new Container();
         const unitsLayer = new Container();
         const fxLayer = new Container();
+        const lockLayer = new Container();
         worldLayer.addChild(terrainLayer);
         worldLayer.addChild(decalLayer);
         worldLayer.addChild(visionLayer);
         worldLayer.addChild(unitsLayer);
         worldLayer.addChild(fxLayer);
+        worldLayer.addChild(lockLayer);
         app.stage.addChild(worldLayer);
 
         const atmosphere = new AtmosphereState(world.width, world.height, world.tileSizeMeters);
@@ -94,6 +108,7 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
           visionLayer,
           unitsLayer,
           fxLayer,
+          lockLayer,
           fx,
           atmosphere,
         };
@@ -142,11 +157,21 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
 
     scene.unitsLayer.removeChildren();
     scene.visionLayer.removeChildren();
+    scene.lockLayer.removeChildren();
 
     const byId = new Map<number, SnapshotUnit>();
     for (const u of snapshot.units) byId.set(u.id, u);
     const now = performance.now();
     for (const u of snapshot.units) drawUnit(scene.unitsLayer, scene.visionLayer, u, now);
+
+    for (const shooter of snapshot.units) {
+      if (shooter.targetId == null) continue;
+      if (shooter.actionKind !== 'firing' && shooter.actionKind !== 'aiming') continue;
+      const target = byId.get(shooter.targetId);
+      if (!target) continue;
+      if (target.actionKind === 'dead') continue;
+      drawTargetLock(scene.lockLayer, target, now);
+    }
 
     // Snapshots arrive on the render clock; the same tick can arrive twice in
     // dev fast-refresh or if React re-runs the effect — de-dupe by tick so we
@@ -217,9 +242,29 @@ function drawUnit(units: Container, vision: Container, u: SnapshotUnit, now: num
     return;
   }
 
-  // Suppression layered effect — drawn first so body paints over it.
+  g.position.set(u.x, u.y);
+
+  // Morale / pin aura — sits beneath the suppression halo so the halo reads
+  // crisply on top. Panicked or broken units get the magenta aura; heavily
+  // pinned units get the orange aura.
+  if (alive) {
+    const panicked = u.aiState === 'panic' || u.morale < 0.25;
+    const heavyPinned = u.suppression >= 0.85;
+    if (panicked || heavyPinned) {
+      const auraPulse = 0.5 + 0.5 * Math.sin((now / 1100) * Math.PI * 2);
+      const outerR = baseRadius * foot.scale + 1.4;
+      const innerR = baseRadius * foot.scale + 0.9;
+      const auraColor = panicked ? MORALE_AURA : PIN_AURA;
+      const pulseColor = panicked ? MORALE_AURA_PULSE : PIN_AURA;
+      g.circle(0, 0, outerR);
+      g.fill({ color: auraColor, alpha: 0.18 + 0.12 * auraPulse });
+      g.circle(0, 0, innerR);
+      g.fill({ color: pulseColor, alpha: 0.1 + 0.15 * auraPulse });
+    }
+  }
+
+  // Suppression layered effect — drawn under the body silhouette.
   if (alive && u.suppression > 0.3) {
-    g.position.set(u.x, u.y);
     // Base halo.
     g.circle(0, 0, baseRadius * foot.scale + 0.9);
     g.stroke({
@@ -243,8 +288,6 @@ function drawUnit(units: Container, vision: Container, u: SnapshotUnit, now: num
       g.lineTo(0.5, cy);
       g.stroke({ color: SUPPRESSION_HALO, alpha: 0.9, width: 0.2 });
     }
-  } else {
-    g.position.set(u.x, u.y);
   }
 
   if (dead) {
@@ -288,8 +331,81 @@ function drawUnit(units: Container, vision: Container, u: SnapshotUnit, now: num
 
   drawBloodBar(g, u, baseRadius, foot);
   if (u.morale < 0.8) drawMoraleBar(g, u, baseRadius, foot);
+  drawWoundIcons(g, u, baseRadius, foot);
+  drawBleedDot(g, u, baseRadius, foot, now);
 
   units.addChild(g);
+}
+
+function drawTargetLock(layer: Container, target: SnapshotUnit, now: number): void {
+  const g = new Graphics();
+  g.position.set(target.x, target.y);
+  const pulse = 0.5 + 0.5 * Math.sin((now / 600) * Math.PI * 2);
+  const r = 1.2;
+  // Outer soft ring.
+  g.circle(0, 0, r);
+  g.stroke({ color: TARGET_LOCK_SOFT, alpha: 0.35 + 0.2 * pulse, width: 0.08 });
+  // Inner crisp ring.
+  g.circle(0, 0, r * 0.65);
+  g.stroke({ color: TARGET_LOCK, alpha: 0.55 + 0.3 * pulse, width: 0.08 });
+  // Four tick marks at cardinals radiating outward.
+  const tick = 0.28;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    const cx = Math.cos(a) * r;
+    const cy = Math.sin(a) * r;
+    g.moveTo(cx, cy);
+    g.lineTo(cx + Math.cos(a) * tick, cy + Math.sin(a) * tick);
+  }
+  g.stroke({ color: TARGET_LOCK, alpha: 0.8, width: 0.1 });
+  layer.addChild(g);
+}
+
+function drawWoundIcons(
+  g: Graphics,
+  u: SnapshotUnit,
+  baseRadius: number,
+  foot: ReturnType<typeof stanceFootprint>,
+): void {
+  if (u.wounds.length === 0) return;
+  const iconR = 0.18;
+  const gap = 0.5;
+  const maxIcons = 6;
+  const count = Math.min(u.wounds.length, maxIcons);
+  const rowWidth = (count - 1) * gap;
+  const y = -(baseRadius * foot.scale * foot.squash + 0.7);
+  for (let i = 0; i < count; i++) {
+    const w = u.wounds[i];
+    if (!w) continue;
+    const color = woundIconColor(w.severity);
+    const x = -rowWidth / 2 + i * gap;
+    g.circle(x, y, iconR);
+    g.fill({ color });
+    g.stroke({ color: 0x000000, alpha: 0.7, width: 0.05 });
+  }
+  if (u.wounds.length > maxIcons) {
+    const x = -rowWidth / 2 + maxIcons * gap;
+    for (let k = 0; k < 3; k++) {
+      g.circle(x + k * 0.12, y, 0.06);
+      g.fill({ color: 0xffffff, alpha: 0.8 });
+    }
+  }
+}
+
+function drawBleedDot(
+  g: Graphics,
+  u: SnapshotUnit,
+  baseRadius: number,
+  foot: ReturnType<typeof stanceFootprint>,
+  now: number,
+): void {
+  if (!isBleeding(u.wounds)) return;
+  const pulse = 0.5 + 0.5 * Math.sin((now / 900) * Math.PI * 2);
+  const y = -(baseRadius * foot.scale * foot.squash + 1.15);
+  g.circle(0, y, 0.22);
+  g.fill({ color: BLEED_DOT, alpha: 0.55 + 0.35 * pulse });
+  g.circle(0, y, 0.12);
+  g.fill({ color: 0xffffff, alpha: 0.4 + 0.4 * pulse });
 }
 
 function drawAliveSilhouette(

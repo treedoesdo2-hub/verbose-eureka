@@ -30,4 +30,12 @@ describe('fx TTL table', () => {
   it('smoke puff lingers longer than muzzle smoke', () => {
     expect(TTL_MS['smoke-puff']).toBeGreaterThan(TTL_MS['muzzle-smoke']);
   });
+
+  it('shell casing decal outlasts the tumbling casing', () => {
+    expect(TTL_MS['shell-casing-decal']).toBeGreaterThan(TTL_MS['shell-casing']);
+  });
+
+  it('shell casing resolves faster than smoke puff', () => {
+    expect(TTL_MS['shell-casing']).toBeLessThan(TTL_MS['smoke-puff']);
+  });
 });
