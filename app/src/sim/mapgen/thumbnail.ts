@@ -33,7 +33,18 @@ export type Thumbnail = {
   readonly pixels: Uint8ClampedArray; // RGBA, row-major
 };
 
-export function generateThumbnail(result: MapGenResult, targetSize: number = 128): Thumbnail {
+export type ThumbnailOptions = {
+  // COA-1 task #46 — dev-only heatmap overlay for debugging density fields.
+  // Blends a red tint proportional to coverDensity; hotspots marked with
+  // a 2x2 white pip. Ship-default: false.
+  readonly showDensityHeatmap?: boolean;
+};
+
+export function generateThumbnail(
+  result: MapGenResult,
+  targetSize: number = 128,
+  opts: ThumbnailOptions = {},
+): Thumbnail {
   const tW = Math.min(targetSize, result.width);
   const tH = Math.min(targetSize, result.height);
   const pixels = new Uint8ClampedArray(tW * tH * 4);
@@ -63,7 +74,62 @@ export function generateThumbnail(result: MapGenResult, targetSize: number = 128
   // Overlay deploy zone tints (subtle) so the player sees the spawn layout.
   overlayZone(pixels, tW, tH, result, result.deployZones.team0, [85, 170, 255], scaleX, scaleY);
   overlayZone(pixels, tW, tH, result, result.deployZones.team1, [255, 90, 74], scaleX, scaleY);
+  if (opts.showDensityHeatmap) {
+    overlayDensityHeatmap(pixels, tW, tH, result, scaleX, scaleY);
+    overlayHotspotPips(pixels, tW, tH, result, scaleX, scaleY);
+  }
   return { width: tW, height: tH, pixels };
+}
+
+// Red-channel heatmap overlay driven by coverDensity. Density 0 → no change,
+// density 1 → full red wash at alpha 0.6. Intended for dev / debug viewing;
+// never enabled for shipped map previews.
+function overlayDensityHeatmap(
+  pixels: Uint8ClampedArray,
+  tW: number,
+  tH: number,
+  result: MapGenResult,
+  scaleX: number,
+  scaleY: number,
+): void {
+  for (let ty = 0; ty < tH; ty++) {
+    for (let tx = 0; tx < tW; tx++) {
+      const sx = Math.floor(tx * scaleX);
+      const sy = Math.floor(ty * scaleY);
+      const d = result.coverDensity[sy * result.width + sx];
+      if (d <= 0) continue;
+      const alpha = Math.min(0.6, d * 0.8);
+      const o = (ty * tW + tx) * 4;
+      pixels[o + 0] = Math.round(pixels[o + 0] * (1 - alpha) + 255 * alpha);
+      pixels[o + 1] = Math.round(pixels[o + 1] * (1 - alpha) + 20 * alpha);
+      pixels[o + 2] = Math.round(pixels[o + 2] * (1 - alpha) + 20 * alpha);
+    }
+  }
+}
+
+function overlayHotspotPips(
+  pixels: Uint8ClampedArray,
+  tW: number,
+  tH: number,
+  result: MapGenResult,
+  scaleX: number,
+  scaleY: number,
+): void {
+  for (const h of result.hotspots) {
+    const cx = Math.floor(h.x / scaleX);
+    const cy = Math.floor(h.y / scaleY);
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        if (x < 0 || y < 0 || x >= tW || y >= tH) continue;
+        const o = (y * tW + x) * 4;
+        pixels[o + 0] = 255;
+        pixels[o + 1] = 255;
+        pixels[o + 2] = 255;
+      }
+    }
+  }
 }
 
 function overlayZone(
