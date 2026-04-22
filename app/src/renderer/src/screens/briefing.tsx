@@ -1,7 +1,8 @@
 import type { Operator } from '@schema/operator';
 import type { ScenarioRequest, WireLoadout } from '@shared/messages';
 import { computeNetEconomics } from '@sim/contract-economics';
-import { mapGenRequestFromContract } from '@sim/mapgen/contract-binder';
+import { interpolateBriefing, mapGenRequestFromContract } from '@sim/mapgen/contract-binder';
+import type { HeroLandmark } from '@sim/mapgen/hero-landmark';
 import { runPipeline } from '@sim/mapgen/pipeline';
 import { generateThumbnail } from '@sim/mapgen/thumbnail';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,6 +32,12 @@ export function Briefing(): React.JSX.Element {
     () => order.map((id) => squadMap.get(id)).filter((x): x is NonNullable<typeof x> => !!x),
     [squadMap, order],
   );
+
+  // COA-4 briefing preview — regenerate the map once for this contract so
+  // both the preview thumbnail and the briefing text interpolation share
+  // the same heroLandmark. Keyed on contractId so switching contracts
+  // regenerates cleanly.
+  const preview = useMapPreview(contract?.id ?? null);
 
   const initialSlotCount = contract
     ? Math.min(4, contract.modifiers.extractionSeats ?? 4, contract.maxOperators ?? 4)
@@ -202,7 +209,9 @@ export function Briefing(): React.JSX.Element {
           <dt>contract</dt>
           <dd>{contract.name}</dd>
           <dt>briefing</dt>
-          <dd className="briefing-narrative">{contract.briefing}</dd>
+          <dd className="briefing-narrative">
+            {interpolateBriefing(contract.briefing, preview?.landmark ?? null)}
+          </dd>
           <dt>map</dt>
           <dd className="mono">
             {contract.modifiers.biomeHint !== null
@@ -213,7 +222,18 @@ export function Briefing(): React.JSX.Element {
             <>
               <dt>preview</dt>
               <dd>
-                <MapThumbnailPreview contractId={contract.id} />
+                <MapThumbnailCanvas pixels={preview?.pixels ?? null} />
+              </dd>
+            </>
+          ) : null}
+          {preview?.landmark ? (
+            <>
+              <dt>landmark</dt>
+              <dd className="mono accent">
+                <span className="landmark-chip">
+                  {preview.landmark.name}
+                  <span className="dim"> · {preview.landmark.kind.replace(/_/g, ' ')}</span>
+                </span>
               </dd>
             </>
           ) : null}
@@ -452,27 +472,55 @@ export function Briefing(): React.JSX.Element {
   );
 }
 
-function MapThumbnailPreview({ contractId }: { contractId: string }): React.JSX.Element {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const bundle = getContent();
-  const contract = bundle.contracts.get(contractId);
+type MapPreview = {
+  readonly landmark: HeroLandmark | null;
+  readonly pixels: Uint8ClampedArray;
+  readonly width: number;
+  readonly height: number;
+};
 
+function useMapPreview(contractId: string | null): MapPreview | null {
+  const [preview, setPreview] = useState<MapPreview | null>(null);
+  const bundle = getContent();
   useEffect(() => {
-    if (!contract || contract.modifiers.biomeHint === null) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!contractId) {
+      setPreview(null);
+      return;
+    }
+    const contract = bundle.contracts.get(contractId);
+    if (!contract || contract.modifiers.biomeHint === null) {
+      setPreview(null);
+      return;
+    }
     const req = mapGenRequestFromContract(contract, 1.5, 1);
-    // Small size so the thumbnail render is near-instant.
     const result = runPipeline({ ...req, size: Math.min(req.size, 96) });
     const thumb = generateThumbnail(result, 96);
-    canvas.width = thumb.width;
-    canvas.height = thumb.height;
+    setPreview({
+      landmark: result.heroLandmark,
+      pixels: thumb.pixels,
+      width: thumb.width,
+      height: thumb.height,
+    });
+  }, [contractId, bundle]);
+  return preview;
+}
+
+function MapThumbnailCanvas({
+  pixels,
+}: {
+  pixels: Uint8ClampedArray | null;
+}): React.JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (!pixels) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const imageData = ctx.createImageData(thumb.width, thumb.height);
-    imageData.data.set(thumb.pixels);
+    const imageData = ctx.createImageData(96, 96);
+    imageData.data.set(pixels);
     ctx.putImageData(imageData, 0, 0);
-  }, [contract]);
+  }, [pixels]);
 
   return (
     <canvas

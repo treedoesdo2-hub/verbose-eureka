@@ -1,6 +1,7 @@
 import type { Contract } from '@schema/contract';
 import { CONTRACT_SIZE_TILES } from '@schema/contract';
 import type { BiomeId } from '@schema/map';
+import type { HeroLandmark } from './hero-landmark';
 import type { MapGenRequest, ObjectiveAnchor } from './types';
 
 // Pillar A: derive a MapGenRequest from a Contract. Honors contract-authored
@@ -60,4 +61,58 @@ export function bindObjectivesToAnchors(
     }
   }
   return out;
+}
+
+// COA-4 task #90 — briefing token interpolation. Contract briefing
+// strings may embed {landmark} or {landmark_short} tokens that bind to
+// the generated hero landmark at runtime so mission text references the
+// actual named feature ("seize Refinery Bravo" → "seize Refinery
+// Hotel-7" for this seed). Unknown tokens are left in place so authors
+// can see them during review.
+const LANDMARK_TOKENS: Record<string, (l: HeroLandmark) => string> = {
+  '{landmark}': (l) => l.name,
+  '{landmark_short}': (l) => l.shortName,
+};
+
+export function interpolateBriefing(
+  briefing: string,
+  landmark: HeroLandmark | null,
+): string {
+  if (!landmark) return briefing;
+  let out = briefing;
+  for (const [token, resolve] of Object.entries(LANDMARK_TOKENS)) {
+    if (out.includes(token)) out = out.split(token).join(resolve(landmark));
+  }
+  return out;
+}
+
+// COA-4 task #90 — when a contract's briefing explicitly references the
+// hero landmark and carries a 'secure' objective, snap the secure
+// anchor to the landmark's bounding box so the waypoint reads clean on
+// the map and matches the text. Returns a rect or null if the landmark
+// has no footprint.
+export function secureAnchorFromLandmark(
+  landmark: HeroLandmark | null,
+): { x: number; y: number; w: number; h: number } | null {
+  if (!landmark || landmark.footprint.length === 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of landmark.footprint) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+}
+
+// True if the briefing references any landmark token (caller uses this
+// to decide whether to route the secure objective to the landmark).
+export function briefingReferencesLandmark(briefing: string): boolean {
+  for (const token of Object.keys(LANDMARK_TOKENS)) {
+    if (briefing.includes(token)) return true;
+  }
+  return false;
 }

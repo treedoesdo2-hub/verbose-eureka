@@ -8,7 +8,7 @@ import { deriveCombatProfile, loadoutFromTemplate } from './loadout';
 import { runPipeline } from './mapgen/pipeline';
 import type { MapGenRequest, MapGenResult } from './mapgen/types';
 import { makeSquadRuntime, pickLeader, type SquadRuntimeState } from './squad';
-import type { ObjectiveRect, ObjectiveRuntimeState, SimState } from './state';
+import { EMPTY_MAP_META, type MapMeta, type ObjectiveRect, type ObjectiveRuntimeState, type SimState } from './state';
 import { makeInitialState } from './tick';
 import type { Unit, UnitRole, UnitStats, Vec2 } from './unit';
 import { DEFAULT_STATS, makeUnit } from './unit';
@@ -292,6 +292,7 @@ export function buildScenario(input: BuildScenarioInput): SimState {
   // buildGeneratedMap time. Fall back to the tile-list loader for authored
   // fixture maps (training-yard, test fixtures).
   let world: World;
+  let mapMeta: MapMeta = EMPTY_MAP_META;
   if (input.map.generationSeed !== undefined && input.map.tiles.length === 0) {
     // Tile buffer was produced at buildGeneratedMap; the authored path
     // calls buildWorld. If a caller hands us a seed-tagged map with no
@@ -325,6 +326,10 @@ export function buildScenario(input: BuildScenarioInput): SimState {
       hpPoint: regen.hpPoint,
       buildings: regen.buildings,
     });
+    mapMeta = {
+      dominantLine: regen.dominantLine,
+      heroLandmark: regen.heroLandmark,
+    };
   } else {
     world = buildWorld(input.map);
   }
@@ -464,6 +469,7 @@ export function buildScenario(input: BuildScenarioInput): SimState {
     translateObjectives(input.contract, fallbackZone, input.objectiveZoneOverrides),
     { team0: team0HomePos, team1: team1HomePos },
     squads,
+    mapMeta,
   );
 }
 

@@ -1,6 +1,8 @@
 import type { BodyZone } from '@schema/common';
 import type { ObjectiveKind } from '@schema/contract';
 import type { UnitId } from '@shared/ids';
+import type { DominantLine } from './mapgen/dominant-line';
+import type { HeroLandmark } from './mapgen/hero-landmark';
 import type { NoiseKind } from './noise';
 import type { RngSnapshot } from './rng';
 import type { SquadRuntimeState } from './squad';
@@ -80,4 +82,19 @@ export type SimState = {
   // ADR 003 squad hierarchy: player units belong to squads and follow a
   // leader while the squad's order is 'advance'. Keyed by SquadRuntimeState.id.
   readonly squads: ReadonlyMap<string, SquadRuntimeState>;
+  // COA-4 map metadata — dominant line + hero landmark carry the map's
+  // spatial identity through to briefing UI + AI waypoint hints. Null on
+  // pre-COA-4 scenarios (authored fixtures that predate the pipeline
+  // rewrite).
+  readonly mapMeta: MapMeta;
+};
+
+export type MapMeta = {
+  readonly dominantLine: DominantLine | null;
+  readonly heroLandmark: HeroLandmark | null;
+};
+
+export const EMPTY_MAP_META: MapMeta = {
+  dominantLine: null,
+  heroLandmark: null,
 };

@@ -12,7 +12,7 @@ import {
 } from './objectives';
 import { Rng } from './rng';
 import { promoteLeaders, type SquadRuntimeState } from './squad';
-import { type ObjectiveRuntimeState, SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
+import { EMPTY_MAP_META, type MapMeta, type ObjectiveRuntimeState, SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
 import type { LastSeen, Stance, Unit, UnitAction, Vec2, Wound } from './unit';
 import {
   BLOODOUT_THRESHOLD,
@@ -684,6 +684,7 @@ export function tick(state: SimState, rng: Rng): SimState {
     team0HomePos: state.team0HomePos,
     team1HomePos: state.team1HomePos,
     squads: nextSquads,
+    mapMeta: state.mapMeta,
   };
 }
 
@@ -694,6 +695,7 @@ export function makeInitialState(
   objectives: readonly ObjectiveRuntimeState[] = [],
   homePos?: { team0: Vec2; team1: Vec2 },
   squads: ReadonlyMap<string, SquadRuntimeState> = new Map(),
+  mapMeta: MapMeta = EMPTY_MAP_META,
 ): SimState {
   const rng = new Rng(seed);
   const unitMap = new Map<UnitId, Unit>();
@@ -713,6 +715,7 @@ export function makeInitialState(
     team0HomePos: computed.team0,
     team1HomePos: computed.team1,
     squads,
+    mapMeta,
   };
 }
 
