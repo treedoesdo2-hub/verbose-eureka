@@ -69,9 +69,8 @@ export function clusterGate(
     const component: number[] = [];
     while (top > 0) {
       const p = stack[--top];
-      if (visited[p]) continue;
+      if (visited[p] || grid[p] !== kind) continue;
       visited[p] = 1;
-      if (grid[p] !== kind) continue;
       component.push(p);
       const x = p % W;
       const y = (p - x) / W;
