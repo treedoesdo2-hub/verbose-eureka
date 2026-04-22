@@ -248,7 +248,32 @@ Directive: "do the same size map as firefight. I wasnt asking."
 - `GameMap.width/height` max raised from 2048 → **4096**. Current schema ceiling is insufficient.
 - Quality floor: every seed must produce a map comparable in content and coherence to a hand-authored Firefight map. Not "inspired by" — comparable. Sparse/incoherent seeds are bugs.
 - Combat-system downstream consequences (longer effective ranges, units spawning at distance, match duration extension) are acknowledged and deferred to implementation — they're not license to shrink the map.
-- Reference for proven procgen-at-authored-quality: **Rimworld** (install path pending user confirmation). The generator agent will inspect Rimworld's biome-painter/terrain-feature/POI-scatter pipeline once located.
+
+**Generator architecture** (grounded against RimWorld's scene-gen, decompiled at `C:\Users\User\AppData\Local\Temp\rimworld_decompiled\`):
+
+- **Ordered GenStep pipeline** with per-step re-seeding (`HashCombineInt(seed, stepSeedPart)`) and a shared `data` dict for float grids. Mirrors `Verse\MapGenerator.cs`. Step order buckets: elevation/fertility (10–20) → caves/carving (20–30) → rocks/structure (200–220) → terrain painting (210–220) → roads/connectivity (250) → scatter ruins/shrines (300–500) → player start + objective anchors (600–700) → flora/fauna (800–1000) → fog/final (1500).
+- **Biome-as-XML-data, not biome-as-code.** Per-biome: `terrainsByFertility` band lookup, `terrainPatchMakers` (Perlin overlays for patchy water/mud/rubble), `wildPlants/wildAnimals` weighted commonalities, `plantDensity/animalDensity` scalars. Matches `Data\Core\Defs\BiomeDefs\*.xml`. New biome = XML file; no per-biome generator code ever.
+- **Quality invariant: `removeIslands` post-pass.** After terrain paint, flood-fill passable regions; keep largest edge-touching; convert anything `< largest/20` OR non-edge-touching `< largest/2` to impassable surround. This is the single most important "no sparse seeds" guarantee from RimWorld's decompile (`RimWorld\GenStep_Terrain.cs:115`). Ship it.
+- **Structure placement via `Scatterer` base class.** Each scatterer step carries `countPer10kCells` (quadratic in map size — at 4096 that's 1679 scaled units), `minSpacing`, `minEdgeDistPct`, `minDistToPlayerStartPct`, a validator chain (buildable? avoids special things? no conflicting edifices?), and a fallback validator list for retry-on-fail. Shared `UsedRects` list so later passes respect earlier placements.
+- **Authored chunk vocabulary** (the departure from RimWorld, which is code-driven): **~80–200 prefab chunks at 16×16 or 32×32 tile scale, with anchor metadata and WFC adjacency tables.** RimWorld ships only 3 LayoutDef XML files + 29 code SketchResolvers + 122 code BaseGen SymbolResolvers — 10× denser authoring than that is required to hit Firefight's ~80-building prop vocabulary. Chunks are the rendering blocks of the block-grammar from Pillar A's body.
+- **Required forks from RimWorld's code at 4096 scale** (decompile showed specific scale bugs):
+  - **Normalize all Perlin frequencies** by `referenceSize / mapSize`. RimWorld's `ElevationFreq = 0.021` produces ~5 noise cycles on a 250 map; at 4096 that's 86 hair-thin stripes, unplayable. Every biome's `terrainPatchMakers/perlinFrequency` must scale.
+  - **No hard iteration caps.** RimWorld's `GenStep_Animals` caps at 10000 iterations; at 4096 that's insufficient. Use density-target loops with early-exit on saturation.
+  - **Spatial hash for `usedSpots` proximity checks.** RimWorld scans linearly (O(placed²)); at 4k+ placements on a 4096 map that's 16M checks. Tile-bucketed hash reduces to O(1) per lookup.
+  - **Chunked-density sampler for flora.** RimWorld iterates every cell with `Rand.Chance(0.001)`; 16.7M cells at 4096 is 260× a 250-map iteration. Sample at 16×16 block density averages instead.
+- **Component bridging at scale.** RimWorld's `RemoveIslands` retains only one large component by default. At 4096 we may legitimately have multiple large valid components separated by rivers/cliffs — add an explicit post-pass that force-connects any component `≥ 1%` of map area via generated roads/bridges, instead of nuking them.
+
+**Deterministic on seed.** Given `(seed, biome, generationVersion)`, the output map is byte-identical. `GameMap` schema gets `generationSeed: string` + `generationVersion: number` so regenerated maps are replay-stable across generator iteration. Snapshot-test on a small fixture map: same seed → same hash of `terrain` + `thingList`.
+
+**Reference files** (pinned for implementation):
+- `C:\Users\User\AppData\Local\Temp\rimworld_decompiled\Verse\MapGenerator.cs` — pipeline entry + per-step reseeding.
+- `...\Verse\GenStep_Scatterer.cs` — the Scatterer base class, validators, usedSpots.
+- `...\RimWorld\GenStep_ElevationFertility.cs` — Perlin setup (and the frequency constants we're normalizing away).
+- `...\RimWorld\GenStep_Terrain.cs:115` — RemoveIslands.
+- `C:\Program Files (x86)\Steam\steamapps\common\RimWorld\Data\Core\Defs\MapGeneration\CommonMapGenerator.xml` — canonical GenStep ordering.
+- `...\Data\Core\Defs\BiomeDefs\Biomes_Temperate.xml` — biome data shape.
+
+**Open (non-blocking): Unity `CellIndices` cap.** RimWorld historically had issues past ~500 map size; the decompile agent did not verify the actual cap. We're not using Unity — this is informational. Our constraint is `Uint8Array` + `Float32Array` size (each 16M bytes at 4096², well within JS limits).
 
 ### B. Objective runtime state: inside `SimState`.
 
