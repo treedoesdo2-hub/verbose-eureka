@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 import { electronApp, is, optimizer } from '@electron-toolkit/utils';
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, crashReporter, ipcMain, shell } from 'electron';
 import icon from '../../resources/icon.png?asset';
-import { initLogger } from './logger';
+import { initLogger, logMain } from './logger';
 
 function createWindow(): void {
   // Create the browser window.
@@ -39,8 +39,37 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
+// Native crash dumps via Chromium's crashpad — captures SIGSEGV / V8 OOM
+// / GPU process hangs that our JS-level logger can't see. Dumps land in
+// userData/Crashpad/reports/ and survive across process death. Start
+// before app.whenReady so early crashes are caught too.
+crashReporter.start({ uploadToServer: false });
+
 app.whenReady().then(() => {
   initLogger();
+
+  // Renderer + child-process death events fire in the main process
+  // *before* the dead process is reaped, giving us a chance to write the
+  // reason to the session log. Without these handlers, a native crash in
+  // the renderer leaves zero forensic trail.
+  app.on('render-process-gone', (_event, webContents, details) => {
+    logMain('error', `render-process-gone: ${details.reason}`, {
+      exitCode: details.exitCode,
+      url: webContents.getURL(),
+    });
+  });
+
+  app.on('child-process-gone', (_event, details) => {
+    logMain('error', `child-process-gone: ${details.type} / ${details.reason}`, {
+      exitCode: details.exitCode,
+      name: details.name ?? '',
+      serviceName: details.serviceName ?? '',
+    });
+  });
+
+  app.on('before-quit', () => {
+    logMain('info', 'app before-quit');
+  });
 
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron');
