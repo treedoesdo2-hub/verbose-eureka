@@ -1,50 +1,99 @@
 import type { Vec2 } from './unit';
-import { inBounds, terrainAt, type World } from './world';
+import {
+  type MovementMode,
+  WALK_FOOT,
+  elevationMeters,
+  inBounds,
+  terrainAxesAt,
+  walkBitFor,
+  type World,
+} from './world';
 
 // Pillar A pathfinding. 8-connected A* with Chebyshev heuristic on the
-// walkability grid (or terrain.passable fallback on authored maps).
+// walkability grid (or terrain.axes.move fallback on authored maps).
 // Range-limited so generated 4096² maps don't explode the open set.
 //
-// Determinism: no RNG. Given identical (world.walkability, world.terrain,
-// from, to), identical path out. Tie-break uses the deterministic insertion
-// order of the binary heap (stable for equal f-scores via insertion ordinal).
+// Determinism: no RNG. Given identical (world.walkability, world.base, from,
+// to), identical path out. Tie-break uses the deterministic insertion order
+// of the binary heap (stable for equal f-scores via insertion ordinal).
 
-const WALK_FOOT = 1 << 0;
-
-// Max nodes expanded per search. On a 512² map in practice A* touches
-// a few hundred to a few thousand nodes for realistic squad movement.
-// Cap prevents pathological pathological pathfinding on fully blocked maps
-// from stalling a tick.
 const MAX_NODES_EXPANDED = 4000;
 
-// Chebyshev distance (max of |dx|, |dy|) matches 8-connected movement cost
-// at uniform tile cost. Admissible and consistent — guarantees optimality.
+// Slope cost (COA-8). Each step of elevation change adds +0.5 to base cost
+// (uphill or downhill — downhill punished for controlled-descent reasons).
+const SLOPE_COST_PER_STEP = 0.5;
+// Cliff guard — a foot unit cannot cross a single-step elevation delta
+// greater than this (units ≈ 1.5m per step, so 2 = 3m vertical drop/climb).
+const MAX_STEP_ELEV_DELTA = 2;
+
 function heuristic(ax: number, ay: number, bx: number, by: number): number {
   const dx = Math.abs(ax - bx);
   const dy = Math.abs(ay - by);
   return Math.max(dx, dy);
 }
 
-function isPassableTile(world: World, x: number, y: number): boolean {
+export function isPassableForUnit(
+  world: World,
+  x: number,
+  y: number,
+  mode: MovementMode,
+): boolean {
   if (!inBounds(world, x, y)) return false;
-  if (world.walkability) {
-    return (world.walkability[y * world.width + x] & WALK_FOOT) !== 0;
+  const bit = walkBitFor(mode);
+  if (world.walkability && world.walkability.length > 0) {
+    return (world.walkability[y * world.width + x] & bit) !== 0;
   }
-  return terrainAt(world, x, y).passable;
+  // Fallback for authored-only maps or untested fixtures — use the base
+  // axis move effect.
+  const axes = terrainAxesAt(world, x, y);
+  if (axes.move === 'blocked-all') return false;
+  if (axes.move === 'blocked-vehicle') {
+    return mode === 'foot' || mode === 'prone' || mode === 'mech' || mode === 'power_armor';
+  }
+  if (axes.move === 'blocked-foot') return mode === 'mech' || mode === 'power_armor';
+  return true;
+}
+
+export function tileMoveSpeedMult(world: World, x: number, y: number): number {
+  if (!inBounds(world, x, y)) return 1.0;
+  return terrainAxesAt(world, x, y).moveSpeedMult || 1.0;
+}
+
+function isPassableTile(world: World, x: number, y: number): boolean {
+  return isPassableForUnit(world, x, y, 'foot');
 }
 
 // Diagonal movement is disallowed when it would cut the corner of an
 // impassable cell (standard grid A* rule — otherwise units squeeze through
-// 1-tile gaps between walls).
-function canStep(world: World, fx: number, fy: number, tx: number, ty: number): boolean {
-  if (!isPassableTile(world, tx, ty)) return false;
+// 1-tile gaps between walls). Also enforces the cliff guard per COA-8.
+function canStep(
+  world: World,
+  fx: number,
+  fy: number,
+  tx: number,
+  ty: number,
+  mode: MovementMode,
+): boolean {
+  if (!isPassableForUnit(world, tx, ty, mode)) return false;
+
+  // Cliff guard — foot-style infantry can't ascend or descend more than N
+  // elevation steps in a single tile step. Wheeled / tracked use the same
+  // cap; mechs and PA (taller, stronger) also obey it at MVP — could be
+  // relaxed per-mode later.
+  if (inBounds(world, fx, fy)) {
+    const dElev = Math.abs(
+      world.elevationStep[ty * world.width + tx] - world.elevationStep[fy * world.width + fx],
+    );
+    if (dElev > MAX_STEP_ELEV_DELTA) return false;
+  }
+
   const isDiagonal = fx !== tx && fy !== ty;
   if (!isDiagonal) return true;
-  return isPassableTile(world, tx, fy) && isPassableTile(world, fx, ty);
+  return (
+    isPassableForUnit(world, tx, fy, mode) && isPassableForUnit(world, fx, ty, mode)
+  );
 }
 
-// Simple binary min-heap keyed on fScore. The ordinal breaks ties so two
-// nodes with identical f land in deterministic order.
 class MinHeap {
   private nodes: { idx: number; f: number; ordinal: number }[] = [];
   private counter = 0;
@@ -100,33 +149,30 @@ class MinHeap {
   }
 }
 
-// Find a path from start to goal tiles (not meters). Returns a list of
-// tile-center Vec2s in meters, excluding the start tile, ending at the
-// goal (or the nearest reachable tile if goal is unreachable and `partial`).
-// Returns [] when no route exists and partial is false.
+export type FindPathOptions = {
+  readonly maxNodes?: number;
+  readonly partial?: boolean;
+  readonly mode?: MovementMode;
+};
+
 export function findPathTiles(
   world: World,
   startX: number,
   startY: number,
   goalX: number,
   goalY: number,
-  options: { maxNodes?: number; partial?: boolean } = {},
+  options: FindPathOptions = {},
 ): readonly { x: number; y: number }[] {
   const maxNodes = options.maxNodes ?? MAX_NODES_EXPANDED;
   const partial = options.partial ?? true;
+  const mode: MovementMode = options.mode ?? 'foot';
 
   if (startX === goalX && startY === goalY) return [];
-  if (!isPassableTile(world, startX, startY)) {
-    // Start tile itself is impassable (unit standing on rubble that just
-    // rolled in, say). Treat start as passable — the unit is already there.
-  }
-  if (!isPassableTile(world, goalX, goalY) && !partial) return [];
+  if (!isPassableForUnit(world, goalX, goalY, mode) && !partial) return [];
 
   const W = world.width;
   const H = world.height;
   const N = W * H;
-  // Dense arrays keep the hot path numeric; N=256² is 65k, 512² is 262k,
-  // 1024² is 1M. At 1024+ consider sparse maps instead.
   const gScore = new Float32Array(N);
   const cameFrom = new Int32Array(N);
   const closed = new Uint8Array(N);
@@ -168,12 +214,19 @@ export function findPathTiles(
         if (dx === 0 && dy === 0) continue;
         const nx = cx + dx;
         const ny = cy + dy;
-        if (!canStep(world, cx, cy, nx, ny)) continue;
+        if (!canStep(world, cx, cy, nx, ny, mode)) continue;
         const nIdx = ny * W + nx;
         if (closed[nIdx]) continue;
-        // Diagonal step costs sqrt(2) ≈ 1.4142; cardinal 1. This keeps
-        // paths tight against walls instead of zig-zagging.
-        const stepCost = dx !== 0 && dy !== 0 ? 1.41421356 : 1;
+        // Base step cost: 1 for cardinal, sqrt(2) for diagonal.
+        let stepCost = dx !== 0 && dy !== 0 ? 1.41421356 : 1;
+        // Slope cost (COA-8).
+        const dElev = Math.abs(
+          world.elevationStep[nIdx] - world.elevationStep[currentIdx],
+        );
+        stepCost *= 1 + dElev * SLOPE_COST_PER_STEP;
+        // Terrain speed modifier — slow tiles cost more to traverse.
+        const speedMult = tileMoveSpeedMult(world, nx, ny);
+        if (speedMult > 0 && speedMult < 1) stepCost *= 1 / speedMult;
         const tentativeG = gScore[currentIdx] + stepCost;
         if (tentativeG >= gScore[nIdx]) continue;
         gScore[nIdx] = tentativeG;
@@ -184,8 +237,6 @@ export function findPathTiles(
     }
   }
 
-  // Goal unreachable (or budget blown). Return the closest-approached
-  // tile's path if partial is allowed; otherwise empty.
   if (partial && bestReached !== startIdx) {
     return reconstruct(cameFrom, bestReached, startIdx, world);
   }
@@ -205,8 +256,6 @@ function reconstruct(
   while (cur !== -1 && cur !== startIdx) {
     const x = cur % W;
     const y = (cur - x) / W;
-    // Tile-center in meters — the +0.5 offset puts the waypoint in the
-    // middle of the tile so the unit doesn't try to hug the exact corner.
     reverse.push({ x: (x + 0.5) * ts, y: (y + 0.5) * ts });
     cur = cameFrom[cur];
   }
@@ -214,14 +263,11 @@ function reconstruct(
   return reverse;
 }
 
-// Public helper: pathfind from meters to meters. Converts to tile coords,
-// runs A*, returns a list of waypoints in meters. Empty list means no
-// route — caller should fall back to straight-line steering.
 export function findPathMeters(
   world: World,
   from: Vec2,
   to: Vec2,
-  options: { maxNodes?: number; partial?: boolean } = {},
+  options: FindPathOptions = {},
 ): readonly Vec2[] {
   const sx = Math.floor(from.x / world.tileSizeMeters);
   const sy = Math.floor(from.y / world.tileSizeMeters);
@@ -246,7 +292,6 @@ export function hasLineOfWalk(world: World, from: Vec2, to: Vec2): boolean {
   const sx = x0 < x1 ? 1 : -1;
   const sy = y0 < y1 ? 1 : -1;
   let err = dx - dy;
-  // Cap iterations so a pathological input can't hang the tick.
   const maxSteps = dx + dy + 1;
   let steps = 0;
   while (steps++ < maxSteps) {
@@ -265,9 +310,6 @@ export function hasLineOfWalk(world: World, from: Vec2, to: Vec2): boolean {
   return true;
 }
 
-// Simplify a path by removing collinear intermediate waypoints. Cuts the
-// waypoint count roughly in half for straight corridors and makes the
-// unit's movement visually smoother (fewer micro-corrections).
 export function simplifyPath(path: readonly Vec2[]): Vec2[] {
   if (path.length <= 2) return [...path];
   const out: Vec2[] = [path[0]];
@@ -279,10 +321,14 @@ export function simplifyPath(path: readonly Vec2[]): Vec2[] {
     const dy1 = cur.y - prev.y;
     const dx2 = next.x - cur.x;
     const dy2 = next.y - cur.y;
-    // Cross product — zero means collinear, drop cur.
     const cross = dx1 * dy2 - dy1 * dx2;
     if (Math.abs(cross) > 1e-6) out.push(cur);
   }
   out.push(path[path.length - 1]);
   return out;
 }
+
+// Lint appeasement — elevationMeters + WALK_FOOT kept as module-level
+// imports in case callers later want them for step-cost override plumbing.
+void elevationMeters;
+void WALK_FOOT;

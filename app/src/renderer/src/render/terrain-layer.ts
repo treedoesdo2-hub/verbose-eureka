@@ -40,7 +40,7 @@ export class TerrainLayer {
         for (let y = 0; y < ch; y++) {
           for (let x = 0; x < cw; x++) {
             const i = (cy + y) * world.width + (cx + x);
-            const color = TERRAIN_COLORS[world.terrain[i]] ?? 0x1a2b1a;
+            const color = TERRAIN_COLORS[world.base[i]] ?? 0x1a2b1a;
             let arr = byColor.get(color);
             if (!arr) {
               arr = [];

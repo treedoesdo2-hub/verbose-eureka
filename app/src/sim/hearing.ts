@@ -13,13 +13,13 @@ import {
 import type { SimEvent } from './state';
 import type { Unit, Vec2 } from './unit';
 import { SUPPRESSION_HEAVY_THRESHOLD } from './unit';
-import { byteToTerrain, inBounds, tileIndex, type World } from './world';
+import { type CoverAxes, BASE_AXES, terrainAxesAt, inBounds, type World } from './world';
 
-function listenerTerrain(world: World, pos: Vec2): ReturnType<typeof byteToTerrain> {
+function listenerAxes(world: World, pos: Vec2): CoverAxes {
   const tx = Math.floor(pos.x / world.tileSizeMeters);
   const ty = Math.floor(pos.y / world.tileSizeMeters);
-  if (!inBounds(world, tx, ty)) return 'open';
-  return byteToTerrain(world.terrain[tileIndex(world, tx, ty)] ?? 0);
+  if (!inBounds(world, tx, ty)) return BASE_AXES.open;
+  return terrainAxesAt(world, tx, ty);
 }
 
 function heardFromEvent(
@@ -30,9 +30,9 @@ function heardFromEvent(
   noiseKind: NoiseKind,
   tick: number,
 ): Heard | null {
-  const terrain = listenerTerrain(world, listener.position);
+  const axes = listenerAxes(world, listener.position);
   const suppressed = listener.suppression >= SUPPRESSION_HEAVY_THRESHOLD;
-  const range = effectiveHearingRange(noiseKind, listener.stats.awareness, terrain, suppressed);
+  const range = effectiveHearingRange(noiseKind, listener.stats.awareness, axes, suppressed);
   const dx = sourcePos.x - listener.position.x;
   const dy = sourcePos.y - listener.position.y;
   const dist = Math.hypot(dx, dy);
@@ -68,7 +68,6 @@ export function updateLastHeard(
   world: World,
   tick: number,
 ): ReadonlyMap<UnitId, Heard> {
-  // Panicked units are too scrambled to process sound.
   if (listener.aiState === 'panic') return new Map();
 
   const next = new Map<UnitId, Heard>();
@@ -92,13 +91,11 @@ export function updateLastHeard(
     if (!existing || candidate.confidence >= existing.confidence) {
       next.set(ev.sourceUnitId, candidate);
     } else if (existing.tick < candidate.tick) {
-      // Even a weaker new sample refreshes the tick so the entry doesn't age out.
       next.set(ev.sourceUnitId, { ...existing, tick: candidate.tick });
     }
   }
 
   if (next.size <= HEARD_MAX_ENTRIES) return next;
-  // Drop oldest first.
   const sorted = [...next.entries()].sort((a, b) => b[1].tick - a[1].tick);
   const trimmed = new Map<UnitId, Heard>();
   for (let i = 0; i < Math.min(sorted.length, HEARD_MAX_ENTRIES); i++) {

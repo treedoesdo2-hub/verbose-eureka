@@ -1,33 +1,60 @@
-import type { BiomeId, TerrainKind } from '@schema/map';
+import type { BiomeId, PointObjectKind, TerrainBase } from '@schema/map';
+import {
+  BARRIER_AXES,
+  BASE_AXES,
+  type BuildingRecord,
+  ELEVATION_STEPS,
+  POINT_AXES,
+  WALK_FOOT,
+  WALK_INFANTRY_MASK,
+  WALK_MECH,
+  WALK_POWER_ARMOR,
+  WALK_PRONE,
+  WALK_SLOW,
+  WALK_TRACKED,
+  WALK_WHEELED,
+  baseToByte,
+  byteToBase,
+  byteToPoint,
+  pointToByte,
+  quantizeElevationNorm,
+} from '../world';
 import { fbm2D, hashStringToSeed, makeRng, subRng } from './noise';
-import type { DeployZone, MapGenRequest, MapGenResult, ObjectiveAnchor } from './types';
-import { WALK_FOOT, WALK_PRONE_ONLY, WALK_WHEELED } from './types';
+import type {
+  DeployZone,
+  MapGenDiagnostics,
+  MapGenRequest,
+  MapGenResult,
+  ObjectiveAnchor,
+} from './types';
 
-// Terrain byte codes — must match TERRAIN_KINDS in sim/world.ts.
-const T = {
-  open: 0,
-  road: 1,
-  building: 2,
-  forest: 3,
-  water: 4,
-  rubble: 5,
-} as const satisfies Record<TerrainKind, number>;
+// Base-kind byte shortcuts (match world.ts BASE_KINDS order).
+const B = {
+  open: baseToByte('open'),
+  road: baseToByte('road'),
+  water_shallow: baseToByte('water_shallow'),
+  water_deep: baseToByte('water_deep'),
+  mud: baseToByte('mud'),
+  rubble_ground: baseToByte('rubble_ground'),
+  snow: baseToByte('snow'),
+  sand: baseToByte('sand'),
+} as const;
 
 type BiomeDef = {
-  // (elevation, fertility) → terrain preference bands.
-  paint(elev: number, fert: number, rng01: number): TerrainKind;
+  // (elevation, fertility) → base surface preference.
+  paint(elev: number, fert: number, rng01: number): TerrainBase;
   // Density targets per 10k cells.
   buildingClusters: number;
-  buildingClusterSize: [number, number]; // min, max
+  buildingClusterSize: [number, number];
   forestClusters: number;
-  roadDensity: number; // 0..1
+  roadDensity: number;
 };
 
 const BIOMES: Record<BiomeId, BiomeDef> = {
   urban_sparse: {
     paint(elev, fert) {
-      if (elev < 0.18) return 'water';
-      if (fert > 0.72) return 'forest';
+      if (elev < 0.18) return 'water_deep';
+      if (fert > 0.72) return 'open'; // forest added later via point scatter
       return 'open';
     },
     buildingClusters: 45,
@@ -37,8 +64,8 @@ const BIOMES: Record<BiomeId, BiomeDef> = {
   },
   rural_open: {
     paint(elev, fert) {
-      if (elev < 0.15) return 'water';
-      if (fert > 0.62) return 'forest';
+      if (elev < 0.15) return 'water_deep';
+      if (fert > 0.62) return 'open';
       return 'open';
     },
     buildingClusters: 8,
@@ -48,14 +75,63 @@ const BIOMES: Record<BiomeId, BiomeDef> = {
   },
   mixed: {
     paint(elev, fert) {
-      if (elev < 0.16) return 'water';
-      if (fert > 0.68) return 'forest';
+      if (elev < 0.16) return 'water_deep';
+      if (fert > 0.68) return 'open';
       return 'open';
     },
     buildingClusters: 22,
     buildingClusterSize: [2, 6],
     forestClusters: 12,
     roadDensity: 0.35,
+  },
+  // Deferred biomes stubbed with the mixed profile.
+  urban_dense: {
+    paint(elev) {
+      return elev < 0.16 ? 'water_deep' : 'open';
+    },
+    buildingClusters: 90,
+    buildingClusterSize: [3, 8],
+    forestClusters: 2,
+    roadDensity: 0.7,
+  },
+  industrial: {
+    paint(elev) {
+      return elev < 0.16 ? 'water_deep' : 'open';
+    },
+    buildingClusters: 60,
+    buildingClusterSize: [5, 10],
+    forestClusters: 2,
+    roadDensity: 0.5,
+  },
+  forest: {
+    paint(elev) {
+      if (elev < 0.15) return 'water_deep';
+      return 'open';
+    },
+    buildingClusters: 3,
+    buildingClusterSize: [2, 3],
+    forestClusters: 40,
+    roadDensity: 0.1,
+  },
+  arid: {
+    paint(elev, fert) {
+      if (elev < 0.12) return 'sand';
+      return fert < 0.3 ? 'sand' : 'open';
+    },
+    buildingClusters: 12,
+    buildingClusterSize: [2, 5],
+    forestClusters: 2,
+    roadDensity: 0.25,
+  },
+  rural_village: {
+    paint(elev) {
+      if (elev < 0.15) return 'water_deep';
+      return 'open';
+    },
+    buildingClusters: 18,
+    buildingClusterSize: [2, 5],
+    forestClusters: 14,
+    roadDensity: 0.3,
   },
 };
 
@@ -65,15 +141,30 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
   const N = W * H;
   const seedBase = hashStringToSeed(req.seed);
 
-  const terrain = new Uint8Array(N);
-  const elevation = new Float32Array(N);
-  const walkability = new Uint8Array(N);
-  const coverValue = new Uint8Array(N);
+  // Per-tile grids (ADR 012).
+  const base = new Uint8Array(N);
+  const point = new Uint8Array(N);
+  const edgeN = new Uint8Array(N);
+  const edgeW = new Uint8Array(N);
+  const edgeOverrideN = new Uint8Array(N);
+  const edgeOverrideW = new Uint8Array(N);
+  const buildingId = new Uint16Array(N);
+  const walkability = new Uint16Array(N);
+  const coverProfile = new Uint8Array(N);
+  const elevationStep = new Uint8Array(N);
   const structureHeight = new Uint8Array(N);
+  const hpN = new Uint16Array(N);
+  const hpW = new Uint16Array(N);
+  const hpPoint = new Uint16Array(N);
+
+  const elevation = new Float32Array(N);
+  const fertility = new Float32Array(N);
+  const coverDensity = new Float32Array(N);
+  const buildings: BuildingRecord[] = [];
 
   const biomeDef = BIOMES[req.biome];
 
-  // ---- Step: elevation (one fBm field, normalized) ----
+  // ---- Step: elevation fBm (continuous), quantized to step (COA-8) ----
   {
     const seed = subRng(seedBase, 'elevation-seed')();
     const s = ((seed * 0xffffffff) | 0) >>> 0;
@@ -88,11 +179,14 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
       }
     }
     const range = max - min || 1;
-    for (let i = 0; i < N; i++) elevation[i] = (elevation[i] - min) / range;
+    for (let i = 0; i < N; i++) {
+      const norm = (elevation[i] - min) / range;
+      elevation[i] = norm;
+      elevationStep[i] = quantizeElevationNorm(norm);
+    }
   }
 
-  // ---- Step: fertility (second fBm, used for paint only) ----
-  const fertility = new Float32Array(N);
+  // ---- Step: fertility fBm (continuous, paint-driver) ----
   {
     const s = hashStringToSeed(`${req.seed}:fertility`);
     let min = Number.POSITIVE_INFINITY;
@@ -109,31 +203,39 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
     for (let i = 0; i < N; i++) fertility[i] = (fertility[i] - min) / range;
   }
 
-  // ---- Step: biome paint ----
+  // ---- Step: biome paint → base surface ----
   {
     const paintRng = subRng(seedBase, 'biome-paint');
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const i = y * W + x;
         const kind = biomeDef.paint(elevation[i], fertility[i], paintRng());
-        terrain[i] = T[kind];
+        base[i] = baseToByte(kind);
       }
     }
   }
 
-  // ---- Step: remove small islands (post-paint, per-terrain connectivity).
-  // Keep only water components >= 0.2% of map area; smaller get filled to open.
-  removeSmallWaterIslands(terrain, W, H, Math.max(32, Math.floor(N * 0.002)));
+  // ---- Step: remove small water islands ----
+  const prunedClusters = removeSmallBaseIslands(
+    base,
+    W,
+    H,
+    B.water_deep,
+    B.open,
+    Math.max(32, Math.floor(N * 0.002)),
+  );
 
-  // ---- Step: road skeleton (grid cross through the map center, density-gated).
+  // ---- Step: road skeleton (temporary cardinal cross; replaced by COA-4) ----
   if (biomeDef.roadDensity > 0) {
-    stampRoadSkeleton(terrain, W, H, biomeDef.roadDensity, seedBase);
+    stampRoadSkeleton(base, W, H, biomeDef.roadDensity, seedBase);
   }
 
-  // ---- Step: building clusters (scatter, rejection sampling on open/road).
+  // ---- Step: building clusters ----
   scatterBuildingClusters(
-    terrain,
+    base,
     structureHeight,
+    buildingId,
+    buildings,
     W,
     H,
     biomeDef.buildingClusters,
@@ -141,33 +243,30 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
     seedBase,
   );
 
-  // ---- Step: forest clusters (scatter on open/existing-forest).
-  scatterForestClusters(terrain, W, H, biomeDef.forestClusters, seedBase);
+  // ---- Step: forest (scatter tree_forest + bush_medium points) ----
+  scatterForestClusters(
+    base,
+    point,
+    hpPoint,
+    fertility,
+    W,
+    H,
+    biomeDef.forestClusters,
+    seedBase,
+  );
 
   // ---- Step: walkability + cover bake ----
-  for (let i = 0; i < N; i++) {
-    const t = terrain[i];
-    if (t === T.building || t === T.water) {
-      walkability[i] = 0;
-    } else if (t === T.forest) {
-      walkability[i] = WALK_FOOT | WALK_PRONE_ONLY;
-    } else if (t === T.rubble) {
-      walkability[i] = WALK_FOOT | WALK_PRONE_ONLY;
-    } else {
-      walkability[i] = WALK_FOOT | WALK_WHEELED;
-    }
-    coverValue[i] = t === T.building ? 70 : t === T.forest ? 30 : t === T.rubble ? 20 : 0;
-  }
+  bakeWalkabilityAndCover(base, point, buildingId, walkability, coverProfile, N);
 
-  // ---- Step: deploy zones + objective anchors ----
+  // ---- Step: deploy zones + ensure walkable ----
   const { team0, team1 } = pickDeployZones(W, H);
-  ensureZoneWalkable(terrain, walkability, W, H, team0);
-  ensureZoneWalkable(terrain, walkability, W, H, team1);
+  ensureZoneWalkable(base, buildingId, point, walkability, W, team0);
+  ensureZoneWalkable(base, buildingId, point, walkability, W, team1);
 
-  // ---- Step: reachability sanity — carve a corridor if team0 and team1
-  //       deploy zones are not reachable via foot-walkable terrain.
+  // ---- Step: reachability sanity carve ----
+  let carvedCells = 0;
   if (!zonesReachable(walkability, W, H, team0, team1)) {
-    carveCorridor(terrain, walkability, W, H, team0, team1);
+    carvedCells = carveCorridor(base, point, buildingId, walkability, W, H, team0, team1);
   }
 
   const objectiveAnchors: ObjectiveAnchor[] = [
@@ -193,30 +292,64 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
     },
   ];
 
-  // ---- Determinism hash ----
-  const hash = hashBuffer(terrain);
+  // Placeholder coverDensity — COA-1 will populate this. Keep zeroed for now.
+  void coverDensity;
+
+  const diagnostics: MapGenDiagnostics = {
+    retryCount: 0,
+    hotspotsFound: 0,
+    hotspotsDropped: 0,
+    carvedCells,
+    prunedClusters,
+  };
+
+  const hash = hashBuffers(base, point, edgeN, edgeW, walkability);
 
   return {
     request: req,
     width: W,
     height: H,
-    terrain,
-    elevation,
+    base,
+    point,
+    edgeN,
+    edgeW,
+    edgeOverrideN,
+    edgeOverrideW,
+    buildingId,
     walkability,
-    coverValue,
+    coverProfile,
+    elevationStep,
     structureHeight,
+    hpN,
+    hpW,
+    hpPoint,
+    buildings,
+    elevation,
+    coverDensity,
     deployZones: { team0, team1 },
     objectiveAnchors,
+    diagnostics,
     hash,
   };
 }
 
-function removeSmallWaterIslands(terrain: Uint8Array, W: number, H: number, minSize: number): void {
+// ---------------------------------------------------------------------------
+// Pipeline stages — simplified parity pass. COAs 1/3/4 replace most of these.
+
+function removeSmallBaseIslands(
+  base: Uint8Array,
+  W: number,
+  H: number,
+  sourceByte: number,
+  fillByte: number,
+  minSize: number,
+): number {
   const N = W * H;
   const visited = new Uint8Array(N);
   const stack = new Int32Array(N);
+  let pruned = 0;
   for (let i = 0; i < N; i++) {
-    if (visited[i] || terrain[i] !== T.water) continue;
+    if (visited[i] || base[i] !== sourceByte) continue;
     let top = 0;
     stack[top++] = i;
     const component: number[] = [];
@@ -224,7 +357,7 @@ function removeSmallWaterIslands(terrain: Uint8Array, W: number, H: number, minS
       const p = stack[--top];
       if (visited[p]) continue;
       visited[p] = 1;
-      if (terrain[p] !== T.water) continue;
+      if (base[p] !== sourceByte) continue;
       component.push(p);
       const x = p % W;
       const y = (p - x) / W;
@@ -234,54 +367,56 @@ function removeSmallWaterIslands(terrain: Uint8Array, W: number, H: number, minS
       if (y < H - 1) stack[top++] = p + W;
     }
     if (component.length < minSize) {
-      for (const p of component) terrain[p] = T.open;
+      for (const p of component) base[p] = fillByte;
+      pruned++;
     }
   }
+  return pruned;
 }
 
 function stampRoadSkeleton(
-  terrain: Uint8Array,
+  base: Uint8Array,
   W: number,
   H: number,
   density: number,
   seed: number,
 ): void {
   const rng = makeRng(seed ^ 0xa5a5a5a5);
-  // Always paint a cardinal cross.
   const midX = Math.floor(W / 2);
   const midY = Math.floor(H / 2);
   for (let x = 0; x < W; x++) {
     const i = midY * W + x;
-    if (terrain[i] === T.open) terrain[i] = T.road;
-    if (midY > 0 && terrain[i - W] === T.open) terrain[i - W] = T.road;
+    if (base[i] === B.open) base[i] = B.road;
+    if (midY > 0 && base[i - W] === B.open) base[i - W] = B.road;
   }
   for (let y = 0; y < H; y++) {
     const i = y * W + midX;
-    if (terrain[i] === T.open) terrain[i] = T.road;
-    if (midX > 0 && terrain[i - 1] === T.open) terrain[i - 1] = T.road;
+    if (base[i] === B.open) base[i] = B.road;
+    if (midX > 0 && base[i - 1] === B.open) base[i - 1] = B.road;
   }
-  // Secondary perpendicular branches.
   const branches = Math.max(1, Math.floor(density * 8));
   for (let b = 0; b < branches; b++) {
     if (rng() < 0.5) {
       const y = Math.floor(rng() * H);
       for (let x = 0; x < W; x++) {
         const i = y * W + x;
-        if (terrain[i] === T.open) terrain[i] = T.road;
+        if (base[i] === B.open) base[i] = B.road;
       }
     } else {
       const x = Math.floor(rng() * W);
       for (let y = 0; y < H; y++) {
         const i = y * W + x;
-        if (terrain[i] === T.open) terrain[i] = T.road;
+        if (base[i] === B.open) base[i] = B.road;
       }
     }
   }
 }
 
 function scatterBuildingClusters(
-  terrain: Uint8Array,
+  base: Uint8Array,
   structureHeight: Uint8Array,
+  buildingId: Uint16Array,
+  buildings: BuildingRecord[],
   W: number,
   H: number,
   per10k: number,
@@ -303,13 +438,11 @@ function scatterBuildingClusters(
     const x0 = cx - (sw >> 1);
     const y0 = cy - (sh >> 1);
     if (x0 < 1 || y0 < 1 || x0 + sw >= W - 1 || y0 + sh >= H - 1) continue;
-    // Reject if overlaps water or existing building.
     let ok = true;
     for (let yy = y0; yy < y0 + sh && ok; yy++) {
       for (let xx = x0; xx < x0 + sw; xx++) {
         const i = yy * W + xx;
-        const t = terrain[i];
-        if (t === T.water || t === T.building) {
+        if (base[i] === B.water_deep || buildingId[i] !== 0) {
           ok = false;
           break;
         }
@@ -317,19 +450,37 @@ function scatterBuildingClusters(
     }
     if (!ok) continue;
     const height = 3 + Math.floor(rng() * 4);
+    const floors = Math.max(1, Math.round(height / 3));
+    const id = buildings.length + 1;
+    const footprint: { x: number; y: number }[] = [];
     for (let yy = y0; yy < y0 + sh; yy++) {
       for (let xx = x0; xx < x0 + sw; xx++) {
         const i = yy * W + xx;
-        terrain[i] = T.building;
+        buildingId[i] = id;
         structureHeight[i] = height;
+        // Leave base as open; building is read via buildingId.
+        footprint.push({ x: xx, y: yy });
       }
     }
+    buildings.push({
+      id,
+      family: 'shed',
+      floors,
+      footprintTiles: footprint,
+      wallHpInitial: 100,
+    });
     placed++;
   }
 }
 
+// Replaces the old forest-base scatter. Stamps tree_forest / bush_medium
+// points over open terrain — per the new vocabulary there's no 'forest'
+// base surface; foliage is a point-object layer.
 function scatterForestClusters(
-  terrain: Uint8Array,
+  base: Uint8Array,
+  point: Uint8Array,
+  hpPoint: Uint16Array,
+  fertility: Float32Array,
   W: number,
   H: number,
   per10k: number,
@@ -338,6 +489,8 @@ function scatterForestClusters(
   const area = W * H;
   const target = Math.floor((per10k * area) / 10000);
   const rng = makeRng(seed ^ 0x9abcdef);
+  const treeByte = pointToByte('tree_forest');
+  const bushByte = pointToByte('bush_medium');
   let placed = 0;
   let tries = 0;
   const maxTries = target * 10;
@@ -354,14 +507,99 @@ function scatterForestClusters(
         const yy = cy + dy;
         if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
         const i = yy * W + xx;
-        if (terrain[i] === T.open) {
-          terrain[i] = T.forest;
-          anyPlaced = true;
-        }
+        if (base[i] !== B.open) continue;
+        if (point[i] !== 0) continue;
+        // Deterministic fertility-weighted selection: trees on higher
+        // fertility cells, bushes on the rest.
+        const byte = fertility[i] > 0.55 ? treeByte : bushByte;
+        point[i] = byte;
+        // Max HP is per-kind; we track it but don't apply damage at gen time.
+        hpPoint[i] = byte === treeByte ? 30 : 10;
+        anyPlaced = true;
       }
     }
     if (anyPlaced) placed++;
   }
+}
+
+function bakeWalkabilityAndCover(
+  base: Uint8Array,
+  point: Uint8Array,
+  buildingId: Uint16Array,
+  walkability: Uint16Array,
+  coverProfile: Uint8Array,
+  N: number,
+): void {
+  for (let i = 0; i < N; i++) {
+    const baseKind = byteToBase(base[i]);
+    const baseAxes = BASE_AXES[baseKind];
+    const pointKind: PointObjectKind | null = byteToPoint(point[i]);
+    const pointAxes = pointKind ? POINT_AXES[pointKind] : null;
+    const isBuilding = buildingId[i] !== 0;
+
+    // Movement mask — intersection across layers. Base first.
+    let mask = walkMaskFromMove(baseAxes.move);
+    if (pointAxes) mask &= walkMaskFromMove(pointAxes.move);
+    if (isBuilding) {
+      // Building interior: infantry-only, no vehicles.
+      mask &= WALK_INFANTRY_MASK;
+    }
+    if ((pointAxes?.moveSpeedMult ?? baseAxes.moveSpeedMult) < 1.0) mask |= WALK_SLOW;
+    walkability[i] = mask;
+
+    // Cover profile — rough pre-bake byte for fast hit.ts lookup.
+    // Bits: los 0-1, cover 2-3, heightProfile 4-6, dirty 7.
+    const los = pointAxes?.los ?? baseAxes.los;
+    const cover = pointAxes?.cover ?? baseAxes.cover;
+    const profile = pointAxes?.heightProfile ?? baseAxes.heightProfile;
+    coverProfile[i] =
+      losBits(los) | (coverBits(cover) << 2) | (heightBits(profile) << 4);
+  }
+}
+
+function walkMaskFromMove(
+  move: 'walkable-free' | 'walkable-slow' | 'blocked-foot' | 'blocked-vehicle' | 'blocked-all',
+): number {
+  switch (move) {
+    case 'walkable-free':
+      return (
+        WALK_FOOT |
+        WALK_PRONE |
+        WALK_MECH |
+        WALK_POWER_ARMOR |
+        WALK_WHEELED |
+        WALK_TRACKED
+      );
+    case 'walkable-slow':
+      return (
+        WALK_FOOT |
+        WALK_PRONE |
+        WALK_MECH |
+        WALK_POWER_ARMOR |
+        WALK_WHEELED |
+        WALK_TRACKED |
+        WALK_SLOW
+      );
+    case 'blocked-foot':
+      // Only mech + PA pass — per user, tank traps / dragons teeth pass
+      // mechs and power armor but block wheeled + tracked.
+      return WALK_MECH | WALK_POWER_ARMOR;
+    case 'blocked-vehicle':
+      // Infantry (all leg-based locomotion) passes; wheeled + tracked blocked.
+      return WALK_INFANTRY_MASK;
+    case 'blocked-all':
+      return 0;
+  }
+}
+
+function losBits(l: 'none' | 'thin' | 'full'): number {
+  return l === 'full' ? 2 : l === 'thin' ? 1 : 0;
+}
+function coverBits(c: 'none' | 'light' | 'heavy' | 'full'): number {
+  return c === 'full' ? 3 : c === 'heavy' ? 2 : c === 'light' ? 1 : 0;
+}
+function heightBits(h: 'flat' | 'low' | 'chest' | 'tall' | 'full'): number {
+  return h === 'full' ? 4 : h === 'tall' ? 3 : h === 'chest' ? 2 : h === 'low' ? 1 : 0;
 }
 
 function pickDeployZones(W: number, H: number): { team0: DeployZone; team1: DeployZone } {
@@ -383,27 +621,27 @@ function pickDeployZones(W: number, H: number): { team0: DeployZone; team1: Depl
 }
 
 function ensureZoneWalkable(
-  terrain: Uint8Array,
-  walkability: Uint8Array,
+  base: Uint8Array,
+  buildingId: Uint16Array,
+  point: Uint8Array,
+  walkability: Uint16Array,
   W: number,
-  _H: number,
   zone: DeployZone,
 ): void {
   for (let yy = zone.y; yy < zone.y + zone.h; yy++) {
     for (let xx = zone.x; xx < zone.x + zone.w; xx++) {
       const i = yy * W + xx;
-      if (terrain[i] === T.building || terrain[i] === T.water) {
-        terrain[i] = T.open;
-      }
-      walkability[i] = WALK_FOOT | WALK_WHEELED;
+      if (base[i] === B.water_deep) base[i] = B.open;
+      if (buildingId[i] !== 0) buildingId[i] = 0;
+      point[i] = 0;
+      walkability[i] =
+        WALK_FOOT | WALK_PRONE | WALK_MECH | WALK_POWER_ARMOR | WALK_WHEELED | WALK_TRACKED;
     }
   }
 }
 
-// BFS from the team0 zone center to test if the team1 zone center is
-// reachable through foot-walkable terrain. Returns true if reachable.
 function zonesReachable(
-  walkability: Uint8Array,
+  walkability: Uint16Array,
   W: number,
   H: number,
   team0: DeployZone,
@@ -444,16 +682,16 @@ function zonesReachable(
   return false;
 }
 
-// Straight-line carve through buildings/water to guarantee a passable
-// corridor between the two zones. Ugly but correct.
 function carveCorridor(
-  terrain: Uint8Array,
-  walkability: Uint8Array,
+  base: Uint8Array,
+  point: Uint8Array,
+  buildingId: Uint16Array,
+  walkability: Uint16Array,
   W: number,
   H: number,
   team0: DeployZone,
   team1: DeployZone,
-): void {
+): number {
   const x0 = Math.floor(team0.x + team0.w / 2);
   const y0 = Math.floor(team0.y + team0.h / 2);
   const x1 = Math.floor(team1.x + team1.w / 2);
@@ -462,6 +700,7 @@ function carveCorridor(
   let y = y0;
   const dx = Math.sign(x1 - x0);
   const dy = Math.sign(y1 - y0);
+  let carved = 0;
   while (x !== x1 || y !== y1) {
     if (x !== x1) x += dx;
     else if (y !== y1) y += dy;
@@ -471,23 +710,34 @@ function carveCorridor(
         const yy = y + oy;
         if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
         const i = yy * W + xx;
-        const t = terrain[i];
-        if (t === T.building || t === T.water) {
-          terrain[i] = T.road;
-          walkability[i] = WALK_FOOT | WALK_WHEELED;
+        if (base[i] === B.water_deep || buildingId[i] !== 0 || point[i] !== 0) {
+          if (base[i] === B.water_deep) base[i] = B.road;
+          buildingId[i] = 0;
+          point[i] = 0;
+          walkability[i] =
+            WALK_FOOT | WALK_PRONE | WALK_MECH | WALK_POWER_ARMOR | WALK_WHEELED | WALK_TRACKED;
+          carved++;
         }
       }
     }
   }
+  return carved;
 }
 
-function hashBuffer(buf: Uint8Array): number {
+function hashBuffers(...bufs: (Uint8Array | Uint16Array)[]): number {
   let h = 0x811c9dc5;
-  // Sample every 17th byte — full-buffer hash at 4096² is expensive, stride
-  // hash is sufficient for determinism regression catch.
-  for (let i = 0; i < buf.length; i += 17) {
-    h ^= buf[i];
-    h = Math.imul(h, 0x01000193);
+  // Stride every 17 entries of each buffer — full-buffer hash at 4096² is
+  // expensive, stride hash is sufficient for determinism regression catch.
+  for (const buf of bufs) {
+    for (let i = 0; i < buf.length; i += 17) {
+      h ^= buf[i];
+      h = Math.imul(h, 0x01000193);
+    }
   }
   return h >>> 0;
 }
+
+// Silence unused ELEVATION_STEPS import — kept as a module-level reference
+// so future scatter stages can read it without re-importing.
+void ELEVATION_STEPS;
+void BARRIER_AXES;

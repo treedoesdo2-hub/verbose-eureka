@@ -49,7 +49,7 @@ function MinimapImpl({
     for (let ty = 0; ty < world.height; ty++) {
       for (let tx = 0; tx < world.width; tx++) {
         const idx = ty * world.width + tx;
-        const t = world.terrain[idx] ?? 0;
+        const t = world.base[idx] ?? 0;
         ctx.fillStyle = TERRAIN_COLORS[t] ?? '#1a2b1a';
         ctx.fillRect(
           proj.offsetX + tx * world.tileSizeMeters * proj.scale,

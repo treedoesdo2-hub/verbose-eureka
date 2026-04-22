@@ -1,8 +1,8 @@
-import type { TerrainKind } from '@schema/map';
 import type { UnitId } from '@shared/ids';
 import { Fnv1a } from './hash';
 import { SIM_HZ } from './state';
 import type { Vec2 } from './unit';
+import type { CoverAxes } from './world';
 
 export type NoiseKind =
   | 'weapon-fire'
@@ -39,29 +39,27 @@ export type Heard = {
   readonly kind: NoiseKind;
 };
 
-function terrainMultiplier(kind: TerrainKind): number {
-  switch (kind) {
-    case 'forest':
-      return 0.6;
-    case 'building':
-      return 0.4;
-    case 'rubble':
-      return 0.85;
-    default:
-      return 1.0;
-  }
+// Axis-driven sound attenuation (ADR 012 / COA-2). Walls dampen hard, hedges
+// don't, thin LOS foliage partially. Inside a full-cover building is a
+// notable muffle. Keyed off the target tile's 3-axis profile.
+export function terrainSoundAttenuation(axes: CoverAxes): number {
+  if (axes.los === 'full' && axes.cover === 'full') return 0.35; // inside a building
+  if (axes.los === 'full' && axes.cover === 'heavy') return 0.55; // behind a wall
+  if (axes.los === 'thin' && axes.cover === 'heavy') return 0.75; // dense bush / rubble pile
+  if (axes.los === 'thin') return 0.85; // light foliage / low cover
+  return 1.0;
 }
 
 export function effectiveHearingRange(
   kind: NoiseKind,
   awareness: number,
-  listenerTerrainKind: TerrainKind,
+  listenerAxes: CoverAxes,
   suppressed: boolean,
 ): number {
   const { noiseDb } = NOISE_LOUDNESS[kind];
   const aw = Math.max(0, Math.min(100, awareness));
   const awarenessMult = 0.5 + aw / 200;
-  const terrainMult = terrainMultiplier(listenerTerrainKind);
+  const terrainMult = terrainSoundAttenuation(listenerAxes);
   const suppressionMult = suppressed ? SUPPRESSED_HEARING_MULTIPLIER : 1;
   return noiseDb * awarenessMult * terrainMult * suppressionMult;
 }

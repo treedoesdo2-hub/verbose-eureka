@@ -12,7 +12,16 @@ import type { ObjectiveRect, ObjectiveRuntimeState, SimState } from './state';
 import { makeInitialState } from './tick';
 import type { Unit, UnitRole, UnitStats, Vec2 } from './unit';
 import { DEFAULT_STATS, makeUnit } from './unit';
-import { makeWorld, makeWorldFromBuffers, setTerrain, type World } from './world';
+import {
+  type BuildingRecord as WorldBuilding,
+  makeWorld,
+  makeWorldFromBuffers,
+  pointToByte,
+  quantizeElevationMeters,
+  setBase,
+  setBarrier,
+  type World,
+} from './world';
 
 export type ScenarioDeployment = {
   readonly operatorId: string;
@@ -41,10 +50,105 @@ export type BuildScenarioInput = {
 function buildWorld(map: GameMap): World {
   const w = makeWorld(map.width, map.height, map.tileSizeMeters);
   for (const tile of map.tiles) {
-    setTerrain(w, tile.x, tile.y, tile.terrain);
-    if (tile.groundHeight) {
-      w.groundHeight[tile.y * w.width + tile.x] = tile.groundHeight;
+    setBase(w, tile.x, tile.y, tile.base);
+    if (tile.point) {
+      const idx = tile.y * w.width + tile.x;
+      w.point[idx] = pointToByte(tile.point.kind);
+      // HP sets from POINT_MAX_HP lazily; authored damaged state is a load-time
+      // hint — use half HP. The state machine resets anyway at mission start.
+      w.hpPoint[idx] = tile.point.state === 'damaged' ? 1 : 0;
     }
+    if (tile.edgeN && 'kind' in tile.edgeN) {
+      const candidate = tile.edgeN as { kind: string; state?: string };
+      // Only linear-barrier kinds set via setBarrier; door / window overrides
+      // live on edgeOverride* and are handled by authored-map schema consumers.
+      const barrierKinds = new Set<string>([
+        'hedge',
+        'bocage',
+        'stone_wall_low',
+        'wood_fence',
+        'bamboo_fence',
+        'rail_fence',
+        'berm',
+        'wire_light',
+        'wire_dense',
+        'wire_razor',
+        'rubble_strip',
+      ]);
+      if (barrierKinds.has(candidate.kind)) {
+        setBarrier(
+          w,
+          tile.x,
+          tile.y,
+          'N',
+          candidate.kind as Parameters<typeof setBarrier>[4],
+          candidate.state === 'damaged',
+        );
+      }
+    }
+    if (tile.edgeW && 'kind' in tile.edgeW) {
+      const candidate = tile.edgeW as { kind: string; state?: string };
+      const barrierKinds = new Set<string>([
+        'hedge',
+        'bocage',
+        'stone_wall_low',
+        'wood_fence',
+        'bamboo_fence',
+        'rail_fence',
+        'berm',
+        'wire_light',
+        'wire_dense',
+        'wire_razor',
+        'rubble_strip',
+      ]);
+      if (barrierKinds.has(candidate.kind)) {
+        setBarrier(
+          w,
+          tile.x,
+          tile.y,
+          'W',
+          candidate.kind as Parameters<typeof setBarrier>[4],
+          candidate.state === 'damaged',
+        );
+      }
+    }
+    if (tile.buildingId > 0) {
+      w.buildingId[tile.y * w.width + tile.x] = tile.buildingId;
+    }
+    if (tile.groundHeight) {
+      w.elevationStep[tile.y * w.width + tile.x] = quantizeElevationMeters(tile.groundHeight);
+    }
+  }
+  // Attach building registry (readonly World fields are assigned once at
+  // construction; rebuild via makeWorldFromBuffers to preserve the contract).
+  if (map.buildings.length > 0) {
+    const registered: WorldBuilding[] = map.buildings.map((b) => ({
+      id: b.id,
+      family: b.family,
+      floors: b.floors,
+      footprintTiles: b.footprint,
+      wallHpInitial: b.wallHpInitial,
+    }));
+    return makeWorldFromBuffers({
+      width: w.width,
+      height: w.height,
+      tileSizeMeters: w.tileSizeMeters,
+      base: w.base,
+      point: w.point,
+      edgeN: w.edgeN,
+      edgeW: w.edgeW,
+      edgeOverrideN: w.edgeOverrideN,
+      edgeOverrideW: w.edgeOverrideW,
+      buildingId: w.buildingId,
+      walkability: w.walkability,
+      coverProfile: w.coverProfile,
+      elevationStep: w.elevationStep,
+      structureHeight: w.structureHeight,
+      hpN: w.hpN,
+      hpW: w.hpW,
+      hpPoint: w.hpPoint,
+      buildings: registered,
+    });
   }
   return w;
 }
@@ -60,22 +164,37 @@ export function buildGeneratedMap(
   spawnCount: { team0: number; team1: number },
 ): { map: GameMap; world: World; result: MapGenResult } {
   const result = runPipeline(request);
-  const world = makeWorldFromBuffers(
-    result.width,
-    result.height,
-    request.tileSizeMeters,
-    result.terrain,
-    result.walkability,
-  );
+  const world = makeWorldFromBuffers({
+    width: result.width,
+    height: result.height,
+    tileSizeMeters: request.tileSizeMeters,
+    base: result.base,
+    point: result.point,
+    edgeN: result.edgeN,
+    edgeW: result.edgeW,
+    edgeOverrideN: result.edgeOverrideN,
+    edgeOverrideW: result.edgeOverrideW,
+    buildingId: result.buildingId,
+    walkability: result.walkability,
+    coverProfile: result.coverProfile,
+    elevationStep: result.elevationStep,
+    structureHeight: result.structureHeight,
+    hpN: result.hpN,
+    hpW: result.hpW,
+    hpPoint: result.hpPoint,
+    buildings: result.buildings,
+  });
   const team0Spawns = sampleSpawns(result.deployZones.team0, spawnCount.team0);
   const team1Spawns = sampleSpawns(result.deployZones.team1, spawnCount.team1);
   const map: GameMap = {
+    schemaVersion: 2,
     id,
     name,
     width: result.width,
     height: result.height,
     tileSizeMeters: request.tileSizeMeters,
     tiles: [],
+    buildings: [],
     playerSpawns: team0Spawns,
     enemySpawns: team1Spawns,
     waypointRoutes: [],
@@ -186,13 +305,26 @@ export function buildScenario(input: BuildScenarioInput): SimState {
       tileSizeMeters: input.map.tileSizeMeters,
       generationVersion: input.map.generationVersion ?? 1,
     });
-    world = makeWorldFromBuffers(
-      input.map.width,
-      input.map.height,
-      input.map.tileSizeMeters,
-      regen.terrain,
-      regen.walkability,
-    );
+    world = makeWorldFromBuffers({
+      width: input.map.width,
+      height: input.map.height,
+      tileSizeMeters: input.map.tileSizeMeters,
+      base: regen.base,
+      point: regen.point,
+      edgeN: regen.edgeN,
+      edgeW: regen.edgeW,
+      edgeOverrideN: regen.edgeOverrideN,
+      edgeOverrideW: regen.edgeOverrideW,
+      buildingId: regen.buildingId,
+      walkability: regen.walkability,
+      coverProfile: regen.coverProfile,
+      elevationStep: regen.elevationStep,
+      structureHeight: regen.structureHeight,
+      hpN: regen.hpN,
+      hpW: regen.hpW,
+      hpPoint: regen.hpPoint,
+      buildings: regen.buildings,
+    });
   } else {
     world = buildWorld(input.map);
   }

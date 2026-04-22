@@ -1,12 +1,28 @@
 import type { MapGenResult } from './types';
 
-const TERRAIN_COLOR_HEX: Record<number, string> = {
-  0: '#1a2b1a', // open
-  1: '#3a342b', // road
-  2: '#4a3e2f', // building
-  3: '#1b3a1f', // forest
-  4: '#193352', // water
-  5: '#342c26', // rubble
+// Base-surface colors (indexed by world.ts BASE_KINDS order). COA-7 will
+// replace this with palette.ts + overlay stack; keep MVP colors here so the
+// briefing preview still renders.
+const BASE_COLOR_HEX: Record<number, string> = {
+  0: '#b2a486', // open — tan
+  1: '#96825e', // road
+  2: '#355066', // water_shallow
+  3: '#141e2e', // water_deep
+  4: '#4b3a2a', // mud
+  5: '#665c4e', // rubble_ground
+  6: '#d6dde0', // snow
+  7: '#d0b784', // sand
+};
+
+// Quick point-object tint overlays — for now just mark foliage darker.
+const POINT_TINT_HEX: Record<number, string> = {
+  // Tree bytes (pointToByte is 1-based; tree_forest happens to map to 22).
+  22: '#2e482c',
+  23: '#2e482c',
+  24: '#2e482c',
+  25: '#2e482c',
+  26: '#2e482c',
+  27: '#2e482c',
 };
 
 // Downsample a generated map terrain buffer into a small RGBA ImageData-friendly
@@ -27,8 +43,13 @@ export function generateThumbnail(result: MapGenResult, targetSize: number = 128
     for (let tx = 0; tx < tW; tx++) {
       const sx = Math.floor(tx * scaleX);
       const sy = Math.floor(ty * scaleY);
-      const terrainByte = result.terrain[sy * result.width + sx];
-      const color = TERRAIN_COLOR_HEX[terrainByte] ?? '#1a2b1a';
+      const baseByte = result.base[sy * result.width + sx];
+      const pointByte = result.point[sy * result.width + sx];
+      const hasBuilding = result.buildingId[sy * result.width + sx] !== 0;
+      let color: string;
+      if (hasBuilding) color = '#3a3a3e';
+      else if (pointByte > 0 && POINT_TINT_HEX[pointByte]) color = POINT_TINT_HEX[pointByte];
+      else color = BASE_COLOR_HEX[baseByte] ?? '#b2a486';
       const r = parseInt(color.slice(1, 3), 16);
       const g = parseInt(color.slice(3, 5), 16);
       const b = parseInt(color.slice(5, 7), 16);

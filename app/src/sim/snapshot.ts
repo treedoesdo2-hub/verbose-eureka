@@ -142,6 +142,6 @@ export function snapshotWorld(world: World): WorldSnapshot {
     width: world.width,
     height: world.height,
     tileSizeMeters: world.tileSizeMeters,
-    terrain: new Uint8Array(world.terrain),
+    base: new Uint8Array(world.base),
   };
 }

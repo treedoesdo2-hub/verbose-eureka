@@ -111,7 +111,11 @@ export type SerializedWorld = {
   readonly width: number;
   readonly height: number;
   readonly tileSizeMeters: number;
-  readonly terrain: Uint8Array;
+  // Per-tile base surface byte (maps to world.ts BASE_KINDS index). For
+  // renderer/snapshot purposes the base layer is the primary visual; point
+  // objects + edges + buildings add detail but for now we snapshot the
+  // base only. Expanded in future schema bumps as the renderer matures.
+  readonly base: Uint8Array;
 };
 
 export type WorldSnapshot = SerializedWorld;

@@ -36,7 +36,7 @@ import {
   SUPPRESSION_PER_SHOT,
   totalBleedRate,
 } from './unit';
-import { inBounds, terrainAt } from './world';
+import { isFootPassable } from './world';
 
 const MAX_SPEED_MPS = 4.5;
 
@@ -112,7 +112,7 @@ function executeMovement(
     y: unit.position.y + velocity.y * SIM_DT,
   };
   const tile = tileOf(world, candidate);
-  if (inBounds(world, tile.x, tile.y) && terrainAt(world, tile.x, tile.y).passable) {
+  if (isFootPassable(world, tile.x, tile.y)) {
     return {
       position: clampToWorld(candidate, world),
       velocity,
@@ -143,8 +143,7 @@ function executeMovement(
   ];
   for (const c of candidates) {
     const t = tileOf(world, c);
-    if (!inBounds(world, t.x, t.y)) continue;
-    if (!terrainAt(world, t.x, t.y).passable) continue;
+    if (!isFootPassable(world, t.x, t.y)) continue;
     return {
       position: clampToWorld(c, world),
       velocity: { x: c.x - unit.position.x, y: c.y - unit.position.y },

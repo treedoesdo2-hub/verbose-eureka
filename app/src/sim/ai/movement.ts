@@ -1,7 +1,7 @@
 import { coverScoreAt, MAX_COVER_SCORE } from '../cover';
 import type { Vec2 } from '../unit';
 import type { World } from '../world';
-import { inBounds, terrainAt } from '../world';
+import { isFootPassable } from '../world';
 
 /**
  * NSiR spatial DNA: when threats are visible, the next footstep should
@@ -51,7 +51,7 @@ export function coverAwareStepTarget(
     };
     const tx = Math.floor(candidate.x / world.tileSizeMeters);
     const ty = Math.floor(candidate.y / world.tileSizeMeters);
-    if (!inBounds(world, tx, ty) || !terrainAt(world, tx, ty).passable) continue;
+    if (!isFootPassable(world, tx, ty)) continue;
 
     const remaining = Math.hypot(goal.x - candidate.x, goal.y - candidate.y);
     const progress = distToGoal - remaining;

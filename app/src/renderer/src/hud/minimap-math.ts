@@ -41,5 +41,5 @@ export function unprojectPoint(
 
 export function terrainIndex(world: WorldSnapshot, tx: number, ty: number): number {
   if (tx < 0 || ty < 0 || tx >= world.width || ty >= world.height) return 0;
-  return world.terrain[ty * world.width + tx] ?? 0;
+  return world.base[ty * world.width + tx] ?? 0;
 }
