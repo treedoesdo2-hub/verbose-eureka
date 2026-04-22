@@ -4,7 +4,7 @@ import { computeNetEconomics } from '@sim/contract-economics';
 import { interpolateBriefing, mapGenRequestFromContract } from '@sim/mapgen/contract-binder';
 import type { HeroLandmark } from '@sim/mapgen/hero-landmark';
 import { runPipeline } from '@sim/mapgen/pipeline';
-import { generateThumbnail } from '@sim/mapgen/thumbnail';
+import { renderThumbnail } from '@sim/mapgen/thumbnail';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getContent } from '../content';
 import { useHotkeys } from '../hooks/useHotkeys';
@@ -494,7 +494,7 @@ function useMapPreview(contractId: string | null): MapPreview | null {
     }
     const req = mapGenRequestFromContract(contract, 1.5, 1);
     const result = runPipeline({ ...req, size: Math.min(req.size, 96) });
-    const thumb = generateThumbnail(result, 96);
+    const thumb = renderThumbnail(result, 96, { tier: 'briefing' });
     setPreview({
       landmark: result.heroLandmark,
       pixels: thumb.pixels,
