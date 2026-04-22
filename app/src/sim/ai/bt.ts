@@ -139,7 +139,11 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
       ? unit.alerted
       : false;
 
-  if (threatened && perception.bestTarget !== null) {
+  // Engagement branch — only entered when the unit can actually shoot.
+  // Without a primary weapon there's nothing to reload or fire, so a
+  // weaponless unit that "sees" an enemy must fall through to movement
+  // behavior rather than entering an infinite reload loop.
+  if (threatened && perception.bestTarget !== null && unit.combat.primaryWeapon) {
     const target = state.units.get(perception.bestTarget);
     if (target) {
       const alreadyAiming =
