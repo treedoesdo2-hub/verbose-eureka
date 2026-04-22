@@ -240,6 +240,12 @@ export function buildScenario(input: BuildScenarioInput): SimState {
     }
   }
 
+  // Enemy squadding: each archetype block chunks into fireteams of up to
+  // ENEMY_SQUAD_SIZE so a contract with "12 riflemen" fields three fireteams
+  // rather than one unwieldy clump or twelve lone wolves. Squad ids are
+  // deterministic per archetype/chunk so replays stay stable.
+  const ENEMY_SQUAD_SIZE = 4;
+  const enemySquadMembers = new Map<string, UnitId[]>();
   let enemyIndex = 0;
   for (const archetype of input.contract.enemies.archetypes) {
     const factionMember = input.faction.roster.find((m) => m.archetype === archetype.archetype);
@@ -260,9 +266,12 @@ export function buildScenario(input: BuildScenarioInput): SimState {
         .reverse()
         .map((p) => tileToMeters(p.x, p.y));
 
+      const chunk = Math.floor(i / ENEMY_SQUAD_SIZE);
+      const squadId = `e-sq-${archetype.archetype}-${chunk}`;
+      const unitId = asUnitId(nextId++) as UnitId;
       units.push(
         makeUnit({
-          id: asUnitId(nextId++) as UnitId,
+          id: unitId,
           teamId: 1,
           operatorId: null,
           position: pos,
@@ -270,8 +279,12 @@ export function buildScenario(input: BuildScenarioInput): SimState {
           combat,
           stats,
           waypoints,
+          squadId,
         }),
       );
+      const arr = enemySquadMembers.get(squadId) ?? [];
+      arr.push(unitId);
+      enemySquadMembers.set(squadId, arr);
     }
   }
 
@@ -295,13 +308,19 @@ export function buildScenario(input: BuildScenarioInput): SimState {
   };
 
   // Build squad runtime states from the collected membership. Done after
-  // the unit list is finalized so pickLeader sees real units.
+  // the unit list is finalized so pickLeader sees real units. Both player
+  // (team 0) and enemy (team 1) squads flow through the same code path —
+  // the BT leader-follow branch is team-agnostic.
   const unitMap = new Map<UnitId, Unit>();
   for (const u of units) unitMap.set(u.id, u);
   const squads = new Map<string, SquadRuntimeState>();
   for (const [squadId, memberIds] of squadMembers) {
     const leader = pickLeader(memberIds, unitMap);
     squads.set(squadId, makeSquadRuntime(squadId, 0, memberIds, leader));
+  }
+  for (const [squadId, memberIds] of enemySquadMembers) {
+    const leader = pickLeader(memberIds, unitMap);
+    squads.set(squadId, makeSquadRuntime(squadId, 1, memberIds, leader));
   }
 
   return makeInitialState(

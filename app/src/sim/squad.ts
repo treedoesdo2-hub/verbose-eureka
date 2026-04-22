@@ -8,8 +8,9 @@ import { canFight } from './unit';
 // squad's order is `advance`. When the leader goes down, the next
 // combat-capable member promotes.
 //
-// Enemies don't carry squadId at MVP — they still get cross-team coherence
-// via the objective-driven enemy waypoint regen in objectives.ts.
+// Both teams carry squadIds: player squads come from the briefing screen;
+// enemy squads are built per faction archetype block in buildScenario
+// (fireteams of up to 4). The BT leader-follow branch is team-agnostic.
 
 export type SquadFormation = 'wedge' | 'column' | 'line' | 'loose';
 

@@ -1,6 +1,6 @@
 import type { Contract } from '@schema/contract';
 import { describe, expect, it } from 'vitest';
-import { captureTrace, summarizeActivity } from './debug-log';
+import { captureTrace } from './debug-log';
 import { bindObjectivesToAnchors, mapGenRequestFromContract } from './mapgen/contract-binder';
 import { RecordingSim } from './replay';
 import { buildGeneratedMap, buildScenario } from './scenario';
@@ -159,17 +159,33 @@ describe('squad integration', () => {
     }
   });
 
-  it("without squad membership, units disperse and don't coordinate", () => {
+  it('without player squad membership, team-0 units have null squadId', () => {
     // Control case: when deployments have no squadId, the BT falls back
-    // to per-unit waypoint regen. Units still move toward the objective
-    // (no regression of the prior fix) but pairwise drift is larger
-    // because there's no leader-following pressure.
+    // to per-unit waypoint regen for team 0. Enemy squads (team 1) are
+    // built from the faction archetype regardless — they're always
+    // coherent now.
     const { final } = runSquadScenario(300, false);
     const players = [...final.units.values()].filter((u) => u.teamId === 0);
     for (const u of players) {
       expect(u.squadId).toBeNull();
     }
-    expect(final.squads.size).toBe(0);
+    const team0Squads = [...final.squads.values()].filter((s) => s.teamId === 0);
+    expect(team0Squads.length).toBe(0);
+  });
+
+  it('enemy units get a runtime squad built from the faction archetype', () => {
+    const { initial } = runSquadScenario(0, true);
+    const enemyUnits = [...initial.units.values()].filter((u) => u.teamId === 1);
+    expect(enemyUnits.length).toBeGreaterThan(0);
+    for (const u of enemyUnits) {
+      expect(u.squadId).not.toBeNull();
+    }
+    const team1Squads = [...initial.squads.values()].filter((s) => s.teamId === 1);
+    expect(team1Squads.length).toBeGreaterThan(0);
+    for (const sq of team1Squads) {
+      expect(sq.leaderId).not.toBeNull();
+      expect(sq.memberIds.length).toBeLessThanOrEqual(4);
+    }
   });
 
   it('squad leader advances toward the objective; members shadow', () => {
