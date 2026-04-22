@@ -86,4 +86,54 @@ describe('mapgen pipeline', () => {
     expect(r.height).toBe(512);
     expect(r.terrain.length).toBe(512 * 512);
   });
+
+  it('guarantees reachability between team0 and team1 deploy zones for 20 seeds', () => {
+    const seeds = Array.from({ length: 20 }, (_, i) => `reach-seed-${i}`);
+    const biomes: Array<'urban_sparse' | 'rural_open' | 'mixed'> = [
+      'urban_sparse',
+      'rural_open',
+      'mixed',
+    ];
+    for (const seed of seeds) {
+      for (const biome of biomes) {
+        const r = runPipeline(req({ seed, biome, size: 96 }));
+        const { team0, team1 } = r.deployZones;
+        const W = r.width;
+        const start = {
+          x: Math.floor(team0.x + team0.w / 2),
+          y: Math.floor(team0.y + team0.h / 2),
+        };
+        const goal = {
+          x: Math.floor(team1.x + team1.w / 2),
+          y: Math.floor(team1.y + team1.h / 2),
+        };
+        const visited = new Uint8Array(r.width * r.height);
+        const queue: number[] = [start.y * W + start.x];
+        visited[start.y * W + start.x] = 1;
+        let reached = false;
+        while (queue.length > 0) {
+          const p = queue.shift() as number;
+          const x = p % W;
+          const y = (p - x) / W;
+          if (x === goal.x && y === goal.y) {
+            reached = true;
+            break;
+          }
+          const candidates = [
+            x > 0 ? p - 1 : -1,
+            x < W - 1 ? p + 1 : -1,
+            y > 0 ? p - W : -1,
+            y < r.height - 1 ? p + W : -1,
+          ];
+          for (const n of candidates) {
+            if (n < 0 || visited[n]) continue;
+            if ((r.walkability[n] & 1) === 0) continue;
+            visited[n] = 1;
+            queue.push(n);
+          }
+        }
+        expect(reached, `seed=${seed} biome=${biome} unreachable`).toBe(true);
+      }
+    }
+  });
 });

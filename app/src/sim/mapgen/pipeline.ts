@@ -164,6 +164,12 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
   ensureZoneWalkable(terrain, walkability, W, H, team0);
   ensureZoneWalkable(terrain, walkability, W, H, team1);
 
+  // ---- Step: reachability sanity — carve a corridor if team0 and team1
+  //       deploy zones are not reachable via foot-walkable terrain.
+  if (!zonesReachable(walkability, W, H, team0, team1)) {
+    carveCorridor(terrain, walkability, W, H, team0, team1);
+  }
+
   const objectiveAnchors: ObjectiveAnchor[] = [
     {
       kindHint: 'eliminate',
@@ -395,6 +401,87 @@ function ensureZoneWalkable(
         terrain[i] = T.open;
       }
       walkability[i] = WALK_FOOT | WALK_WHEELED;
+    }
+  }
+}
+
+// BFS from the team0 zone center to test if the team1 zone center is
+// reachable through foot-walkable terrain. Returns true if reachable.
+function zonesReachable(
+  walkability: Uint8Array,
+  W: number,
+  H: number,
+  team0: DeployZone,
+  team1: DeployZone,
+): boolean {
+  const start = {
+    x: Math.floor(team0.x + team0.w / 2),
+    y: Math.floor(team0.y + team0.h / 2),
+  };
+  const goal = {
+    x: Math.floor(team1.x + team1.w / 2),
+    y: Math.floor(team1.y + team1.h / 2),
+  };
+  const visited = new Uint8Array(W * H);
+  const queue = new Int32Array(W * H);
+  let head = 0;
+  let tail = 0;
+  queue[tail++] = start.y * W + start.x;
+  visited[start.y * W + start.x] = 1;
+  while (head < tail) {
+    const p = queue[head++];
+    const x = p % W;
+    const y = (p - x) / W;
+    if (x === goal.x && y === goal.y) return true;
+    const neighbors = [
+      x > 0 ? p - 1 : -1,
+      x < W - 1 ? p + 1 : -1,
+      y > 0 ? p - W : -1,
+      y < H - 1 ? p + W : -1,
+    ];
+    for (const n of neighbors) {
+      if (n < 0 || visited[n]) continue;
+      if ((walkability[n] & WALK_FOOT) === 0) continue;
+      visited[n] = 1;
+      queue[tail++] = n;
+    }
+  }
+  return false;
+}
+
+// Straight-line carve through buildings/water to guarantee a passable
+// corridor between the two zones. Ugly but correct.
+function carveCorridor(
+  terrain: Uint8Array,
+  walkability: Uint8Array,
+  W: number,
+  H: number,
+  team0: DeployZone,
+  team1: DeployZone,
+): void {
+  const x0 = Math.floor(team0.x + team0.w / 2);
+  const y0 = Math.floor(team0.y + team0.h / 2);
+  const x1 = Math.floor(team1.x + team1.w / 2);
+  const y1 = Math.floor(team1.y + team1.h / 2);
+  let x = x0;
+  let y = y0;
+  const dx = Math.sign(x1 - x0);
+  const dy = Math.sign(y1 - y0);
+  while (x !== x1 || y !== y1) {
+    if (x !== x1) x += dx;
+    else if (y !== y1) y += dy;
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        const xx = x + ox;
+        const yy = y + oy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const i = yy * W + xx;
+        const t = terrain[i];
+        if (t === T.building || t === T.water) {
+          terrain[i] = T.road;
+          walkability[i] = WALK_FOOT | WALK_WHEELED;
+        }
+      }
     }
   }
 }

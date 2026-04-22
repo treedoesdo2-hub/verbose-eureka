@@ -4,6 +4,7 @@
 // computation. Addendum 2 §C locks the binary success semantic.
 import { z } from 'zod';
 import { Id } from './common';
+import { BiomeId } from './map';
 
 export const ObjectiveKind = z.enum(['eliminate', 'extract', 'defend', 'secure']);
 export type ObjectiveKind = z.infer<typeof ObjectiveKind>;
@@ -70,9 +71,27 @@ export const ContractModifiers = z
   .object({
     extractionSeats: z.number().int().positive().nullable(),
     requiredRoleTags: z.array(z.string().min(1)).default([]),
+    // Pillar A: contract metadata drives map generation. nullable means
+    // "use default binder heuristic".
+    biomeHint: BiomeId.nullable().default(null),
+    sizeHint: z.enum(['small', 'medium', 'large']).default('medium'),
   })
-  .default({ extractionSeats: null, requiredRoleTags: [] });
+  .default({
+    extractionSeats: null,
+    requiredRoleTags: [],
+    biomeHint: null,
+    sizeHint: 'medium',
+  });
 export type ContractModifiers = z.infer<typeof ContractModifiers>;
+
+// Map contract sizeHint to concrete tile dimensions for the generator.
+// Kept conservative for MVP (schema allows up to 4096, but render perf
+// is validated at 512).
+export const CONTRACT_SIZE_TILES: Record<'small' | 'medium' | 'large', number> = {
+  small: 128,
+  medium: 256,
+  large: 512,
+};
 
 export const Contract = z
   .object({

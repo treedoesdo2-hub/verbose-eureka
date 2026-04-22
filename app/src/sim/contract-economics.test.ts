@@ -22,7 +22,12 @@ function contract(overrides: Partial<Contract> = {}): Contract {
     deployCost: { fixedPerContract: 100 },
     recommendedOperators: { green: 3, regular: 2, veteran: 1 },
     difficultyRating: 2,
-    modifiers: { extractionSeats: 4, requiredRoleTags: [] },
+    modifiers: {
+      extractionSeats: 4,
+      requiredRoleTags: [],
+      biomeHint: null,
+      sizeHint: 'medium',
+    },
     briefing: 'b',
     objectives: [{ id: 'obj', kind: 'eliminate', description: 'go' }],
     enemies: { factionId: 'f', archetypes: [{ archetype: 'a', count: 1 }] },
