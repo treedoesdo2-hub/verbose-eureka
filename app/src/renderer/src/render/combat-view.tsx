@@ -3,6 +3,7 @@ import type { SimSnapshot, SnapshotUnit, WorldSnapshot } from '@shared/snapshot'
 import { Application, Container, Graphics } from 'pixi.js';
 import { useEffect, useRef } from 'react';
 import { AtmosphereState } from './atmosphere-state';
+import { Camera } from './camera';
 import { FxEmitter } from './fx-emitter';
 import { isBleeding, stanceFootprint, woundIconColor } from './fx-math';
 import {
@@ -17,15 +18,7 @@ import {
   TARGET_LOCK,
   TARGET_LOCK_SOFT,
 } from './fx-palette';
-
-const TERRAIN_COLORS: Record<number, number> = {
-  0: 0x1a2b1a, // open
-  1: 0x3a342b, // road
-  2: 0x4a3e2f, // building
-  3: 0x1b3a1f, // forest
-  4: 0x193352, // water
-  5: 0x342c26, // rubble
-};
+import { TerrainLayer } from './terrain-layer';
 
 const TEAM_COLORS: Record<number, number> = {
   0: 0x55aaff,
@@ -40,7 +33,7 @@ type Props = {
 type Scene = {
   app: Application;
   worldLayer: Container;
-  terrainLayer: Graphics;
+  terrain: TerrainLayer;
   decalLayer: Container;
   visionLayer: Container;
   unitsLayer: Container;
@@ -48,6 +41,7 @@ type Scene = {
   lockLayer: Container;
   fx: FxEmitter;
   atmosphere: AtmosphereState;
+  camera: Camera;
 };
 
 export function CombatView({ world, snapshot }: Props): React.JSX.Element {
@@ -83,13 +77,13 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
         app.canvas.style.height = '100%';
 
         const worldLayer = new Container();
-        const terrainLayer = new Graphics();
+        const terrain = new TerrainLayer(world);
         const decalLayer = new Container();
         const visionLayer = new Container();
         const unitsLayer = new Container();
         const fxLayer = new Container();
         const lockLayer = new Container();
-        worldLayer.addChild(terrainLayer);
+        worldLayer.addChild(terrain.container);
         worldLayer.addChild(decalLayer);
         worldLayer.addChild(visionLayer);
         worldLayer.addChild(unitsLayer);
@@ -100,10 +94,29 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
         const atmosphere = new AtmosphereState(world.width, world.height, world.tileSizeMeters);
         const fx = new FxEmitter(fxLayer, app.ticker, decalLayer, atmosphere, world);
 
+        const cullNow = (): void => {
+          const scene = sceneRef.current;
+          if (!scene) return;
+          const w = scene.app.renderer.width / (window.devicePixelRatio || 1);
+          const h = scene.app.renderer.height / (window.devicePixelRatio || 1);
+          const rect = scene.camera.viewportRect(w, h);
+          scene.terrain.cull(rect.minX, rect.minY, rect.maxX, rect.maxY);
+        };
+
+        const camera = new Camera(
+          host,
+          worldLayer,
+          {
+            worldWidth: world.width * world.tileSizeMeters,
+            worldHeight: world.height * world.tileSizeMeters,
+          },
+          cullNow,
+        );
+
         sceneRef.current = {
           app,
           worldLayer,
-          terrainLayer,
+          terrain,
           decalLayer,
           visionLayer,
           unitsLayer,
@@ -111,10 +124,19 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
           lockLayer,
           fx,
           atmosphere,
+          camera,
         };
 
         relayout();
-        drawTerrain(terrainLayer, world);
+        // WASD pan runs on the Pixi ticker so it stays smooth regardless
+        // of snapshot cadence.
+        app.ticker.add(() => {
+          const scene = sceneRef.current;
+          if (!scene) return;
+          const w = scene.app.renderer.width / (window.devicePixelRatio || 1);
+          const h = scene.app.renderer.height / (window.devicePixelRatio || 1);
+          scene.camera.tick(w, h);
+        });
       })
       .catch((err) => {
         console.error('[CombatView] Pixi init failed:', err);
@@ -127,13 +149,9 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
       const w = Math.max(1, host.clientWidth);
       const h = Math.max(1, host.clientHeight);
       scene.app.renderer.resize(w, h);
-      const scale = computeScale(world, w, h);
-      const worldW = world.width * world.tileSizeMeters;
-      const worldH = world.height * world.tileSizeMeters;
-      const offsetX = (w - worldW * scale) / 2;
-      const offsetY = (h - worldH * scale) / 2;
-      scene.worldLayer.position.set(offsetX, offsetY);
-      scene.worldLayer.scale.set(scale);
+      scene.camera.fitToWorld(w, h);
+      const rect = scene.camera.viewportRect(w, h);
+      scene.terrain.cull(rect.minX, rect.minY, rect.maxX, rect.maxY);
     }
 
     const ro = new ResizeObserver(() => relayout());
@@ -143,6 +161,8 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
       destroyed = true;
       ro.disconnect();
       if (sceneRef.current) {
+        sceneRef.current.camera.dispose();
+        sceneRef.current.terrain.dispose();
         sceneRef.current.fx.dispose();
         sceneRef.current.app.destroy(true, { children: true, texture: true });
         sceneRef.current = null;
@@ -184,30 +204,6 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
   }, [snapshot]);
 
   return <div ref={containerRef} className="combat-view" />;
-}
-
-function computeScale(world: WorldSnapshot, w: number, h: number): number {
-  const worldW = world.width * world.tileSizeMeters;
-  const worldH = world.height * world.tileSizeMeters;
-  if (worldW <= 0 || worldH <= 0) return 1;
-  return Math.min(w / worldW, h / worldH) * 0.95;
-}
-
-function drawTerrain(terrain: Graphics, world: WorldSnapshot): void {
-  terrain.clear();
-  for (let y = 0; y < world.height; y++) {
-    for (let x = 0; x < world.width; x++) {
-      const i = y * world.width + x;
-      const color = TERRAIN_COLORS[world.terrain[i]] ?? 0x1a2b1a;
-      terrain.rect(
-        x * world.tileSizeMeters,
-        y * world.tileSizeMeters,
-        world.tileSizeMeters,
-        world.tileSizeMeters,
-      );
-      terrain.fill({ color });
-    }
-  }
 }
 
 function drawUnit(units: Container, vision: Container, u: SnapshotUnit, now: number): void {
