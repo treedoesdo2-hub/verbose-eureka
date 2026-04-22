@@ -46,6 +46,12 @@ export type DeployZone = {
   readonly y: number;
   readonly w: number;
   readonly h: number;
+  // COA-5 spawn placer output — optional to keep older authored-map
+  // fixtures + tests that construct DeployZone from {x,y,w,h} alone
+  // compatible. Facing is in radians (+X east, +Y south); squadRects
+  // subdivides the zone one rect per squad.
+  readonly facing?: number;
+  readonly squadRects?: readonly { readonly x: number; readonly y: number; readonly w: number; readonly h: number }[];
 };
 
 export type ObjectiveAnchor = {

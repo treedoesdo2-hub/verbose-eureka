@@ -6,7 +6,7 @@ import { asUnitId, type UnitId } from '@shared/ids';
 import type { ContentLookup, Loadout } from './loadout';
 import { deriveCombatProfile, loadoutFromTemplate } from './loadout';
 import { runPipeline } from './mapgen/pipeline';
-import type { MapGenRequest, MapGenResult } from './mapgen/types';
+import type { MapGenRequest, MapGenResult, RosterSpec, SpawnRegime } from './mapgen/types';
 import { makeSquadRuntime, pickLeader, type SquadRuntimeState } from './squad';
 import { EMPTY_MAP_META, type MapMeta, type ObjectiveRect, type ObjectiveRuntimeState, type SimState } from './state';
 import { makeInitialState } from './tick';
@@ -45,6 +45,12 @@ export type BuildScenarioInput = {
   // anchor binder after map generation so contracts with missing params
   // (like "extract" without a zone) resolve to generator-picked anchors.
   readonly objectiveZoneOverrides?: ReadonlyMap<string, ObjectiveRect>;
+  // COA-5 — regime passed through to the procedural map pipeline so
+  // placeSpawns picks the right axis shapes + separation bands. Defaults
+  // to 'meeting' on the pipeline side when omitted.
+  readonly spawnRegime?: SpawnRegime;
+  readonly rosterTeam0?: RosterSpec;
+  readonly rosterTeam1?: RosterSpec;
 };
 
 function buildWorld(map: GameMap): World {
@@ -305,6 +311,9 @@ export function buildScenario(input: BuildScenarioInput): SimState {
       size: input.map.width,
       tileSizeMeters: input.map.tileSizeMeters,
       generationVersion: input.map.generationVersion ?? 1,
+      spawnRegime: input.spawnRegime,
+      rosterTeam0: input.rosterTeam0,
+      rosterTeam1: input.rosterTeam1,
     });
     world = makeWorldFromBuffers({
       width: input.map.width,

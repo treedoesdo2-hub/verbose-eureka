@@ -25,19 +25,25 @@ import { DENSITY_PROFILES, generateCoverDensity } from './density-field';
 import { extractHotspots, type Hotspot } from './density-scatter';
 import type { DominantCapillary, DominantLine } from './dominant-line';
 import { pickLineKind } from './dominant-line';
+import { logPlacerRun } from './debug/spawn-placer-log';
 import { enforceReachability } from './enforce-reachability';
 import { footprintFor, pickLandmarkKind, placeLandmark, type HeroLandmark } from './hero-landmark';
 import { generateLandmarkName } from './landmark-names';
 import { fbm2D, hashStringToSeed, makeRng, subRng } from './noise';
+import { resampleObjectiveAroundBisector } from './objective-resample';
 import { pruneByThresholdTable } from './prune-by-threshold';
 import { buildDominantLine, stampLine } from './route-line';
+import { placeSpawns } from './spawn-placer';
 import type {
   DeployZone,
   MapGenDiagnostics,
   MapGenRequest,
   MapGenResult,
   ObjectiveAnchor,
+  RosterSpec,
 } from './types';
+
+const DEFAULT_ROSTER: RosterSpec = { squadCount: 2, unitCount: 8 };
 
 // Base-kind byte shortcuts (match world.ts BASE_KINDS order).
 const B = {
@@ -372,10 +378,82 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   // ---- Step: walkability + cover bake ----
   bakeWalkabilityAndCover(base, point, buildingId, walkability, coverProfile, N);
 
-  // ---- Step: deploy zones + ensure walkable ----
-  const { team0, team1 } = pickDeployZones(W, H);
+  // ---- Step: COA-5 spawn placer ----
+  // Build provisional objective anchors from map center + quadrant seeds.
+  // The placer uses these to derive the combat axis; we then resample
+  // them around the team bisector (see further down).
+  let objectiveAnchors: ObjectiveAnchor[] = [
+    {
+      kindHint: 'extract',
+      rect: {
+        x: Math.floor(W / 2) - 8,
+        y: Math.floor(H / 4) - 4,
+        w: 16,
+        h: 8,
+      },
+      qualityScore: 0.8,
+    },
+    {
+      kindHint: 'secure',
+      rect: {
+        x: Math.floor(W / 2) - 8,
+        y: Math.floor(H / 2) - 8,
+        w: 16,
+        h: 16,
+      },
+      qualityScore: 0.7,
+    },
+    {
+      kindHint: 'defend',
+      rect: {
+        x: Math.floor(W / 2) - 8,
+        y: Math.floor(H * 3 / 4) - 4,
+        w: 16,
+        h: 8,
+      },
+      qualityScore: 0.9,
+    },
+  ];
+
+  const placerResult = placeSpawns({
+    W,
+    H,
+    tileSizeMeters: req.tileSizeMeters,
+    walkability,
+    elevationStep,
+    objectiveAnchors,
+    regime: req.spawnRegime ?? 'meeting',
+    rosterTeam0: req.rosterTeam0 ?? DEFAULT_ROSTER,
+    rosterTeam1: req.rosterTeam1 ?? DEFAULT_ROSTER,
+  });
+  const team0: DeployZone = placerResult.team0;
+  const team1: DeployZone = placerResult.team1;
+  logPlacerRun(debugSink, {
+    W,
+    H,
+    tileSizeMeters: req.tileSizeMeters,
+    walkability,
+    elevationStep,
+    objectiveAnchors,
+    regime: req.spawnRegime ?? 'meeting',
+    rosterTeam0: req.rosterTeam0 ?? DEFAULT_ROSTER,
+    rosterTeam1: req.rosterTeam1 ?? DEFAULT_ROSTER,
+  }, placerResult);
+
   ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team0);
   ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team1);
+
+  // Resample objective anchors around the spawn placer's bisector so
+  // both teams have similar travel distance to each objective.
+  objectiveAnchors = resampleObjectiveAroundBisector({
+    anchors: objectiveAnchors,
+    team0,
+    team1,
+    regime: req.spawnRegime ?? 'meeting',
+    walkability,
+    W,
+    H,
+  });
 
   // ---- Step: reachability sanity carve (COA-3 enforceReachability) ----
   let carvedCells = 0;
@@ -401,29 +479,6 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     debugSink,
   );
   carvedCells += reachReport.carvedTiles;
-
-  const objectiveAnchors: ObjectiveAnchor[] = [
-    {
-      kindHint: 'extract',
-      rect: { x: team1.x, y: team1.y, w: team1.w, h: team1.h },
-      qualityScore: 0.8,
-    },
-    {
-      kindHint: 'secure',
-      rect: {
-        x: Math.floor(W / 2) - 8,
-        y: Math.floor(H / 2) - 8,
-        w: 16,
-        h: 16,
-      },
-      qualityScore: 0.7,
-    },
-    {
-      kindHint: 'defend',
-      rect: { x: team0.x, y: team0.y, w: team0.w, h: team0.h },
-      qualityScore: 0.9,
-    },
-  ];
 
   // COA-1 density field generation — populate coverDensity from the biome
   // profile. Deploy zones and center objective are masked out so hotspots
@@ -768,24 +823,6 @@ function coverBits(c: 'none' | 'light' | 'heavy' | 'full'): number {
 }
 function heightBits(h: 'flat' | 'low' | 'chest' | 'tall' | 'full'): number {
   return h === 'full' ? 4 : h === 'tall' ? 3 : h === 'chest' ? 2 : h === 'low' ? 1 : 0;
-}
-
-function pickDeployZones(W: number, H: number): { team0: DeployZone; team1: DeployZone } {
-  const zw = Math.max(8, Math.floor(W * 0.12));
-  const zh = Math.max(8, Math.floor(H * 0.12));
-  const team0: DeployZone = {
-    x: Math.floor((W - zw) / 2),
-    y: H - zh - 2,
-    w: zw,
-    h: zh,
-  };
-  const team1: DeployZone = {
-    x: Math.floor((W - zw) / 2),
-    y: 2,
-    w: zw,
-    h: zh,
-  };
-  return { team0, team1 };
 }
 
 function maskZoneInDensity(
