@@ -715,6 +715,188 @@ export function setBarrier(
   rebakeTile(world, x, y);
 }
 
+// Destructible state machine (COA-2 task #13). Damage transitions
+// intact → damaged (at half HP) → destroyed (at 0 HP). Destroyed items
+// either vanish or leave rubble per RUBBLE_ON_DESTROY. State is derived
+// from current HP vs max HP — the edge / point byte's damaged flag is
+// kept in sync by applyBarrierDamage / applyPointDamage below.
+export type DestructibleState = 'intact' | 'damaged' | 'destroyed';
+
+function stateFromHp(hp: number, maxHp: number): DestructibleState {
+  if (maxHp <= 0) return 'intact';
+  if (hp <= 0) return 'destroyed';
+  if (hp * 2 <= maxHp) return 'damaged';
+  return 'intact';
+}
+
+export type DamageResult = {
+  readonly consumed: number;
+  readonly remainingHp: number;
+  readonly prevState: DestructibleState;
+  readonly nextState: DestructibleState;
+  readonly destroyed: boolean;
+  readonly leftRubble: boolean;
+};
+
+export function applyBarrierDamage(
+  world: World,
+  x: number,
+  y: number,
+  side: 'N' | 'W',
+  damage: number,
+): DamageResult | null {
+  if (!inBounds(world, x, y)) return null;
+  const idx = tileIndex(world, x, y);
+  const edgeByte = side === 'N' ? world.edgeN[idx] : world.edgeW[idx];
+  const kind = barrierKindOf(edgeByte);
+  if (!kind) return null;
+  const maxHp = BARRIER_MAX_HP[kind] ?? 0;
+  if (maxHp <= 0) {
+    // Indestructible barrier (berm, rubble_strip) — no-op but still valid.
+    return {
+      consumed: 0,
+      remainingHp: 0,
+      prevState: 'intact',
+      nextState: 'intact',
+      destroyed: false,
+      leftRubble: false,
+    };
+  }
+  const hpArr = side === 'N' ? world.hpN : world.hpW;
+  const prevHp = hpArr[idx];
+  const actualPrevHp = prevHp === 0 && !barrierIsDamaged(edgeByte) ? maxHp : prevHp;
+  const nextHp = Math.max(0, actualPrevHp - Math.max(0, damage));
+  const prevState = stateFromHp(actualPrevHp, maxHp);
+  const nextState = stateFromHp(nextHp, maxHp);
+
+  if (nextHp === 0) {
+    // Destroyed — either vanish or leave rubble_strip.
+    const leavesRubble = RUBBLE_ON_DESTROY[kind] ?? false;
+    if (leavesRubble) {
+      const rubble = encodeBarrier('rubble_strip', false);
+      if (side === 'N') world.edgeN[idx] = rubble;
+      else world.edgeW[idx] = rubble;
+      hpArr[idx] = 0;
+    } else {
+      if (side === 'N') world.edgeN[idx] = 0;
+      else world.edgeW[idx] = 0;
+      hpArr[idx] = 0;
+    }
+    rebakeTile(world, x, y);
+    return {
+      consumed: actualPrevHp - nextHp,
+      remainingHp: 0,
+      prevState,
+      nextState: 'destroyed',
+      destroyed: true,
+      leftRubble: leavesRubble,
+    };
+  }
+
+  hpArr[idx] = nextHp;
+  const damagedFlag = nextState === 'damaged';
+  const repackByte = encodeBarrier(kind, damagedFlag);
+  if (side === 'N') world.edgeN[idx] = repackByte;
+  else world.edgeW[idx] = repackByte;
+  if (prevState !== nextState) rebakeTile(world, x, y);
+  return {
+    consumed: actualPrevHp - nextHp,
+    remainingHp: nextHp,
+    prevState,
+    nextState,
+    destroyed: false,
+    leftRubble: false,
+  };
+}
+
+export function applyPointDamage(
+  world: World,
+  x: number,
+  y: number,
+  damage: number,
+): DamageResult | null {
+  if (!inBounds(world, x, y)) return null;
+  const idx = tileIndex(world, x, y);
+  const pointByte = world.point[idx];
+  const kind = byteToPoint(pointByte);
+  if (!kind) return null;
+  const maxHp = POINT_MAX_HP[kind] ?? 0;
+  if (maxHp <= 0) {
+    return {
+      consumed: 0,
+      remainingHp: 0,
+      prevState: 'intact',
+      nextState: 'intact',
+      destroyed: false,
+      leftRubble: false,
+    };
+  }
+  const prevHp = world.hpPoint[idx];
+  const actualPrevHp = prevHp === 0 ? maxHp : prevHp;
+  const nextHp = Math.max(0, actualPrevHp - Math.max(0, damage));
+  const prevState = stateFromHp(actualPrevHp, maxHp);
+  const nextState = stateFromHp(nextHp, maxHp);
+
+  if (nextHp === 0) {
+    const leavesRubble = RUBBLE_ON_DESTROY[kind] ?? false;
+    if (leavesRubble) {
+      world.point[idx] = pointToByte('rubble_pile');
+      world.hpPoint[idx] = 0; // indestructible rubble
+    } else {
+      world.point[idx] = 0;
+      world.hpPoint[idx] = 0;
+    }
+    rebakeTile(world, x, y);
+    return {
+      consumed: actualPrevHp - nextHp,
+      remainingHp: 0,
+      prevState,
+      nextState: 'destroyed',
+      destroyed: true,
+      leftRubble: leavesRubble,
+    };
+  }
+
+  world.hpPoint[idx] = nextHp;
+  if (prevState !== nextState) rebakeTile(world, x, y);
+  return {
+    consumed: actualPrevHp - nextHp,
+    remainingHp: nextHp,
+    prevState,
+    nextState,
+    destroyed: false,
+    leftRubble: false,
+  };
+}
+
+export function barrierStateAt(
+  world: World,
+  x: number,
+  y: number,
+  side: 'N' | 'W',
+): DestructibleState {
+  if (!inBounds(world, x, y)) return 'intact';
+  const idx = tileIndex(world, x, y);
+  const edgeByte = side === 'N' ? world.edgeN[idx] : world.edgeW[idx];
+  const kind = barrierKindOf(edgeByte);
+  if (!kind) return 'intact';
+  const maxHp = BARRIER_MAX_HP[kind] ?? 0;
+  if (maxHp <= 0) return 'intact';
+  const hp = side === 'N' ? world.hpN[idx] : world.hpW[idx];
+  return stateFromHp(hp === 0 && !barrierIsDamaged(edgeByte) ? maxHp : hp, maxHp);
+}
+
+export function pointStateAt(world: World, x: number, y: number): DestructibleState {
+  if (!inBounds(world, x, y)) return 'intact';
+  const idx = tileIndex(world, x, y);
+  const kind = byteToPoint(world.point[idx]);
+  if (!kind) return 'intact';
+  const maxHp = POINT_MAX_HP[kind] ?? 0;
+  if (maxHp <= 0) return 'intact';
+  const hp = world.hpPoint[idx];
+  return stateFromHp(hp === 0 ? maxHp : hp, maxHp);
+}
+
 // Rebake walkability + coverProfile for a single tile. Called from all
 // mutation paths so tests and authored-map loaders don't have to call a
 // separate bake sweep. Pipeline callers also rebake at the end, but this
