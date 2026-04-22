@@ -22,6 +22,7 @@ function u(id: number, operatorId: string | null = null): SnapshotUnit {
     ammo: 30,
     targetId: null,
     wounds: [],
+    lastHeard: [],
   };
 }
 

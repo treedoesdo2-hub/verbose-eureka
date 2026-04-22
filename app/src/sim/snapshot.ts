@@ -1,10 +1,32 @@
-import type { SimSnapshot, SnapshotEvent, SnapshotUnit, WorldSnapshot } from '@shared/snapshot';
+import type {
+  SimSnapshot,
+  SnapshotEvent,
+  SnapshotLastHeard,
+  SnapshotUnit,
+  WorldSnapshot,
+} from '@shared/snapshot';
+import { HEARD_MAX_ENTRIES } from './noise';
 import type { SimState } from './state';
 import type { World } from './world';
 
 export function snapshotState(state: SimState): SimSnapshot {
   const units: SnapshotUnit[] = [];
   for (const u of state.units.values()) {
+    const lastHeard: SnapshotLastHeard[] = [];
+    for (const [sourceId, h] of u.lastHeard) {
+      lastHeard.push({
+        sourceUnitId: sourceId,
+        approxX: h.approxPos.x,
+        approxY: h.approxPos.y,
+        bearing: h.bearing,
+        confidence: h.confidence,
+        tick: h.tick,
+        kind: h.kind,
+      });
+    }
+    lastHeard.sort((a, b) => b.tick - a.tick);
+    if (lastHeard.length > HEARD_MAX_ENTRIES) lastHeard.length = HEARD_MAX_ENTRIES;
+
     units.push({
       id: u.id,
       teamId: u.teamId,
@@ -27,6 +49,7 @@ export function snapshotState(state: SimState): SimSnapshot {
         treatment: w.treatment,
         bleedRate: w.bleedRatePerSec,
       })),
+      lastHeard,
     });
   }
 
@@ -68,6 +91,15 @@ export function snapshotState(state: SimState): SimSnapshot {
       snapshotEvents.push({ kind: 'unit-broke', unitId: e.unitId, tick: e.tick });
     } else if (e.kind === 'unit-rallied') {
       snapshotEvents.push({ kind: 'unit-rallied', unitId: e.unitId, tick: e.tick });
+    } else if (e.kind === 'noise-emitted') {
+      snapshotEvents.push({
+        kind: 'noise-emitted',
+        sourceUnitId: e.sourceUnitId,
+        x: e.pos.x,
+        y: e.pos.y,
+        noiseKind: e.noiseKind,
+        tick: e.tick,
+      });
     }
   }
 

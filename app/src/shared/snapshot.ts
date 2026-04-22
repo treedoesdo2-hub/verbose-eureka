@@ -5,6 +5,24 @@ export type SnapshotAiState = 'advance' | 'hold' | 'retreat' | 'flank' | 'recove
 export type SnapshotShotOutcome = 'wound' | 'block' | 'miss';
 export type SnapshotMissReason = 'accuracy' | 'cover' | 'range';
 export type SnapshotDownedCause = 'bleedout' | 'combat';
+export type SnapshotNoiseKind =
+  | 'weapon-fire'
+  | 'explosion'
+  | 'reload'
+  | 'downed-cry'
+  | 'footstep-standing'
+  | 'footstep-crouched'
+  | 'footstep-prone';
+
+export type SnapshotLastHeard = {
+  readonly sourceUnitId: number;
+  readonly approxX: number;
+  readonly approxY: number;
+  readonly bearing: number | null;
+  readonly confidence: number;
+  readonly tick: number;
+  readonly kind: SnapshotNoiseKind;
+};
 
 export type SnapshotUnit = {
   readonly id: number;
@@ -28,6 +46,7 @@ export type SnapshotUnit = {
     treatment: string;
     bleedRate: number;
   }[];
+  readonly lastHeard: readonly SnapshotLastHeard[];
 };
 
 export type SnapshotEvent =
@@ -47,7 +66,15 @@ export type SnapshotEvent =
   | { kind: 'unit-stabilized'; medicId: number; targetId: number; tick: number }
   | { kind: 'unit-pinned'; unitId: number; tick: number }
   | { kind: 'unit-broke'; unitId: number; tick: number }
-  | { kind: 'unit-rallied'; unitId: number; tick: number };
+  | { kind: 'unit-rallied'; unitId: number; tick: number }
+  | {
+      kind: 'noise-emitted';
+      sourceUnitId: number;
+      x: number;
+      y: number;
+      noiseKind: SnapshotNoiseKind;
+      tick: number;
+    };
 
 export type SimSnapshot = {
   readonly tick: number;

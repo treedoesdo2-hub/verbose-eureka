@@ -2,10 +2,12 @@ import type { UnitId } from '@shared/ids';
 import { decide, pickStance } from './ai/bt';
 import { coverAwareStepTarget } from './ai/movement';
 import { perceive } from './ai/perception';
+import { updateLastHeard } from './hearing';
 import { resolveShot } from './hit';
+import { FOOTSTEP_EMIT_EVERY_TICKS, type NoiseKind } from './noise';
 import { Rng } from './rng';
 import { SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
-import type { LastSeen, Unit, UnitAction, Vec2, Wound } from './unit';
+import type { LastSeen, Stance, Unit, UnitAction, Vec2, Wound } from './unit';
 import {
   BLOODOUT_THRESHOLD,
   bloodTier,
@@ -196,6 +198,13 @@ function processFiring(
   }
 
   events.push({ kind: 'unit-fired', shooter: shooter.id, target: target.id, tick });
+  events.push({
+    kind: 'noise-emitted',
+    sourceUnitId: shooter.id,
+    pos: shooter.position,
+    noiseKind: 'weapon-fire',
+    tick,
+  });
 
   const targetFirePatch = patches.get(target.id) ?? { id: target.id };
   const curSup = (targetFirePatch.suppression as number | undefined) ?? target.suppression;
@@ -276,13 +285,25 @@ function processFiring(
   return nextWid;
 }
 
-function processReload(shooter: Unit, patches: Map<UnitId, UnitPatch>): void {
+function processReload(
+  shooter: Unit,
+  tick: number,
+  events: SimEvent[],
+  patches: Map<UnitId, UnitPatch>,
+): void {
   if (shooter.action.kind !== 'reloading') return;
   if (shooter.action.ticksRemaining > 0) return;
   const mag = shooter.combat.primaryWeapon?.magazineSize ?? 0;
   mergePatch(patches, shooter.id, {
     action: { kind: 'idle' },
     ammo: mag,
+  });
+  events.push({
+    kind: 'noise-emitted',
+    sourceUnitId: shooter.id,
+    pos: shooter.position,
+    noiseKind: 'reload',
+    tick,
   });
 }
 
@@ -375,7 +396,19 @@ function processStress(
   }
 }
 
-function processMovement(unit: Unit, state: SimState, patches: Map<UnitId, UnitPatch>): void {
+function footstepKind(stance: Stance): NoiseKind {
+  if (stance === 'prone') return 'footstep-prone';
+  if (stance === 'crouched') return 'footstep-crouched';
+  return 'footstep-standing';
+}
+
+function processMovement(
+  unit: Unit,
+  state: SimState,
+  tick: number,
+  events: SimEvent[],
+  patches: Map<UnitId, UnitPatch>,
+): void {
   if (unit.action.kind !== 'moving') return;
   const m = executeMovement(unit, unit.action.target, state.world, unit.combat.mobilityPenalty);
   if (m.arrived) {
@@ -385,11 +418,20 @@ function processMovement(unit: Unit, state: SimState, patches: Map<UnitId, UnitP
       facing: m.facing,
       action: { kind: 'idle' },
     });
-  } else {
-    mergePatch(patches, unit.id, {
-      position: m.position,
-      velocity: m.velocity,
-      facing: m.facing,
+    return;
+  }
+  mergePatch(patches, unit.id, {
+    position: m.position,
+    velocity: m.velocity,
+    facing: m.facing,
+  });
+  if (tick % FOOTSTEP_EMIT_EVERY_TICKS === 0) {
+    events.push({
+      kind: 'noise-emitted',
+      sourceUnitId: unit.id,
+      pos: m.position,
+      noiseKind: footstepKind(unit.stance),
+      tick,
     });
   }
 }
@@ -429,6 +471,7 @@ export function tick(state: SimState, rng: Rng): SimState {
       lastAlertedTick: threatenedNow ? state.tick : unit.lastAlertedTick,
       lastSeen,
       waypointIndex,
+      ...(decision.extraFacing !== undefined ? { facing: decision.extraFacing } : {}),
     });
   }
 
@@ -437,7 +480,7 @@ export function tick(state: SimState, rng: Rng): SimState {
 
   for (const unit of postDecision.values()) {
     if (!isAlive(unit)) continue;
-    processMovement(unit, { ...state, units: postDecision }, patches);
+    processMovement(unit, { ...state, units: postDecision }, state.tick, events, patches);
     nextWoundId = processFiring(
       unit,
       { ...state, units: postDecision },
@@ -447,7 +490,7 @@ export function tick(state: SimState, rng: Rng): SimState {
       events,
       patches,
     );
-    processReload(unit, patches);
+    processReload(unit, state.tick, events, patches);
     processStabilize(unit, { ...state, units: postDecision }, state.tick, events, patches);
   }
 
@@ -470,11 +513,26 @@ export function tick(state: SimState, rng: Rng): SimState {
       if (isDowned({ ...unit, ...(patches.get(unit.id) ?? {}) })) {
         mergePatch(patches, unit.id, { action: { kind: 'downed' } });
         events.push({ kind: 'unit-downed', unitId: unit.id, cause: 'bleedout', tick: state.tick });
+        events.push({
+          kind: 'noise-emitted',
+          sourceUnitId: unit.id,
+          pos: unit.position,
+          noiseKind: 'downed-cry',
+          tick: state.tick,
+        });
       }
     }
   }
 
   processStress(state.units, postAction, events, state.tick, patches);
+
+  // Propagate this tick's noise-emitted events into each listener's lastHeard.
+  // Runs after all emission passes so hearing reflects everything heard this tick.
+  for (const unit of postAction.values()) {
+    if (!isAlive(unit)) continue;
+    const nextHeard = updateLastHeard(unit, events, state.world, state.tick);
+    mergePatch(patches, unit.id, { lastHeard: nextHeard });
+  }
 
   const finalUnits = applyPatches({ ...state, units: postAction }, patches);
 

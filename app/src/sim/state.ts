@@ -1,7 +1,8 @@
 import type { BodyZone } from '@schema/common';
 import type { UnitId } from '@shared/ids';
+import type { NoiseKind } from './noise';
 import type { RngSnapshot } from './rng';
-import type { Unit } from './unit';
+import type { Unit, Vec2 } from './unit';
 import type { World } from './world';
 
 export const SIM_HZ = 30;
@@ -31,7 +32,8 @@ export type SimEvent =
   | { kind: 'unit-stabilized'; medicId: UnitId; targetId: UnitId; tick: number }
   | { kind: 'unit-pinned'; unitId: UnitId; tick: number }
   | { kind: 'unit-broke'; unitId: UnitId; tick: number }
-  | { kind: 'unit-rallied'; unitId: UnitId; tick: number };
+  | { kind: 'unit-rallied'; unitId: UnitId; tick: number }
+  | { kind: 'noise-emitted'; sourceUnitId: UnitId; pos: Vec2; noiseKind: NoiseKind; tick: number };
 
 export type SimState = {
   readonly tick: number;

@@ -3,6 +3,7 @@ import { ALL_BODY_ZONES } from '@schema/common';
 import type { OperatorId, UnitId, WoundId } from '@shared/ids';
 import type { CombatProfile } from './loadout';
 import { emptyCombatProfile } from './loadout';
+import type { Heard } from './noise';
 
 export const MAX_BLOOD_VOLUME = 100;
 // Spec/07: five blood tiers with mechanical effects. Downed transition
@@ -122,6 +123,7 @@ export type Unit = {
   readonly alerted: boolean;
   readonly lastAlertedTick: number;
   readonly lastSeen: ReadonlyMap<UnitId, LastSeen>;
+  readonly lastHeard: ReadonlyMap<UnitId, Heard>;
   readonly currentTarget: UnitId | null;
   readonly waypointIndex: number;
   readonly waypoints: readonly Vec2[];
@@ -158,6 +160,7 @@ export function makeUnit(params: {
     alerted: false,
     lastAlertedTick: -1,
     lastSeen: new Map(),
+    lastHeard: new Map(),
     currentTarget: null,
     waypointIndex: 0,
     waypoints: params.waypoints ?? [],

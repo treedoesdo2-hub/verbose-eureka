@@ -21,6 +21,7 @@ function u(overrides: Partial<SnapshotUnit> = {}): SnapshotUnit {
     ammo: 30,
     targetId: null,
     wounds: [],
+    lastHeard: [],
     ...overrides,
   };
 }

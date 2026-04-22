@@ -75,6 +75,18 @@ export function hashState(state: SimState): string {
       h.f64(seen.pos.y);
       h.u32(seen.tick);
     }
+    const sortedLastHeard = [...u.lastHeard.entries()].sort((a, b) => a[0] - b[0]);
+    h.u32(sortedLastHeard.length);
+    for (const [sourceId, heard] of sortedLastHeard) {
+      h.u32(sourceId);
+      h.f64(heard.approxPos.x);
+      h.f64(heard.approxPos.y);
+      h.byte(heard.bearing === null ? 0 : 1);
+      h.f64(heard.bearing ?? 0);
+      h.f64(heard.confidence);
+      h.u32(heard.tick);
+      h.str(heard.kind);
+    }
     h.u32(u.wounds.length);
     for (const w of u.wounds) {
       h.u32(w.id);

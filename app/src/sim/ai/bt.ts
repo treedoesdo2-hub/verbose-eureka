@@ -1,4 +1,6 @@
 import type { UnitId } from '@shared/ids';
+import { mostRecentHeard } from '../hearing';
+import { HEARD_INVESTIGATE_MIN_CONFIDENCE } from '../noise';
 import type { SimState } from '../state';
 import { SIM_HZ } from '../state';
 import type { AiState, Stance, Unit, UnitAction, Vec2 } from '../unit';
@@ -61,6 +63,7 @@ export type Decision = {
   readonly currentTarget: UnitId | null;
   readonly alerted: boolean;
   readonly advanceWaypoint: boolean;
+  readonly extraFacing?: number;
 };
 
 /**
@@ -206,6 +209,34 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
       currentTarget: unit.currentTarget,
       alerted,
       advanceWaypoint: false,
+    };
+  }
+
+  // No visible threat — investigate heard noise (shooter firing from concealment, etc).
+  const heard = mostRecentHeard(unit, state.tick);
+  if (heard) {
+    const { approxPos } = heard.heard;
+    const bearing =
+      heard.heard.bearing ??
+      Math.atan2(approxPos.y - unit.position.y, approxPos.x - unit.position.x);
+    const d = distance(unit.position.x, unit.position.y, approxPos.x, approxPos.y);
+    if (heard.heard.confidence >= HEARD_INVESTIGATE_MIN_CONFIDENCE && d > 1.5) {
+      return {
+        aiState: 'advance',
+        action: { kind: 'moving', target: approxPos },
+        currentTarget: null,
+        alerted: true,
+        advanceWaypoint: false,
+        extraFacing: bearing,
+      };
+    }
+    return {
+      aiState: 'hold',
+      action: { kind: 'idle' },
+      currentTarget: null,
+      alerted: true,
+      advanceWaypoint: false,
+      extraFacing: bearing,
     };
   }
 
