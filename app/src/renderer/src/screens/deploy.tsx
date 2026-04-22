@@ -1,6 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { getContent } from '../content';
 import { useSimSnapshot } from '../hooks/use-sim';
+import { CombatHud } from '../hud/CombatHud';
+import type { HudObjective } from '../hud/hud-types';
 import { CombatView } from '../render/combat-view';
 import { getSimBridge } from '../sim-bridge';
 import { useAppState } from '../stores/app-state';
@@ -78,6 +80,18 @@ export function Deploy(): React.JSX.Element {
   const team1Alive =
     snapshot?.units.filter((u) => u.teamId === 1 && u.actionKind !== 'dead').length ?? 0;
 
+  const hudObjectives = useMemo<readonly HudObjective[]>(() => {
+    if (!contractId) return [];
+    const bundle = getContent();
+    const contract = bundle.contracts.get(contractId);
+    if (!contract) return [];
+    return contract.objectives.map((o) => ({
+      kind: o.kind,
+      description: o.description,
+      status: 'active' as const,
+    }));
+  }, [contractId]);
+
   return (
     <div className="deploy-layout">
       <aside className="deploy-hud-left">
@@ -118,7 +132,10 @@ export function Deploy(): React.JSX.Element {
       </aside>
       <main className="deploy-main">
         {world ? (
-          <CombatView world={world} snapshot={snapshot} />
+          <>
+            <CombatView world={world} snapshot={snapshot} />
+            <CombatHud world={world} snapshot={snapshot} objectives={hudObjectives} />
+          </>
         ) : (
           <div className="loading">Starting sim…</div>
         )}

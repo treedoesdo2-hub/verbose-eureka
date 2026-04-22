@@ -1179,3 +1179,218 @@ dd {
   margin: 0;
   padding: 1px 0;
 }
+
+/* ── Combat HUD overlay ──────────────────────────────────────── */
+.combat-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+.combat-hud > div {
+  position: absolute;
+  pointer-events: auto;
+}
+.hud-top-left {
+  top: 8px;
+  left: 8px;
+  max-width: 28%;
+  max-height: 30%;
+}
+.hud-top-right {
+  top: 8px;
+  right: 8px;
+}
+.hud-bottom-left {
+  bottom: 8px;
+  left: 8px;
+  max-width: 32%;
+  max-height: 42%;
+}
+.hud-bottom-right {
+  bottom: 8px;
+  right: 8px;
+  max-width: 28%;
+  min-width: 220px;
+}
+.hud-panel {
+  background: rgba(19, 22, 26, 0.82);
+  border: 1px solid var(--border);
+  padding: var(--pad-sm) var(--pad-md);
+  font-size: 12px;
+  backdrop-filter: blur(2px);
+}
+.hud-panel h4 {
+  margin: 0 0 4px 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+}
+
+/* Event feed */
+.hud-event-feed ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  max-height: 100%;
+  overflow-y: auto;
+}
+.hud-event-feed .evt {
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hud-event-feed .evt-kill {
+  color: var(--danger);
+}
+.hud-event-feed .evt-down {
+  color: var(--accent);
+}
+.hud-event-feed .evt-wound {
+  color: var(--fg-1);
+}
+.hud-event-feed .evt-stabilize {
+  color: var(--ok);
+}
+.hud-event-feed .evt-morale {
+  color: var(--fg-dim);
+}
+.hud-event-feed .evt-misc {
+  color: var(--fg-dim);
+}
+.hud-event-feed .tick {
+  color: var(--fg-dim);
+  margin-right: 4px;
+}
+
+/* Unit card */
+.hud-unit-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.hud-unit-card .team-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+}
+.hud-unit-card .team-swatch.team-0 {
+  background: #55aaff;
+}
+.hud-unit-card .team-swatch.team-1 {
+  background: #ff5a4a;
+}
+.hud-unit-card .btn-ghost {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+}
+.hud-unit-card .btn-ghost:hover {
+  color: var(--fg-1);
+}
+.hud-unit-card .status-line {
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+.hud-unit-card .bar {
+  position: relative;
+  height: 6px;
+  background: var(--bg-2);
+  margin: 2px 0 0 0;
+  overflow: hidden;
+}
+.hud-unit-card .bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.hud-unit-card .bar.blood-hi > span {
+  background: #4caf50;
+}
+.hud-unit-card .bar.blood-mid > span {
+  background: #ff9800;
+}
+.hud-unit-card .bar.blood-lo > span {
+  background: #f44336;
+}
+.hud-unit-card .bar.bar-morale > span {
+  background: #7bbaff;
+}
+.hud-unit-card .bar.bar-suppression > span {
+  background: var(--accent);
+}
+.hud-unit-card .bar-label {
+  font-size: 9px;
+  margin: 0 0 4px 0;
+}
+.hud-unit-card .unit-card-stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 4px 0 0 0;
+  font-size: 11px;
+}
+.hud-unit-card .unit-card-stats dt {
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+}
+.hud-unit-card .unit-card-stats dd {
+  margin: 0;
+}
+
+/* Objectives */
+.hud-objectives ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.hud-objectives li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.hud-objectives .badge {
+  color: var(--fg-dim);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+.hud-objectives .status-active {
+  color: var(--fg-1);
+  font-size: 10px;
+}
+.hud-objectives .status-complete {
+  color: var(--ok);
+  font-size: 10px;
+}
+.hud-objectives .status-failed {
+  color: var(--danger);
+  font-size: 10px;
+}
+
+/* Minimap */
+.hud-minimap {
+  padding: 2px;
+}
+.hud-minimap canvas {
+  display: block;
+  cursor: crosshair;
+}
