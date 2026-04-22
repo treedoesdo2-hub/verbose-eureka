@@ -5,11 +5,13 @@ import type { LoadoutTemplate } from '@schema/template';
 import { asUnitId, type UnitId } from '@shared/ids';
 import type { ContentLookup, Loadout } from './loadout';
 import { deriveCombatProfile, loadoutFromTemplate } from './loadout';
+import { runPipeline } from './mapgen/pipeline';
+import type { MapGenRequest, MapGenResult } from './mapgen/types';
 import type { ObjectiveRuntimeState, SimState } from './state';
 import { makeInitialState } from './tick';
 import type { Unit, UnitStats, Vec2 } from './unit';
 import { DEFAULT_STATS, makeUnit } from './unit';
-import { makeWorld, setTerrain, type World } from './world';
+import { makeWorld, makeWorldFromBuffers, setTerrain, type World } from './world';
 
 export type ScenarioDeployment = {
   readonly operatorId: string;
@@ -37,6 +39,63 @@ function buildWorld(map: GameMap): World {
     }
   }
   return w;
+}
+
+// Generate a procedural map from the contract seed + biome and package it
+// with spawn points sampled from the deploy zones. Returns a GameMap-shaped
+// view for the existing scenario builder; note the tile list is intentionally
+// empty — tiles live in the returned world buffer, not a JSON array.
+export function buildGeneratedMap(
+  request: MapGenRequest,
+  name: string,
+  id: string,
+  spawnCount: { team0: number; team1: number },
+): { map: GameMap; world: World; result: MapGenResult } {
+  const result = runPipeline(request);
+  const world = makeWorldFromBuffers(
+    result.width,
+    result.height,
+    request.tileSizeMeters,
+    result.terrain,
+  );
+  const team0Spawns = sampleSpawns(result.deployZones.team0, spawnCount.team0);
+  const team1Spawns = sampleSpawns(result.deployZones.team1, spawnCount.team1);
+  const map: GameMap = {
+    id,
+    name,
+    width: result.width,
+    height: result.height,
+    tileSizeMeters: request.tileSizeMeters,
+    tiles: [],
+    playerSpawns: team0Spawns,
+    enemySpawns: team1Spawns,
+    waypointRoutes: [],
+    generationSeed: request.seed,
+    generationVersion: request.generationVersion,
+    biome: request.biome,
+  };
+  return { map, world, result };
+}
+
+function sampleSpawns(
+  zone: { x: number; y: number; w: number; h: number },
+  count: number,
+): { x: number; y: number; facing: number }[] {
+  const out: { x: number; y: number; facing: number }[] = [];
+  const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+  const rows = Math.max(1, Math.ceil(count / cols));
+  const dx = zone.w / (cols + 1);
+  const dy = zone.h / (rows + 1);
+  for (let r = 0; r < rows && out.length < count; r++) {
+    for (let c = 0; c < cols && out.length < count; c++) {
+      out.push({
+        x: Math.floor(zone.x + dx * (c + 1)),
+        y: Math.floor(zone.y + dy * (r + 1)),
+        facing: 0,
+      });
+    }
+  }
+  return out;
 }
 
 function waypointsFor(map: GameMap, role: string, behavior: string): readonly Vec2[] {
@@ -110,7 +169,29 @@ function translateObjectives(contract: Contract): ObjectiveRuntimeState[] {
 }
 
 export function buildScenario(input: BuildScenarioInput): SimState {
-  const world = buildWorld(input.map);
+  // Procedurally generated maps skip the per-tile authoring loop — tiles are
+  // already materialized in the world buffer via makeWorldFromBuffers at
+  // buildGeneratedMap time. Fall back to the tile-list loader for authored
+  // fixture maps (training-yard, test fixtures).
+  const world =
+    input.map.generationSeed !== undefined && input.map.tiles.length === 0
+      ? makeWorldFromBuffers(
+          input.map.width,
+          input.map.height,
+          input.map.tileSizeMeters,
+          // Tile buffer was produced at buildGeneratedMap; the authored path
+          // calls buildWorld. If a caller hands us a seed-tagged map with no
+          // upfront world, regenerate on the fly so the two paths stay
+          // interchangeable.
+          runPipeline({
+            seed: input.map.generationSeed,
+            biome: input.map.biome ?? 'mixed',
+            size: input.map.width,
+            tileSizeMeters: input.map.tileSizeMeters,
+            generationVersion: input.map.generationVersion ?? 1,
+          }).terrain,
+        )
+      : buildWorld(input.map);
   const units: Unit[] = [];
   let nextId = 1;
 

@@ -116,6 +116,18 @@ export function makeWorld(
   return { width, height, tileSizeMeters, terrain, groundHeight };
 }
 
+// Build a World from a mapgen pipeline result — consumes the pre-baked
+// Uint8Array terrain without per-tile iteration.
+export function makeWorldFromBuffers(
+  width: number,
+  height: number,
+  tileSizeMeters: number,
+  terrain: Uint8Array,
+): World {
+  const groundHeight = new Float32Array(width * height);
+  return { width, height, tileSizeMeters, terrain, groundHeight };
+}
+
 export function tileIndex(world: World, x: number, y: number): number {
   return y * world.width + x;
 }
