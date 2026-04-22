@@ -283,14 +283,22 @@ This replaces the tag-vs-container framing in §Addendum-1 Pillar D. That framin
 
 **Items declare their hardpoint needs.** A plate carrier needs plate-mount hardpoints on torso_front AND torso_back. If the body doesn't expose those hardpoints, the item can't equip — same way you can't mount a ballistic weapon on a chassis with no ballistic hardpoints.
 
-**Ammo / grenades / medkits are separate items consumed from shared pools.** This is MWO's ammo-bin semantics ported directly:
-- A "rifle magazine (7.62)" item occupies **1 crit slot** somewhere on the body (waist, rig pouch, back, whatever has a compatible hardpoint and free capacity).
-- Each mag bin contributes to a **global operator-level pool** of its ammo type (e.g., `rifle_7_62: 30 rounds per bin × N bins`).
-- Weapons at fire-time draw from these pools; MWO's serialized consumption order (head → CT → RT → LT → LA → RA → LL → RL) ports naturally to a zone-ordered draw (waist first, torso rig second, back last, etc. — to be pinned).
-- Bin destruction on wounds → ammo loss + small splash damage (CASE analogue = "armored ammo pouches" as a gear variant, later).
-- Grenade-bin and medkit-bin items work the same way against their pools.
+**Equipped gear provides INTERNAL slots for consumables, scoped by category.** (Added 2026-04-21 per user directive — this is the MWO engine-heat-sink-slot pattern.) In MWO, an engine doesn't just "cost tons" — it *provides* heat-sink slots internal to the engine that heat sinks can fill without consuming external crit slots (an XL 275+ engine has internal capacity beyond the 10 free heat sinks). Same pattern ports to rigs, armor, belts, packs:
 
-**"Equipped vest determines ammo count"** = the vest's multi-zone crit footprint dictates how many crit slots remain across the body for ammo bins to occupy, AND the vest's declared hardpoints dictate what kind of bins can attach. A light rig leaves lots of crit slots free but its hardpoints limit most of them to pouch-compatible bins only (mags, grenades, medkits) — no weapon mounts on a rig. A plate carrier consumes more crit slots globally but its hardpoints enable plate-mounts, rifle-sling on back, and pouch-mount on the cummerbund.
+- An item consumes body-zone crit slots per its multi-zone footprint.
+- The item may **also declare internal slot capacity** scoped by consumable category — e.g., a chest rig declares `{ pouch: 4, grenade_loop: 2, ifak: 1 }` internal slots.
+- Consumable bin items (magazines, grenade-bins, medkit-bins) fit into either:
+  1. Internal slots on equipped gear that accept their category (a mag bin lands in a rig's `pouch` slot), OR
+  2. Bare body-zone crit slots *if* that zone exposes a compatible hardpoint (a belt's `pouch` hardpoints hold mag bins without a rig).
+- Without any rig/belt/pack providing internal slots, the operator is limited to whatever consumables can attach to bare hardpoints. This is deliberately restrictive — "what's on your belt with no vest" is a real tactical configuration.
+
+**Consumable bins contribute to shared pools drawn at runtime.** Each bin:
+- Occupies exactly 1 slot (internal or bare).
+- Contributes rounds/charges to a **global operator-level pool** by category (`rifle_7_62: 30 per mag bin × N bins`, `frag_grenade: 1 per grenade bin × M bins`, `medkit_use: 1 per kit × K kits`).
+- Weapons/actions draw from the pool at fire/use time. MWO's serialized consumption order (head → CT → RT → LT → LA → RA → LL → RL) ports as a zone-ordered draw (or, for internal slots, rig-order then pack-order). Bin destruction on a wound to that location = ammo loss + small splash damage (CASE analogue = "armored pouch" variants, later).
+- Grenade- and medkit-bins work identically against their respective pools.
+
+**"Equipped vest determines ammo count"** = the vest's multi-zone crit footprint + its declared internal slot capacity together dictate how many consumables the operator carries. A light rig eats less body crit but declares fewer internal pouches; a plate carrier eats more body crit but declares more pouches + grenade loops + IFAK slots. The tradeoff is body crit usage vs internal-slot capacity — same fundamental tension as MWO's engine-rating-vs-weight-and-crit math.
 
 **Constraint stack (all must pass):**
 1. **Global kg** (encumbrance threshold — soft: penalties to move/aim; hard: can't equip).
