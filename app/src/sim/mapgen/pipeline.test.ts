@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { baseToByte, WALK_FOOT, WALK_WHEELED } from '../world';
 import { runPipeline } from './pipeline';
 import type { MapGenRequest } from './types';
 
@@ -13,24 +14,26 @@ function req(overrides: Partial<MapGenRequest> = {}): MapGenRequest {
   };
 }
 
+const WATER_DEEP = baseToByte('water_deep');
+
 describe('mapgen pipeline', () => {
-  it('produces byte-identical terrain for the same seed + biome + version', () => {
+  it('produces byte-identical base grid for the same seed + biome + version', () => {
     const a = runPipeline(req({ seed: 'determinism-1' }));
     const b = runPipeline(req({ seed: 'determinism-1' }));
     expect(a.hash).toBe(b.hash);
-    expect(a.terrain.length).toBe(b.terrain.length);
-    for (let i = 0; i < a.terrain.length; i++) {
-      expect(a.terrain[i]).toBe(b.terrain[i]);
+    expect(a.base.length).toBe(b.base.length);
+    for (let i = 0; i < a.base.length; i++) {
+      expect(a.base[i]).toBe(b.base[i]);
     }
   });
 
-  it('produces different terrain for different seeds', () => {
+  it('produces different base grids for different seeds', () => {
     const a = runPipeline(req({ seed: 'seed-a' }));
     const b = runPipeline(req({ seed: 'seed-b' }));
     expect(a.hash).not.toBe(b.hash);
   });
 
-  it('produces different terrain across biomes', () => {
+  it('produces different output across biomes for the same seed', () => {
     const shared = { seed: 'same-seed', size: 128 };
     const a = runPipeline(req({ ...shared, biome: 'urban_sparse' }));
     const b = runPipeline(req({ ...shared, biome: 'rural_open' }));
@@ -42,32 +45,33 @@ describe('mapgen pipeline', () => {
     for (const zone of [r.deployZones.team0, r.deployZones.team1]) {
       for (let yy = zone.y; yy < zone.y + zone.h; yy++) {
         for (let xx = zone.x; xx < zone.x + zone.w; xx++) {
-          const t = r.terrain[yy * r.width + xx];
-          // Building=2, Water=4 — both impassable.
-          expect(t).not.toBe(2);
-          expect(t).not.toBe(4);
+          const i = yy * r.width + xx;
+          expect(r.base[i]).not.toBe(WATER_DEEP);
+          expect(r.buildingId[i]).toBe(0);
         }
       }
     }
   });
 
-  it('bakes walkability to match terrain (buildings/water non-walkable)', () => {
+  it('bakes walkability so water is impassable to foot', () => {
     const r = runPipeline(req());
-    for (let i = 0; i < r.terrain.length; i++) {
-      const t = r.terrain[i];
-      if (t === 2 || t === 4) {
-        expect(r.walkability[i]).toBe(0);
+    for (let i = 0; i < r.base.length; i++) {
+      if (r.base[i] === WATER_DEEP) {
+        expect(r.walkability[i] & WALK_FOOT).toBe(0);
       }
     }
   });
 
-  it('bakes cover values consistent with terrain kind', () => {
+  it('buildings allow infantry passage but block wheeled vehicles', () => {
     const r = runPipeline(req());
-    for (let i = 0; i < r.terrain.length; i++) {
-      const t = r.terrain[i];
-      if (t === 2) expect(r.coverValue[i]).toBe(70);
-      if (t === 3) expect(r.coverValue[i]).toBe(30);
-      if (t === 5) expect(r.coverValue[i]).toBe(20);
+    let checked = 0;
+    for (let i = 0; i < r.buildingId.length && checked < 20; i++) {
+      if (r.buildingId[i] !== 0) {
+        // Building interiors: infantry pass, wheeled/tracked blocked.
+        expect(r.walkability[i] & WALK_FOOT).not.toBe(0);
+        expect(r.walkability[i] & WALK_WHEELED).toBe(0);
+        checked++;
+      }
     }
   });
 
@@ -83,7 +87,7 @@ describe('mapgen pipeline', () => {
     const r = runPipeline(req({ size: 512 }));
     expect(r.width).toBe(512);
     expect(r.height).toBe(512);
-    expect(r.terrain.length).toBe(512 * 512);
+    expect(r.base.length).toBe(512 * 512);
   });
 
   it('scales to 1024 within a generous per-gen budget', () => {
@@ -91,9 +95,7 @@ describe('mapgen pipeline', () => {
     const r = runPipeline(req({ size: 1024 }));
     const elapsed = performance.now() - t0;
     expect(r.width).toBe(1024);
-    expect(r.terrain.length).toBe(1024 * 1024);
-    // Generous ceiling — one-shot pre-match cost, not per-frame. Bail loud
-    // if something regresses into seconds-per-tile territory.
+    expect(r.base.length).toBe(1024 * 1024);
     expect(elapsed).toBeLessThan(10000);
   });
 
@@ -137,7 +139,7 @@ describe('mapgen pipeline', () => {
           ];
           for (const n of candidates) {
             if (n < 0 || visited[n]) continue;
-            if ((r.walkability[n] & 1) === 0) continue;
+            if ((r.walkability[n] & WALK_FOOT) === 0) continue;
             visited[n] = 1;
             queue.push(n);
           }

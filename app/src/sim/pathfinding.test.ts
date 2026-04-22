@@ -11,13 +11,13 @@ import { runPipeline } from './mapgen/pipeline';
 import { findPathTiles, hasLineOfWalk, simplifyPath } from './pathfinding';
 import { RecordingSim } from './replay';
 import { buildGeneratedMap, buildScenario } from './scenario';
-import { makeWorld, makeWorldFromBuffers, setTerrain } from './world';
+import { makeWorld, makeWorldFromBuffers, setPoint } from './world';
 
 describe('pathfinding — findPathTiles', () => {
   it('routes around a central wall', () => {
     const world = makeWorld(10, 10, 1);
     // Wall at x=5 from y=0..8 (leaves gap at y=9).
-    for (let y = 0; y <= 8; y++) setTerrain(world, 5, y, 'building');
+    for (let y = 0; y <= 8; y++) setPoint(world, 5, y, 'storage_tank');
     const path = findPathTiles(world, 1, 1, 8, 1);
     expect(path.length).toBeGreaterThan(0);
     // Last waypoint should reach the goal tile (tile center is at goal+0.5).
@@ -33,11 +33,11 @@ describe('pathfinding — findPathTiles', () => {
     const world = makeWorld(10, 10, 1);
     // Box the goal in with buildings on all four sides.
     for (let d = -1; d <= 1; d++) {
-      setTerrain(world, 8 + d, 4, 'building');
-      setTerrain(world, 8 + d, 6, 'building');
+      setPoint(world, 8 + d, 4, 'storage_tank');
+      setPoint(world, 8 + d, 6, 'storage_tank');
     }
-    setTerrain(world, 7, 5, 'building');
-    setTerrain(world, 9, 5, 'building');
+    setPoint(world, 7, 5, 'storage_tank');
+    setPoint(world, 9, 5, 'storage_tank');
     const path = findPathTiles(world, 1, 1, 8, 5, { partial: false });
     expect(path.length).toBe(0);
   });
@@ -45,11 +45,11 @@ describe('pathfinding — findPathTiles', () => {
   it('returns a best-effort partial path when goal is unreachable and partial=true', () => {
     const world = makeWorld(10, 10, 1);
     for (let d = -1; d <= 1; d++) {
-      setTerrain(world, 8 + d, 4, 'building');
-      setTerrain(world, 8 + d, 6, 'building');
+      setPoint(world, 8 + d, 4, 'storage_tank');
+      setPoint(world, 8 + d, 6, 'storage_tank');
     }
-    setTerrain(world, 7, 5, 'building');
-    setTerrain(world, 9, 5, 'building');
+    setPoint(world, 7, 5, 'storage_tank');
+    setPoint(world, 9, 5, 'storage_tank');
     const path = findPathTiles(world, 1, 1, 8, 5, { partial: true });
     // Should approach but not reach — last waypoint is outside the wall.
     expect(path.length).toBeGreaterThan(0);
@@ -59,8 +59,8 @@ describe('pathfinding — findPathTiles', () => {
 
   it('is deterministic for the same inputs', () => {
     const world = makeWorld(16, 16, 1);
-    setTerrain(world, 8, 5, 'building');
-    setTerrain(world, 8, 6, 'building');
+    setPoint(world, 8, 5, 'storage_tank');
+    setPoint(world, 8, 6, 'storage_tank');
     const a = findPathTiles(world, 2, 2, 14, 10);
     const b = findPathTiles(world, 2, 2, 14, 10);
     expect(a.length).toBe(b.length);
@@ -105,7 +105,7 @@ describe('pathfinding — hasLineOfWalk', () => {
 
   it('returns false when a building sits on the line', () => {
     const world = makeWorld(10, 10, 1);
-    setTerrain(world, 5, 1, 'building');
+    setPoint(world, 5, 1, 'storage_tank');
     expect(hasLineOfWalk(world, { x: 1.5, y: 1.5 }, { x: 8.5, y: 1.5 })).toBe(false);
   });
 
@@ -124,13 +124,16 @@ describe('pathfinding — generated-map integration', () => {
       tileSizeMeters: 1.5,
       generationVersion: 1,
     });
-    const world = makeWorldFromBuffers(
-      result.width,
-      result.height,
-      1.5,
-      result.terrain,
-      result.walkability,
-    );
+    const world = makeWorldFromBuffers({
+      width: result.width,
+      height: result.height,
+      tileSizeMeters: 1.5,
+      base: result.base,
+      point: result.point,
+      buildingId: result.buildingId,
+      walkability: result.walkability,
+      elevationStep: result.elevationStep,
+    });
     expect(world.walkability).not.toBeNull();
     const path = findPathTiles(world, 63, 118, 64, 8, { partial: true });
     const simp = simplifyPath(path.map((p) => ({ x: p.x, y: p.y })));

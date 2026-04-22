@@ -1,30 +1,30 @@
 import { asUnitId } from '@shared/ids';
 import { describe, expect, it } from 'vitest';
 import { approxPosJitter, effectiveHearingRange, hearingConfidence, NOISE_LOUDNESS } from './noise';
+import { BASE_AXES, POINT_AXES } from './world';
 
 describe('effectiveHearingRange', () => {
   it('returns a positive range for weapon-fire at neutral awareness on open terrain', () => {
-    const r = effectiveHearingRange('weapon-fire', 50, 'open', false);
-    // At awareness=50: awarenessMult = 0.5 + 0.25 = 0.75. noiseDb=120. → 90 m.
+    const r = effectiveHearingRange('weapon-fire', 50, BASE_AXES.open, false);
     expect(r).toBeGreaterThan(50);
     expect(r).toBeLessThanOrEqual(NOISE_LOUDNESS['weapon-fire'].noiseDb);
   });
 
-  it('forest terrain reduces range vs open', () => {
-    const rOpen = effectiveHearingRange('weapon-fire', 50, 'open', false);
-    const rForest = effectiveHearingRange('weapon-fire', 50, 'forest', false);
+  it('foliage axes reduce range vs open', () => {
+    const rOpen = effectiveHearingRange('weapon-fire', 50, BASE_AXES.open, false);
+    const rForest = effectiveHearingRange('weapon-fire', 50, POINT_AXES.tree_forest, false);
     expect(rForest).toBeLessThan(rOpen);
   });
 
   it('high awareness extends range, low awareness shrinks it', () => {
-    const rLow = effectiveHearingRange('weapon-fire', 10, 'open', false);
-    const rHigh = effectiveHearingRange('weapon-fire', 90, 'open', false);
+    const rLow = effectiveHearingRange('weapon-fire', 10, BASE_AXES.open, false);
+    const rHigh = effectiveHearingRange('weapon-fire', 90, BASE_AXES.open, false);
     expect(rHigh).toBeGreaterThan(rLow);
   });
 
   it('suppressed listener has reduced effective range', () => {
-    const rNormal = effectiveHearingRange('weapon-fire', 50, 'open', false);
-    const rSuppressed = effectiveHearingRange('weapon-fire', 50, 'open', true);
+    const rNormal = effectiveHearingRange('weapon-fire', 50, BASE_AXES.open, false);
+    const rSuppressed = effectiveHearingRange('weapon-fire', 50, BASE_AXES.open, true);
     expect(rSuppressed).toBeLessThan(rNormal);
   });
 });

@@ -8,7 +8,7 @@ import {
 } from './minimap-math';
 
 function mkWorld(w: number, h: number, tileSize = 1): WorldSnapshot {
-  return { width: w, height: h, tileSizeMeters: tileSize, terrain: new Uint8Array(w * h) };
+  return { width: w, height: h, tileSizeMeters: tileSize, base: new Uint8Array(w * h) };
 }
 
 describe('computeMinimapProjection', () => {
@@ -63,7 +63,7 @@ describe('unprojectPoint', () => {
 describe('terrainIndex', () => {
   it('returns 0 for out-of-bounds', () => {
     const w = mkWorld(4, 4);
-    w.terrain[0] = 3;
+    w.base[0] = 3;
     expect(terrainIndex(w, -1, 0)).toBe(0);
     expect(terrainIndex(w, 0, -1)).toBe(0);
     expect(terrainIndex(w, 4, 0)).toBe(0);
@@ -72,7 +72,7 @@ describe('terrainIndex', () => {
 
   it('returns the stored value for in-bounds', () => {
     const w = mkWorld(4, 4);
-    w.terrain[5] = 2; // y=1, x=1
+    w.base[5] = 2; // y=1, x=1
     expect(terrainIndex(w, 1, 1)).toBe(2);
   });
 });

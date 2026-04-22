@@ -10,7 +10,7 @@ import { RecordingSim, replay } from './replay';
 import { SIM_HZ } from './state';
 import { makeInitialState } from './tick';
 import { canFight, makeUnit } from './unit';
-import { makeWorld, setTerrain } from './world';
+import { makeWorld, setPoint } from './world';
 
 const ar = makeWeapon({ name: 'AR', baseAccuracy: 70 });
 const light = makeLightArmor();
@@ -107,11 +107,15 @@ describe('MVP validation — 6 pass/fail criteria', () => {
 
   it('criterion #2: LOS tactical — building blocks, forest conceals, flanking produces spot', () => {
     const w = makeWorld(64, 64, 1);
-    for (let x = 30; x <= 34; x++) setTerrain(w, x, 10, 'building');
+    // storage_tank: full LOS, full cover, height 4.5m — blocks standing ray.
+    for (let x = 30; x <= 34; x++) setPoint(w, x, 10, 'storage_tank');
     expect(castRay(w, { x: 10, y: 10 }, 1.7, { x: 50, y: 10 }, 1.0)).toBe('blocked');
 
+    // Single tree_forest tile: thin LOS, ~2 samples × 0.18 opacity → concealed.
+    // Too many stacked tiles accumulate past 1.0 and register as blocked, so
+    // we keep the patch narrow for a clean concealed outcome.
     const w2 = makeWorld(64, 64, 1);
-    for (let x = 20; x <= 25; x++) setTerrain(w2, x, 10, 'forest');
+    setPoint(w2, 22, 10, 'tree_forest');
     expect(castRay(w2, { x: 10, y: 10 }, 1.7, { x: 35, y: 10 }, 1.0)).toBe('concealed');
 
     const w3 = makeWorld(64, 64, 1);

@@ -21,7 +21,7 @@ describe('generated map → scenario world', () => {
 
     expect(world.width).toBe(128);
     expect(world.height).toBe(128);
-    expect(world.terrain).toBe(result.terrain);
+    expect(world.base).toBe(result.base);
     expect(map.playerSpawns.length).toBe(4);
     expect(map.enemySpawns.length).toBe(6);
     expect(map.generationSeed).toBe('integration-seed');
@@ -49,9 +49,9 @@ describe('generated map → scenario world', () => {
     const a = buildGeneratedMap(req(), 'A', 'a', { team0: 2, team1: 2 });
     const b = buildGeneratedMap(req(), 'B', 'b', { team0: 2, team1: 2 });
     expect(a.result.hash).toBe(b.result.hash);
-    expect(a.world.terrain.length).toBe(b.world.terrain.length);
-    for (let i = 0; i < a.world.terrain.length; i++) {
-      expect(a.world.terrain[i]).toBe(b.world.terrain[i]);
+    expect(a.world.base.length).toBe(b.world.base.length);
+    for (let i = 0; i < a.world.base.length; i++) {
+      expect(a.world.base[i]).toBe(b.world.base[i]);
     }
   });
 });

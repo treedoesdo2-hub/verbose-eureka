@@ -96,15 +96,15 @@ describe('snapshotState', () => {
 });
 
 describe('snapshotWorld', () => {
-  it('round-trips terrain as a Uint8Array copy', () => {
+  it('round-trips base terrain as a Uint8Array copy', () => {
     const world = makeWorld(16, 16, 1);
     const snap = snapshotWorld(world);
     expect(snap.width).toBe(16);
     expect(snap.height).toBe(16);
-    expect(snap.terrain).toBeInstanceOf(Uint8Array);
-    expect(snap.terrain.length).toBe(16 * 16);
+    expect(snap.base).toBeInstanceOf(Uint8Array);
+    expect(snap.base.length).toBe(16 * 16);
     // Mutating snapshot should not mutate source.
-    snap.terrain[0] = 99;
-    expect(world.terrain[0]).not.toBe(99);
+    snap.base[0] = 99;
+    expect(world.base[0]).not.toBe(99);
   });
 });

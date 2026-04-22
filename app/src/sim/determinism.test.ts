@@ -4,13 +4,13 @@ import { hashState } from './hash';
 import { RecordingSim, replay } from './replay';
 import { makeInitialState } from './tick';
 import { makeUnit } from './unit';
-import { makeWorld, setTerrain } from './world';
+import { makeWorld, setPoint } from './world';
 
 function buildScenario(seed: number): ReturnType<typeof makeInitialState> {
   const world = makeWorld(64, 64, 1);
-  setTerrain(world, 20, 20, 'building');
-  setTerrain(world, 21, 20, 'building');
-  setTerrain(world, 10, 10, 'forest');
+  setPoint(world, 20, 20, 'storage_tank');
+  setPoint(world, 21, 20, 'storage_tank');
+  setPoint(world, 10, 10, 'tree_forest');
 
   const units = [
     makeUnit({

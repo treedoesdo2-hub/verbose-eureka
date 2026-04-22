@@ -497,6 +497,12 @@ export function makeWorld(
   const N = width * height;
   const base = new Uint8Array(N);
   base.fill(baseToByte(fill));
+  const walkability = new Uint16Array(N);
+  const coverProfile = new Uint8Array(N);
+  const fillMask = walkMaskFromMove(BASE_AXES[fill].move);
+  const fillCover = coverByteFromAxes(BASE_AXES[fill]);
+  walkability.fill(fillMask);
+  coverProfile.fill(fillCover);
   return {
     width,
     height,
@@ -508,8 +514,8 @@ export function makeWorld(
     edgeOverrideN: new Uint8Array(N),
     edgeOverrideW: new Uint8Array(N),
     buildingId: new Uint16Array(N),
-    walkability: new Uint16Array(N),
-    coverProfile: new Uint8Array(N),
+    walkability,
+    coverProfile,
     elevationStep: new Uint8Array(N),
     structureHeight: new Uint8Array(N),
     hpN: new Uint16Array(N),
@@ -654,6 +660,7 @@ export function terrainAxesDirectional(
 
 export function setBase(world: World, x: number, y: number, k: TerrainBase): void {
   world.base[tileIndex(world, x, y)] = baseToByte(k);
+  rebakeTile(world, x, y);
 }
 
 export function setPoint(
@@ -667,11 +674,13 @@ export function setPoint(
   if (!k) {
     world.point[idx] = 0;
     world.hpPoint[idx] = 0;
+    rebakeTile(world, x, y);
     return;
   }
   world.point[idx] = pointToByte(k);
   const maxHp = POINT_MAX_HP[k] ?? 0;
   world.hpPoint[idx] = damaged ? Math.floor(maxHp / 2) : maxHp;
+  rebakeTile(world, x, y);
 }
 
 export function setBarrier(
@@ -691,6 +700,7 @@ export function setBarrier(
       world.edgeW[idx] = 0;
       world.hpW[idx] = 0;
     }
+    rebakeTile(world, x, y);
     return;
   }
   const byte = encodeBarrier(k, damaged);
@@ -702,6 +712,78 @@ export function setBarrier(
     world.edgeW[idx] = byte;
     world.hpW[idx] = damaged ? Math.floor(maxHp / 2) : maxHp;
   }
+  rebakeTile(world, x, y);
+}
+
+// Rebake walkability + coverProfile for a single tile. Called from all
+// mutation paths so tests and authored-map loaders don't have to call a
+// separate bake sweep. Pipeline callers also rebake at the end, but this
+// keeps incremental edits consistent.
+function rebakeTile(world: World, x: number, y: number): void {
+  if (!inBounds(world, x, y)) return;
+  const idx = tileIndex(world, x, y);
+  const baseAxes = BASE_AXES[byteToBase(world.base[idx])];
+  const pAxes = pointAxesAt(world, x, y);
+  const isBuilding = world.buildingId[idx] !== 0;
+
+  let mask = walkMaskFromMove(baseAxes.move);
+  if (pAxes) mask &= walkMaskFromMove(pAxes.move);
+  if (isBuilding) mask &= WALK_INFANTRY_MASK;
+  const effMult = pAxes?.moveSpeedMult ?? baseAxes.moveSpeedMult;
+  if (effMult < 1.0) mask |= WALK_SLOW;
+  world.walkability[idx] = mask;
+
+  const strongest = pAxes
+    ? (stronger(baseAxes, pAxes) as CoverAxes)
+    : baseAxes;
+  world.coverProfile[idx] = coverByteFromAxes(strongest);
+}
+
+export function walkMaskFromMove(move: MoveEffect): number {
+  switch (move) {
+    case 'walkable-free':
+      return (
+        WALK_FOOT |
+        WALK_PRONE |
+        WALK_MECH |
+        WALK_POWER_ARMOR |
+        WALK_WHEELED |
+        WALK_TRACKED
+      );
+    case 'walkable-slow':
+      return (
+        WALK_FOOT |
+        WALK_PRONE |
+        WALK_MECH |
+        WALK_POWER_ARMOR |
+        WALK_WHEELED |
+        WALK_TRACKED |
+        WALK_SLOW
+      );
+    case 'blocked-foot':
+      return WALK_MECH | WALK_POWER_ARMOR;
+    case 'blocked-vehicle':
+      return WALK_INFANTRY_MASK;
+    case 'blocked-all':
+      return 0;
+  }
+}
+
+export function coverByteFromAxes(axes: CoverAxes): number {
+  const losBits = axes.los === 'full' ? 2 : axes.los === 'thin' ? 1 : 0;
+  const coverBits =
+    axes.cover === 'full' ? 3 : axes.cover === 'heavy' ? 2 : axes.cover === 'light' ? 1 : 0;
+  const heightBits =
+    axes.heightProfile === 'full'
+      ? 4
+      : axes.heightProfile === 'tall'
+        ? 3
+        : axes.heightProfile === 'chest'
+          ? 2
+          : axes.heightProfile === 'low'
+            ? 1
+            : 0;
+  return losBits | (coverBits << 2) | (heightBits << 4);
 }
 
 // ---------------------------------------------------------------------------

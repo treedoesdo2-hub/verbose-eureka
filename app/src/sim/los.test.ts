@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { angularOffset, castRay, normalizeAngle } from './los';
-import { makeWorld, setTerrain } from './world';
+import { makeWorld, setBase, setPoint } from './world';
 
 describe('LOS raycast', () => {
   it('returns visible across open ground', () => {
@@ -8,22 +8,24 @@ describe('LOS raycast', () => {
     expect(castRay(w, { x: 5, y: 5 }, 1.7, { x: 30, y: 5 }, 1.0)).toBe('visible');
   });
 
-  it('is blocked by building', () => {
+  it('is blocked by a tall point obstacle (storage_tank / well)', () => {
     const w = makeWorld(64, 64, 1);
-    for (let x = 10; x <= 15; x++) setTerrain(w, x, 5, 'building');
+    // storage_tank: full LOS, full cover, height 4.5m → blocks standing-eye ray
+    for (let x = 10; x <= 15; x++) setPoint(w, x, 5, 'storage_tank');
     expect(castRay(w, { x: 5, y: 5 }, 1.7, { x: 20, y: 5 }, 1.0)).toBe('blocked');
   });
 
-  it('is concealed by forest but not blocked', () => {
+  it('is concealed by a narrow thin-LOS forest patch but not blocked', () => {
     const w = makeWorld(64, 64, 1);
-    for (let x = 10; x <= 15; x++) setTerrain(w, x, 5, 'forest');
+    // tree_forest: thin LOS, one tile → accumulates 0.18 opacity, stays concealed
+    setPoint(w, 12, 5, 'tree_forest');
     const r = castRay(w, { x: 5, y: 5 }, 1.7, { x: 20, y: 5 }, 1.0);
     expect(r).toBe('concealed');
   });
 
-  it('visible over open water-open sequence', () => {
+  it('visible over open water_shallow', () => {
     const w = makeWorld(64, 64, 1);
-    setTerrain(w, 12, 5, 'water');
+    setBase(w, 12, 5, 'water_shallow');
     expect(castRay(w, { x: 5, y: 5 }, 1.7, { x: 20, y: 5 }, 1.0)).toBe('visible');
   });
 });

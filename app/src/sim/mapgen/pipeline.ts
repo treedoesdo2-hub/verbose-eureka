@@ -260,8 +260,8 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
 
   // ---- Step: deploy zones + ensure walkable ----
   const { team0, team1 } = pickDeployZones(W, H);
-  ensureZoneWalkable(base, buildingId, point, walkability, W, team0);
-  ensureZoneWalkable(base, buildingId, point, walkability, W, team1);
+  ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team0);
+  ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team1);
 
   // ---- Step: reachability sanity carve ----
   let carvedCells = 0;
@@ -625,17 +625,37 @@ function ensureZoneWalkable(
   buildingId: Uint16Array,
   point: Uint8Array,
   walkability: Uint16Array,
+  elevationStep: Uint8Array,
   W: number,
   zone: DeployZone,
 ): void {
+  // Sample the zone-center elevation and flatten the whole rectangle to it.
+  // Without this, fBm elevation plus the COA-8 cliff guard can strand spawn
+  // units — they land on a 4-step step and can't cross into adjacent tiles
+  // more than 2 steps away.
+  const cx = Math.floor(zone.x + zone.w / 2);
+  const cy = Math.floor(zone.y + zone.h / 2);
+  const flatStep = elevationStep[cy * W + cx];
   for (let yy = zone.y; yy < zone.y + zone.h; yy++) {
     for (let xx = zone.x; xx < zone.x + zone.w; xx++) {
       const i = yy * W + xx;
       if (base[i] === B.water_deep) base[i] = B.open;
       if (buildingId[i] !== 0) buildingId[i] = 0;
       point[i] = 0;
+      elevationStep[i] = flatStep;
       walkability[i] =
         WALK_FOOT | WALK_PRONE | WALK_MECH | WALK_POWER_ARMOR | WALK_WHEELED | WALK_TRACKED;
+    }
+  }
+  // Feather a 1-tile ring around the deploy zone down to a delta of at most
+  // MAX_STEP_ELEV_DELTA (2) so units can step out of the zone.
+  for (let yy = Math.max(0, zone.y - 1); yy <= Math.min(W - 1, zone.y + zone.h); yy++) {
+    for (let xx = Math.max(0, zone.x - 1); xx <= Math.min(W - 1, zone.x + zone.w); xx++) {
+      if (xx >= zone.x && xx < zone.x + zone.w && yy >= zone.y && yy < zone.y + zone.h) continue;
+      const i = yy * W + xx;
+      const d = elevationStep[i] - flatStep;
+      if (d > 2) elevationStep[i] = flatStep + 2;
+      else if (d < -2) elevationStep[i] = flatStep - 2;
     }
   }
 }

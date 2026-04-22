@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeWorld, setTerrain } from '../world';
+import { makeWorld, setPoint } from '../world';
 import { coverAwareStepTarget } from './movement';
 
 describe('coverAwareStepTarget', () => {
@@ -33,9 +33,10 @@ describe('coverAwareStepTarget', () => {
   it('rejects candidate steps that land in impassable terrain', () => {
     const world = makeWorld(16, 16, 1);
     // Wall all tiles directly east of origin except along y=10 (the path).
+    // storage_tank blocks foot movement (move='blocked-foot').
     for (let x = 11; x < 16; x++) {
       for (let y = 0; y < 16; y++) {
-        if (y !== 10) setTerrain(world, x, y, 'building');
+        if (y !== 10) setPoint(world, x, y, 'storage_tank');
       }
     }
     const from = { x: 10.5, y: 10.5 };
@@ -55,8 +56,8 @@ describe('coverAwareStepTarget', () => {
     // A forest strip at y=7-8 gives concealment for a unit moving east at y~9
     // against a threat to the north. A unit moving east at y=11 has no cover.
     for (let x = 10; x < 16; x++) {
-      setTerrain(world, x, 7, 'forest');
-      setTerrain(world, x, 8, 'forest');
+      setPoint(world, x, 7, 'tree_forest');
+      setPoint(world, x, 8, 'tree_forest');
     }
     const from = { x: 10, y: 10 };
     const goal = { x: 20, y: 10 };

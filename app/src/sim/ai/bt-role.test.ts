@@ -1,3 +1,4 @@
+import { makeWeapon, makeZoneDr } from '@test-helpers/fixtures';
 import { asUnitId } from '@shared/ids';
 import { describe, expect, it } from 'vitest';
 import { makeInitialState } from '../tick';
@@ -20,30 +21,13 @@ function baseShooter(role: 'rifleman' | 'lmg'): Unit {
     facing: 0,
     role,
     combat: {
-      primaryWeapon: {
-        id: 'w',
-        name: 'w',
-        caliber: '5.56',
-        rpm: 600,
-        magazineSize: 30,
-        reloadSeconds: 2,
-        accuracy: 1,
-        damage: 20,
-        range: 100,
-        weightKg: 3,
-      },
+      primaryWeapon: makeWeapon({ rpm: 600, rangeMeters: 100 }),
       sidearm: null,
-      armor: null,
-      utilities: [],
+      utilityIds: [],
       hasMedkit: false,
-      zoneDr: {
-        head: 0,
-        torso: 0,
-        leftArm: 0,
-        rightArm: 0,
-        leftLeg: 0,
-        rightLeg: 0,
-      },
+      zoneDr: makeZoneDr(),
+      totalWeightKg: 3,
+      mobilityPenalty: 0,
     },
   });
 }
