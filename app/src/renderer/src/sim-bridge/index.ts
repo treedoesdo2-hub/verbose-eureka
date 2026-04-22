@@ -10,6 +10,17 @@ export class SimBridge {
   constructor() {
     this.worker = new SimWorker();
     this.worker.onmessage = (e: MessageEvent<WorkerToRenderer>): void => {
+      // Forward worker-originated log events to the main-process log
+      // pipeline so merc-sim.jsonl / merc-worker.jsonl fill up during
+      // play. Swallow errors — the preload bridge may not be present
+      // in test harnesses / web-run contexts.
+      if (e.data.type === 'log') {
+        try {
+          window.api?.log?.(e.data.level, e.data.msg, e.data.meta, e.data.category);
+        } catch {
+          // no-op
+        }
+      }
       for (const l of this.listeners) l(e.data);
     };
   }

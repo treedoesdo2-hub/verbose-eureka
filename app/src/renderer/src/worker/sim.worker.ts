@@ -1,4 +1,10 @@
-import type { RendererToWorker, ScenarioRequest, WorkerToRenderer } from '@shared/messages';
+import type {
+  RendererToWorker,
+  ScenarioRequest,
+  WorkerLogCategory,
+  WorkerLogLevel,
+  WorkerToRenderer,
+} from '@shared/messages';
 import type { ContentLookup, Loadout } from '@sim/loadout';
 import { loadoutFromTemplate } from '@sim/loadout';
 import { bindObjectivesToAnchors, mapGenRequestFromContract } from '@sim/mapgen/contract-binder';
@@ -17,12 +23,28 @@ function post(msg: WorkerToRenderer): void {
   (self as unknown as Worker).postMessage(msg);
 }
 
+// Diagnostic log helper. Category 'sim' is for gameplay events the agent
+// actually wants to grep after a bad run (scenario start, heartbeats, end);
+// 'worker' is for worker-lifecycle warnings (missing content, bad requests).
+function logEvt(
+  level: WorkerLogLevel,
+  category: WorkerLogCategory,
+  msg: string,
+  meta?: unknown,
+): void {
+  post({ type: 'log', level, category, msg, meta });
+}
+
 let sim: RecordingSim | null = null;
 let stats: MatchStatsAccumulator | null = null;
 let speedMultiplier = 4;
 let paused = false;
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
+let ticksSinceLastHeartbeat = 0;
 const BASE_HZ = 30;
+// Emit a heartbeat every N sim ticks so a long match leaves a breadcrumb
+// trail in merc-sim.jsonl. 300 ticks = 10 seconds of sim time at SIM_HZ=30.
+const HEARTBEAT_TICKS = 300;
 
 function buildLookup(content: WorkerContentBundle): ContentLookup {
   return {
@@ -75,6 +97,10 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
   const contract = bundle.contracts.get(req.contractId);
   const faction = contract && bundle.factions.get(contract.enemies.factionId);
   if (!contract || !faction) {
+    logEvt('error', 'worker', 'scenario: missing contract/faction', {
+      contractId: req.contractId,
+      hasFaction: Boolean(faction),
+    });
     post({ type: 'error', message: 'scenario: missing contract/faction' });
     return null;
   }
@@ -100,6 +126,7 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
   } else {
     const authored = bundle.maps.get(req.mapId);
     if (!authored) {
+      logEvt('error', 'worker', 'scenario: missing authored map', { mapId: req.mapId });
       post({ type: 'error', message: 'scenario: missing authored map' });
       return null;
     }
@@ -115,6 +142,41 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
     templates: bundle.templates,
     deployments: buildDeployments(req),
     objectiveZoneOverrides,
+  });
+
+  // Scenario-start breadcrumb: team sizes, squad counts, objective summary,
+  // generated-vs-authored map. This is the single most useful line when
+  // diagnosing "why did nothing happen this run" complaints.
+  let team0 = 0;
+  let team1 = 0;
+  const roleCounts: Record<string, number> = {};
+  for (const u of state.units.values()) {
+    if (u.teamId === 0) team0++;
+    else if (u.teamId === 1) team1++;
+    roleCounts[u.role] = (roleCounts[u.role] ?? 0) + 1;
+  }
+  let playerSquads = 0;
+  let enemySquads = 0;
+  for (const sq of state.squads.values()) {
+    if (sq.teamId === 0) playerSquads++;
+    else if (sq.teamId === 1) enemySquads++;
+  }
+  logEvt('info', 'sim', 'scenario started', {
+    contractId: contract.id,
+    contractName: contract.name,
+    seed,
+    map: {
+      generated: contract.modifiers.biomeHint !== null,
+      width: state.world.width,
+      height: state.world.height,
+      tileSizeMeters: state.world.tileSizeMeters,
+    },
+    team0,
+    team1,
+    roleCounts,
+    playerSquads,
+    enemySquads,
+    objectives: state.objectives.map((o) => ({ id: o.id, kind: o.kind, status: o.status })),
   });
   return state;
 }
@@ -136,9 +198,14 @@ function startLoop(): void {
         sim.step();
         // Fold this tick's events into the running match stats accumulator.
         if (stats) stats.ingest(sim.current().events);
+        ticksSinceLastHeartbeat++;
         if (sim.current().ended) break;
       }
       post({ type: 'state', snapshot: snapshotState(sim.current()) });
+      if (ticksSinceLastHeartbeat >= HEARTBEAT_TICKS && !sim.current().ended) {
+        ticksSinceLastHeartbeat = 0;
+        emitHeartbeat(sim.current());
+      }
       if (sim.current().ended) {
         const final = sim.current();
         const endReason = final.endReason;
@@ -151,6 +218,15 @@ function startLoop(): void {
         const finalStats = stats
           ? stats.finalize(final.tick)
           : { totalTicks: final.tick, perUnit: [], highlights: [] };
+        logEvt('info', 'sim', 'scenario ended', {
+          tick: final.tick,
+          durationSec: final.tick / BASE_HZ,
+          winner,
+          endReason,
+          aliveTeam0: countAlive(final, 0),
+          aliveTeam1: countAlive(final, 1),
+          objectives: final.objectives.map((o) => ({ id: o.id, status: o.status })),
+        });
         post({ type: 'simEnded', winner, endReason, stats: finalStats });
         stopLoop();
         sim = null;
@@ -159,6 +235,43 @@ function startLoop(): void {
     },
     Math.floor(1000 / BASE_HZ),
   );
+}
+
+function countAlive(state: SimState, teamId: number): number {
+  let n = 0;
+  for (const u of state.units.values()) {
+    if (u.teamId !== teamId) continue;
+    if (u.action.kind === 'dead' || u.action.kind === 'downed') continue;
+    n++;
+  }
+  return n;
+}
+
+// Tick-time heartbeat. Captures the distribution of AI states plus alive
+// counts per team. If a run goes quiet ("boys just stand there") the
+// aiState histogram shows everyone stuck in 'hold' or 'idle', which is
+// the fastest way to confirm the regression.
+function emitHeartbeat(state: SimState): void {
+  const aiStates: Record<string, number> = {};
+  const actions: Record<string, number> = {};
+  let team0Alive = 0;
+  let team1Alive = 0;
+  for (const u of state.units.values()) {
+    if (u.action.kind === 'dead' || u.action.kind === 'downed') continue;
+    if (u.teamId === 0) team0Alive++;
+    else if (u.teamId === 1) team1Alive++;
+    aiStates[u.aiState] = (aiStates[u.aiState] ?? 0) + 1;
+    actions[u.action.kind] = (actions[u.action.kind] ?? 0) + 1;
+  }
+  logEvt('info', 'sim', 'heartbeat', {
+    tick: state.tick,
+    simTimeSec: state.tick / BASE_HZ,
+    team0Alive,
+    team1Alive,
+    aiStates,
+    actions,
+    objectives: state.objectives.map((o) => ({ id: o.id, status: o.status })),
+  });
 }
 
 self.onmessage = (e: MessageEvent<RendererToWorker>): void => {
@@ -175,12 +288,16 @@ self.onmessage = (e: MessageEvent<RendererToWorker>): void => {
       stats.seed(state.units);
       speedMultiplier = msg.payload.simSpeedMultiplier;
       paused = false;
+      ticksSinceLastHeartbeat = 0;
       post({ type: 'simStarted', world: snapshotWorld(state.world) });
       post({ type: 'state', snapshot: snapshotState(state) });
       startLoop();
       break;
     }
     case 'stopSim':
+      logEvt('info', 'sim', 'sim stopped by renderer', {
+        tick: sim?.current().tick ?? 0,
+      });
       stopLoop();
       sim = null;
       stats = null;
@@ -197,6 +314,7 @@ self.onmessage = (e: MessageEvent<RendererToWorker>): void => {
       break;
     default: {
       const _exhaustive: never = msg;
+      logEvt('error', 'worker', 'unknown renderer message', { msg: _exhaustive });
       post({ type: 'error', message: `unknown: ${JSON.stringify(_exhaustive)}` });
     }
   }

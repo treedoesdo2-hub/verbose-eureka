@@ -39,6 +39,9 @@ export type RendererToWorker =
   | { type: 'pause' }
   | { type: 'resume' };
 
+export type WorkerLogLevel = 'info' | 'warn' | 'error';
+export type WorkerLogCategory = 'sim' | 'worker';
+
 export type WorkerToRenderer =
   | { type: 'pong'; nonce: number }
   | { type: 'simStarted'; world: WorldSnapshot }
@@ -50,4 +53,15 @@ export type WorkerToRenderer =
       stats: MatchStats;
     }
   | { type: 'state'; snapshot: SimSnapshot }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  // Out-of-band diagnostic log. The renderer forwards these to the main-
+  // process log pipeline so merc-sim.jsonl / merc-worker.jsonl actually
+  // have content to read after a play session. Without this the category
+  // files sit at 0 bytes and I can't diagnose bad runs post-hoc.
+  | {
+      type: 'log';
+      level: WorkerLogLevel;
+      category: WorkerLogCategory;
+      msg: string;
+      meta?: unknown;
+    };
