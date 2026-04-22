@@ -191,7 +191,7 @@ export function drawDeployZone(
 ): void {
   const tint = team === 0 ? OVERLAY_PALETTE.team0 : OVERLAY_PALETTE.team1;
   const dashColor: RGBA = [tint[0], tint[1], tint[2], 220];
-  const fillColor: RGBA = [tint[0], tint[1], tint[2], 45];
+  const fillColor: RGBA = [tint[0], tint[1], tint[2], 90];
   const topLeft = target.tilesToPx(zone.x, zone.y);
   const bottomRight = target.tilesToPx(zone.x + zone.w, zone.y + zone.h);
   const wPx = Math.max(1, Math.round(bottomRight.x - topLeft.x));
