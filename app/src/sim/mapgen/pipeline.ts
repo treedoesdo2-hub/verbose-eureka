@@ -19,9 +19,12 @@ import {
   pointToByte,
   quantizeElevationNorm,
 } from '../world';
+import { makeDebugSink } from './debug-sink';
 import { DENSITY_PROFILES, generateCoverDensity } from './density-field';
 import { extractHotspots, type Hotspot } from './density-scatter';
+import { enforceReachability } from './enforce-reachability';
 import { fbm2D, hashStringToSeed, makeRng, subRng } from './noise';
+import { pruneByThresholdTable } from './prune-by-threshold';
 import type {
   DeployZone,
   MapGenDiagnostics,
@@ -320,6 +323,28 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     seedBase,
   );
 
+  // ---- Step: threshold-driven pruning sweep (COA-3) ----
+  // Removes single-tile "chicken pox" scatter + elongated strips from the
+  // post-scatter output, rebuilding the walkability mask afterward.
+  const debugSink = makeDebugSink();
+  const pruneReports = pruneByThresholdTable(
+    base,
+    point,
+    W,
+    H,
+    (kind) => baseToByte(kind),
+    (kind) => pointToByte(kind),
+  );
+  let totalPrunedClusters = 0;
+  for (const k of Object.keys(pruneReports)) {
+    totalPrunedClusters += pruneReports[k].clustersPruned;
+  }
+  if (totalPrunedClusters > 0) {
+    debugSink.info('prune', 'threshold-driven sweep complete', {
+      totalClustersPruned: totalPrunedClusters,
+    });
+  }
+
   // ---- Step: walkability + cover bake ----
   bakeWalkabilityAndCover(base, point, buildingId, walkability, coverProfile, N);
 
@@ -328,11 +353,30 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team0);
   ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team1);
 
-  // ---- Step: reachability sanity carve ----
+  // ---- Step: reachability sanity carve (COA-3 enforceReachability) ----
   let carvedCells = 0;
   if (!zonesReachable(walkability, W, H, team0, team1)) {
     carvedCells = carveCorridor(base, point, buildingId, walkability, W, H, team0, team1);
   }
+  // Extra safety net — ensure team0 → team1 + team0 → objective centre
+  // connectivity via the new reachability enforcer. On an already-reachable
+  // map this is a fast BFS + no carving.
+  const reachReport = enforceReachability(
+    walkability,
+    base,
+    point,
+    buildingId,
+    W,
+    H,
+    [
+      { label: 'team0', seedTileX: Math.floor(team0.x + team0.w / 2), seedTileY: Math.floor(team0.y + team0.h / 2) },
+      { label: 'team1', seedTileX: Math.floor(team1.x + team1.w / 2), seedTileY: Math.floor(team1.y + team1.h / 2) },
+      { label: 'objective', seedTileX: Math.floor(W / 2), seedTileY: Math.floor(H / 2) },
+    ],
+    B.open,
+    debugSink,
+  );
+  carvedCells += reachReport.carvedTiles;
 
   const objectiveAnchors: ObjectiveAnchor[] = [
     {

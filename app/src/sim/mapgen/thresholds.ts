@@ -1,0 +1,102 @@
+// COA-3 task #54 — per-terrain-kind pruning thresholds.
+//
+// Every TerrainBase + PointObjectKind + LinearBarrierKind that can be
+// scattered has a minimum cluster size (in tiles) below which clusters
+// are merged into the dominant neighbor or dropped. This table is the
+// single source of truth — adding a new kind requires registering a
+// threshold here, caught at type-check time via exhaustive Record type.
+//
+// Tuning knobs live here too: elongation cap (how stringy a cluster can
+// be before pruning) + hole cap (small open pockets inside a cluster
+// that we fill in vs keep as play-space).
+
+import type { LinearBarrierKind, PointObjectKind, TerrainBase } from '@schema/map';
+
+export type ClusterThresholds = {
+  readonly minSize: number;
+  readonly maxElongation: number;
+  readonly maxHoleSize: number; // holes below this get filled
+};
+
+// Default thresholds — sensible starting values. Biome-specific overrides
+// live in density-field.ts profiles via clusterThresholdsFor(biome, kind).
+const DEFAULT_THRESHOLDS: ClusterThresholds = {
+  minSize: 4,
+  maxElongation: 8,
+  maxHoleSize: 2,
+};
+
+// Base terrain — water + rubble get cluster pruning (forest bleeds are
+// now expressed as point-scatter, so tree_forest lives in POINT_THRESHOLDS).
+export const BASE_THRESHOLDS: Record<TerrainBase, ClusterThresholds> = {
+  open: DEFAULT_THRESHOLDS,
+  road: DEFAULT_THRESHOLDS,
+  water_shallow: { minSize: 6, maxElongation: 10, maxHoleSize: 3 },
+  water_deep: { minSize: 32, maxElongation: 12, maxHoleSize: 6 },
+  mud: { minSize: 8, maxElongation: 8, maxHoleSize: 3 },
+  rubble_ground: { minSize: 4, maxElongation: 6, maxHoleSize: 2 },
+  snow: { minSize: 16, maxElongation: 10, maxHoleSize: 4 },
+  sand: { minSize: 16, maxElongation: 10, maxHoleSize: 4 },
+};
+
+// Point-object clusters — scattered as groves / clumps / compounds. Trees
+// form forests; barrels and oil drums form supply stacks; carts form
+// caravan lines. Tighter thresholds keep clusters readable at minimap
+// scale and prevent "chicken pox" single-tree splatter.
+export const POINT_THRESHOLDS: Record<PointObjectKind, ClusterThresholds> = {
+  barrel: { minSize: 2, maxElongation: 6, maxHoleSize: 1 },
+  bush_small: { minSize: 3, maxElongation: 10, maxHoleSize: 1 },
+  bush_medium: { minSize: 3, maxElongation: 8, maxHoleSize: 2 },
+  bush_large: { minSize: 2, maxElongation: 5, maxHoleSize: 1 },
+  car: { minSize: 1, maxElongation: 4, maxHoleSize: 1 },
+  cart_empty: { minSize: 2, maxElongation: 6, maxHoleSize: 1 },
+  cart_full: { minSize: 2, maxElongation: 6, maxHoleSize: 1 },
+  dragons_teeth: { minSize: 4, maxElongation: 12, maxHoleSize: 1 }, // defensive lines stretch long
+  garden_shed: { minSize: 1, maxElongation: 2, maxHoleSize: 0 },
+  grave: { minSize: 4, maxElongation: 4, maxHoleSize: 2 }, // graveyards are clustered
+  gravestone: { minSize: 4, maxElongation: 6, maxHoleSize: 2 },
+  haystack: { minSize: 2, maxElongation: 6, maxHoleSize: 1 },
+  oil_drums: { minSize: 2, maxElongation: 5, maxHoleSize: 1 },
+  rubble_pile: { minSize: 1, maxElongation: 4, maxHoleSize: 1 },
+  signpost: { minSize: 1, maxElongation: 1, maxHoleSize: 0 },
+  storage_tank: { minSize: 1, maxElongation: 3, maxHoleSize: 0 },
+  tank_trap: { minSize: 4, maxElongation: 12, maxHoleSize: 1 },
+  telegraph_pole: { minSize: 1, maxElongation: 12, maxHoleSize: 0 }, // strung along a line
+  trough: { minSize: 1, maxElongation: 2, maxHoleSize: 0 },
+  tyres: { minSize: 2, maxElongation: 4, maxHoleSize: 1 },
+  well: { minSize: 1, maxElongation: 1, maxHoleSize: 0 },
+  tree_forest: { minSize: 4, maxElongation: 8, maxHoleSize: 2 },
+  tree_fruit: { minSize: 4, maxElongation: 6, maxHoleSize: 2 }, // orchards are grid-ish
+  tree_jungle: { minSize: 6, maxElongation: 8, maxHoleSize: 3 },
+  tree_oak: { minSize: 2, maxElongation: 4, maxHoleSize: 1 }, // isolated oak = landmark
+  tree_poplar: { minSize: 3, maxElongation: 12, maxHoleSize: 1 }, // wind-rows
+  tree_snow: { minSize: 4, maxElongation: 8, maxHoleSize: 2 },
+};
+
+// Linear barriers — edge-placed, so "size" means tile-length of a run.
+// Min size rejects single-tile barrier stubs that look like dropped-in
+// debris rather than deliberate structure.
+export const BARRIER_THRESHOLDS: Record<LinearBarrierKind, ClusterThresholds> = {
+  hedge: { minSize: 4, maxElongation: 20, maxHoleSize: 1 },
+  bocage: { minSize: 6, maxElongation: 20, maxHoleSize: 1 },
+  stone_wall_low: { minSize: 3, maxElongation: 20, maxHoleSize: 1 },
+  wood_fence: { minSize: 4, maxElongation: 20, maxHoleSize: 1 },
+  bamboo_fence: { minSize: 4, maxElongation: 20, maxHoleSize: 1 },
+  rail_fence: { minSize: 5, maxElongation: 30, maxHoleSize: 1 },
+  berm: { minSize: 3, maxElongation: 15, maxHoleSize: 1 },
+  wire_light: { minSize: 3, maxElongation: 25, maxHoleSize: 1 },
+  wire_dense: { minSize: 4, maxElongation: 20, maxHoleSize: 1 },
+  wire_razor: { minSize: 5, maxElongation: 15, maxHoleSize: 1 },
+  rubble_strip: { minSize: 2, maxElongation: 12, maxHoleSize: 1 },
+};
+
+export type KindKey =
+  | { kind: 'base'; value: TerrainBase }
+  | { kind: 'point'; value: PointObjectKind }
+  | { kind: 'barrier'; value: LinearBarrierKind };
+
+export function thresholdsFor(key: KindKey): ClusterThresholds {
+  if (key.kind === 'base') return BASE_THRESHOLDS[key.value];
+  if (key.kind === 'point') return POINT_THRESHOLDS[key.value];
+  return BARRIER_THRESHOLDS[key.value];
+}
