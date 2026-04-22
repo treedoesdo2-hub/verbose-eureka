@@ -53,16 +53,22 @@ export function makeBufferDrawTarget(
     },
     putPixel,
     drawLine(x0, y0, x1, y1, color) {
-      const dx = Math.abs(x1 - x0);
-      const dy = Math.abs(y1 - y0);
-      const sxStep = x0 < x1 ? 1 : -1;
-      const syStep = y0 < y1 ? 1 : -1;
-      let err = dx - dy;
+      // Integer Bresenham — round endpoints first so the error term and
+      // termination test stay in the same coordinate space. Mixing float
+      // deltas with int termination lets `cx` step past the target and
+      // loop forever.
       let cx = Math.round(x0);
       let cy = Math.round(y0);
+      const tx = Math.round(x1);
+      const ty = Math.round(y1);
+      const dx = Math.abs(tx - cx);
+      const dy = Math.abs(ty - cy);
+      const sxStep = cx < tx ? 1 : -1;
+      const syStep = cy < ty ? 1 : -1;
+      let err = dx - dy;
       while (true) {
         putPixel(cx, cy, color);
-        if (cx === Math.round(x1) && cy === Math.round(y1)) break;
+        if (cx === tx && cy === ty) break;
         const e2 = err * 2;
         if (e2 > -dy) {
           err -= dy;
