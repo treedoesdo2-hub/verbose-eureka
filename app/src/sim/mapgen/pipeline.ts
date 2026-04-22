@@ -27,9 +27,15 @@ import type { DominantCapillary, DominantLine } from './dominant-line';
 import { pickLineKind } from './dominant-line';
 import { logPlacerRun } from './debug/spawn-placer-log';
 import { enforceReachability } from './enforce-reachability';
-import { footprintFor, pickLandmarkKind, placeLandmark, type HeroLandmark } from './hero-landmark';
+import {
+  footprintFor,
+  pickLandmarkKind,
+  placeLandmark,
+  stampHeroLandmark,
+  type HeroLandmark,
+} from './hero-landmark';
 import { generateLandmarkName } from './landmark-names';
-import { fbm2D, hashStringToSeed, makeRng, subRng } from './noise';
+import { fbm2D, gaussian2D, hashStringToSeed, makeRng, subRng } from './noise';
 import { resampleObjectiveAroundBisector } from './objective-resample';
 import { pruneByThresholdTable } from './prune-by-threshold';
 import { buildDominantLine, stampLine } from './route-line';
@@ -305,6 +311,30 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     Math.max(32, Math.floor(N * 0.002)),
   );
 
+  // ---- Step: density field + hotspots (moved early — these drive the
+  // ---- cluster-anchored scatter below). Deploy zones aren't known yet;
+  // ---- we mask out a heuristic rear-third top + bottom of the map and
+  // ---- the central objective patch so hotspots cluster in the meaningful
+  // ---- middle-third combat axis.
+  const densityProfile = DENSITY_PROFILES[req.biome];
+  const hotspots: Hotspot[] = [];
+  let hotspotsDropped = 0;
+  if (densityProfile) {
+    const generated = generateCoverDensity(
+      densityProfile,
+      W,
+      H,
+      elevation,
+      fertility,
+      seedBase,
+    );
+    const rearThird = Math.floor(H / 3);
+    maskZoneInDensity(generated, W, { x: 0, y: 0, w: W, h: rearThird }, 0);
+    maskZoneInDensity(generated, W, { x: 0, y: H - rearThird, w: W, h: rearThird }, 0);
+    coverDensity.set(generated);
+    for (const h of extractHotspots(coverDensity, W, H)) hotspots.push(h);
+  }
+
   // ---- Step: dominant line (COA-4 task #93, replaces stampRoadSkeleton) ----
   let dominantLine: DominantLine | null = null;
   const capillaries: DominantCapillary[] = [];
@@ -316,7 +346,7 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
       W,
       H,
       elevationStep,
-      new Float32Array(N), // density not yet computed — passed empty; highstreet falls back
+      coverDensity,
       lineRng,
     );
     stampLine(dominantLine, base, W, H);
@@ -328,7 +358,65 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     }
   }
 
-  // ---- Step: building clusters ----
+  // ---- Step: hero landmark pick + stamp into world buffers (COA-4) ----
+  let heroLandmark: HeroLandmark | null = null;
+  {
+    const landmarkRng = subRng(seedBase, 'landmark');
+    const kind = pickLandmarkKind(req.biome, landmarkRng);
+    const lineWaypoints = dominantLine?.waypoints ?? [];
+    // Provisional deploy rects (rear thirds) — placer runs later but
+    // the landmark mustn't land in spawn territory.
+    const provisionalTeam0 = { x: 0, y: H - Math.floor(H / 3), w: W, h: Math.floor(H / 3) };
+    const provisionalTeam1 = { x: 0, y: 0, w: W, h: Math.floor(H / 3) };
+    const center = placeLandmark(
+      kind,
+      W,
+      H,
+      coverDensity,
+      lineWaypoints,
+      [provisionalTeam0, provisionalTeam1],
+      landmarkRng,
+    );
+    const footprint = footprintFor(kind, center).filter(
+      (p) => p.x >= 0 && p.y >= 0 && p.x < W && p.y < H,
+    );
+    const { name, shortName } = generateLandmarkName(kind, landmarkRng);
+    heroLandmark = { kind, name, shortName, footprint, center };
+    stampHeroLandmark({
+      landmark: heroLandmark,
+      base,
+      point,
+      buildingId,
+      structureHeight,
+      buildings,
+      W,
+      H,
+    });
+  }
+
+  // ---- Step: hotspot-anchored building + forest scatter ----
+  // Each hotspot gets a building cluster (1-4 buildings, 2-4 tiles each)
+  // plus a foliage ring around it. This produces the Firefight-style
+  // "farmstead / compound / thicket cluster" density rather than the
+  // prior uniform chicken-pox scatter.
+  scatterAroundHotspots({
+    hotspots,
+    base,
+    point,
+    buildingId,
+    structureHeight,
+    buildings,
+    hpPoint,
+    coverDensity,
+    fertility,
+    W,
+    H,
+    seed: seedBase,
+  });
+
+  // ---- Step: low-density baseline uniform scatter ----
+  // Kept at reduced counts so the map still has solo features (single
+  // trees, isolated sheds) outside the hotspot clusters.
   scatterBuildingClusters(
     base,
     structureHeight,
@@ -336,12 +424,10 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     buildings,
     W,
     H,
-    biomeDef.buildingClusters,
+    Math.max(1, Math.round(biomeDef.buildingClusters * 0.3)),
     biomeDef.buildingClusterSize,
     seedBase,
   );
-
-  // ---- Step: forest (scatter tree_forest + bush_medium points) ----
   scatterForestClusters(
     base,
     point,
@@ -349,9 +435,17 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     fertility,
     W,
     H,
-    biomeDef.forestClusters,
+    Math.max(1, Math.round(biomeDef.forestClusters * 0.5)),
     seedBase,
   );
+
+  // ---- Step: hedgerow barriers if dominant line is hedgerow-spine ----
+  // We reimplement the walker inline rather than constructing a full
+  // World for stampBarrierLine — the pipeline only has raw buffers at
+  // this stage, the World struct is built downstream in scenario.ts.
+  if (dominantLine && dominantLine.kind === 'hedgerow-spine') {
+    stampHedgerowEdges(dominantLine.waypoints, edgeN, edgeW, hpN, hpW, W, H);
+  }
 
   // ---- Step: threshold-driven pruning sweep (COA-3) ----
   // Removes single-tile "chicken pox" scatter + elongated strips from the
@@ -443,6 +537,13 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team0);
   ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team1);
 
+  // Zero coverDensity inside the final deploy zones — the up-front mask
+  // used rear-third heuristics; the placer may have shifted zones, and
+  // downstream consumers (thumbnail heatmap, future AI density queries)
+  // expect coverDensity inside spawn territory to be zero.
+  maskZoneInDensity(coverDensity, W, team0, 2);
+  maskZoneInDensity(coverDensity, W, team1, 2);
+
   // Resample objective anchors around the spawn placer's bisector so
   // both teams have similar travel distance to each objective.
   objectiveAnchors = resampleObjectiveAroundBisector({
@@ -480,74 +581,22 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   );
   carvedCells += reachReport.carvedTiles;
 
-  // COA-1 density field generation — populate coverDensity from the biome
-  // profile. Deploy zones and center objective are masked out so hotspots
-  // cannot land in spawn areas or on the objective anchor (prevents
-  // "cover cluster landed on top of team 0" regressions).
-  const densityProfile = DENSITY_PROFILES[req.biome];
-  const hotspots: Hotspot[] = [];
-  let hotspotsDropped = 0;
-  if (densityProfile) {
-    const generated = generateCoverDensity(
-      densityProfile,
-      W,
-      H,
-      elevation,
-      fertility,
-      seedBase,
-    );
-    // Mask deploy zones (and a 2-tile buffer) + the central objective.
-    maskZoneInDensity(generated, W, team0, 2);
-    maskZoneInDensity(generated, W, team1, 2);
-    maskZoneInDensity(
-      generated,
-      W,
-      {
-        x: Math.floor(W / 2) - 8,
-        y: Math.floor(H / 2) - 8,
-        w: 16,
-        h: 16,
-      },
-      1,
-    );
-    coverDensity.set(generated);
-    for (const h of extractHotspots(coverDensity, W, H)) hotspots.push(h);
-    // Drop hotspots that still land inside deploy / objective zones (shouldn't
-    // happen after masking but keeps the invariant robust under future edits).
-    const keepHotspots: Hotspot[] = [];
+  // Drop hotspots that ended up inside the (final) deploy zones after
+  // the placer ran. The up-front mask used rear-third heuristics so this
+  // catches rare overlaps where the placer shifted zones.
+  {
+    const keep: Hotspot[] = [];
     for (const h of hotspots) {
       if (insideZone(h, team0) || insideZone(h, team1)) {
         hotspotsDropped++;
         continue;
       }
-      keepHotspots.push(h);
+      keep.push(h);
     }
     hotspots.length = 0;
-    hotspots.push(...keepHotspots);
+    hotspots.push(...keep);
   }
   const clusterMembership = new Int16Array(N).fill(-1);
-
-  // COA-4 hero landmark — pick + place + name. One landmark per map.
-  let heroLandmark: HeroLandmark | null = null;
-  {
-    const landmarkRng = subRng(seedBase, 'landmark');
-    const kind = pickLandmarkKind(req.biome, landmarkRng);
-    const lineWaypoints = dominantLine?.waypoints ?? [];
-    const center = placeLandmark(
-      kind,
-      W,
-      H,
-      coverDensity,
-      lineWaypoints,
-      [team0, team1],
-      landmarkRng,
-    );
-    const footprint = footprintFor(kind, center).filter(
-      (p) => p.x >= 0 && p.y >= 0 && p.x < W && p.y < H,
-    );
-    const { name, shortName } = generateLandmarkName(kind, landmarkRng);
-    heroLandmark = { kind, name, shortName, footprint, center };
-  }
 
   const diagnostics: MapGenDiagnostics = {
     retryCount: 0,
@@ -983,6 +1032,142 @@ function hashBuffers(...bufs: (Uint8Array | Uint16Array)[]): number {
     }
   }
   return h >>> 0;
+}
+
+// ---------------------------------------------------------------------------
+// Hotspot-anchored scatter — each hotspot produces a dense cluster of
+// buildings + surrounding foliage ring. This is the Firefight-style
+// feature cluster that the prior uniform scatter couldn't produce.
+
+type ScatterAroundHotspotsInput = {
+  readonly hotspots: readonly Hotspot[];
+  readonly base: Uint8Array;
+  readonly point: Uint8Array;
+  readonly buildingId: Uint16Array;
+  readonly structureHeight: Uint8Array;
+  readonly buildings: BuildingRecord[];
+  readonly hpPoint: Uint16Array;
+  readonly coverDensity: Float32Array;
+  readonly fertility: Float32Array;
+  readonly W: number;
+  readonly H: number;
+  readonly seed: number;
+};
+
+function scatterAroundHotspots(input: ScatterAroundHotspotsInput): void {
+  const { hotspots, base, point, buildingId, structureHeight, buildings, hpPoint, fertility, W, H, seed } = input;
+  if (hotspots.length === 0) return;
+  const rng = makeRng(seed ^ 0xb0115b07);
+  const treeByte = pointToByte('tree_forest');
+  const bushByte = pointToByte('bush_medium');
+
+  for (const h of hotspots) {
+    // Building count scales with hotspot strength — 1-4 buildings per
+    // hotspot. Gaussian offsets keep the cluster tight + organic.
+    const buildingCount = Math.max(1, Math.round(h.strength * 4));
+    for (let b = 0; b < buildingCount; b++) {
+      const g = gaussian2D(rng, 3.5, 3.5);
+      const sizeW = 2 + Math.floor(rng() * 3); // 2-4
+      const sizeH = 2 + Math.floor(rng() * 3);
+      const bx = Math.round(h.x + g.x) - (sizeW >> 1);
+      const by = Math.round(h.y + g.y) - (sizeH >> 1);
+      if (bx < 1 || by < 1 || bx + sizeW >= W - 1 || by + sizeH >= H - 1) continue;
+      let clear = true;
+      for (let yy = by; yy < by + sizeH && clear; yy++) {
+        for (let xx = bx; xx < bx + sizeW; xx++) {
+          const idx = yy * W + xx;
+          if (base[idx] === B.water_deep || buildingId[idx] !== 0) {
+            clear = false;
+            break;
+          }
+        }
+      }
+      if (!clear) continue;
+      const height = 3 + Math.floor(rng() * 4);
+      const floors = Math.max(1, Math.round(height / 3));
+      const id = buildings.length + 1;
+      const footprint: { x: number; y: number }[] = [];
+      for (let yy = by; yy < by + sizeH; yy++) {
+        for (let xx = bx; xx < bx + sizeW; xx++) {
+          const idx = yy * W + xx;
+          buildingId[idx] = id;
+          structureHeight[idx] = height;
+          point[idx] = 0;
+          footprint.push({ x: xx, y: yy });
+        }
+      }
+      buildings.push({ id, family: 'house_red_tiles', floors, footprintTiles: footprint, wallHpInitial: 100 });
+    }
+
+    // Foliage ring — thin scatter in a 6-tile radius around the hotspot,
+    // fertility-weighted tree vs bush. Skips tiles already occupied by
+    // buildings/landmark.
+    const ringR = 6;
+    for (let dy = -ringR; dy <= ringR; dy++) {
+      for (let dx = -ringR; dx <= ringR; dx++) {
+        const xx = h.x + dx;
+        const yy = h.y + dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const dist2 = dx * dx + dy * dy;
+        if (dist2 > ringR * ringR) continue;
+        // Probability decays with distance from hotspot centre.
+        const p = Math.max(0, h.strength - dist2 / (ringR * ringR));
+        if (rng() > p * 0.6) continue;
+        const idx = yy * W + xx;
+        if (base[idx] !== B.open) continue;
+        if (point[idx] !== 0 || buildingId[idx] !== 0) continue;
+        const byte = fertility[idx] > 0.55 ? treeByte : bushByte;
+        point[idx] = byte;
+        hpPoint[idx] = byte === treeByte ? 30 : 10;
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Inline hedgerow barrier stamper — writes LinearBarrierKind 'hedge'
+// bytes onto edgeN/edgeW along a path. Mirrors stampBarrierLine from
+// barriers.ts but operates on raw buffers because the pipeline doesn't
+// have a World struct yet (that's built downstream in scenario.ts).
+
+function stampHedgerowEdges(
+  waypoints: readonly { x: number; y: number }[],
+  edgeN: Uint8Array,
+  edgeW: Uint8Array,
+  hpN: Uint16Array,
+  hpW: Uint16Array,
+  W: number,
+  H: number,
+): void {
+  if (waypoints.length < 2) return;
+  // hedge = LinearBarrierKind value 1 (index into world's barrier
+  // encoding). We replicate the encoding inline: low nibble = kind,
+  // high nibble = damaged flag. See encodeBarrier in world.ts.
+  const hedgeKindIdx = 1;
+  const byte = hedgeKindIdx & 0x0f;
+  const maxHp = 80;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = waypoints[i];
+    const b = waypoints[i + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const steps = Math.max(1, Math.max(Math.abs(dx), Math.abs(dy)));
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const x = Math.round(a.x + dx * t);
+      const y = Math.round(a.y + dy * t);
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const side = Math.abs(dx) >= Math.abs(dy) ? 'N' : 'W';
+      const idx = y * W + x;
+      if (side === 'N') {
+        edgeN[idx] = byte;
+        hpN[idx] = maxHp;
+      } else {
+        edgeW[idx] = byte;
+        hpW[idx] = maxHp;
+      }
+    }
+  }
 }
 
 // Silence unused ELEVATION_STEPS import — kept as a module-level reference

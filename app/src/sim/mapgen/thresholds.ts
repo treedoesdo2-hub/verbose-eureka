@@ -28,11 +28,17 @@ const DEFAULT_THRESHOLDS: ClusterThresholds = {
 
 // Base terrain — water + rubble get cluster pruning (forest bleeds are
 // now expressed as point-scatter, so tree_forest lives in POINT_THRESHOLDS).
+//
+// Line-like surfaces (road / water_shallow=rivers / water_deep=canals or
+// coastlines) are authored via stampLine which produces deliberately
+// elongated clusters spanning the whole map. Capping elongation low
+// would delete them on every run; we set maxElongation = Infinity for
+// these kinds so pruning only drops tiny stubs, not the dominant line.
 export const BASE_THRESHOLDS: Record<TerrainBase, ClusterThresholds> = {
   open: DEFAULT_THRESHOLDS,
-  road: DEFAULT_THRESHOLDS,
-  water_shallow: { minSize: 6, maxElongation: 10, maxHoleSize: 3 },
-  water_deep: { minSize: 32, maxElongation: 12, maxHoleSize: 6 },
+  road: { minSize: 4, maxElongation: Infinity, maxHoleSize: 2 },
+  water_shallow: { minSize: 6, maxElongation: Infinity, maxHoleSize: 3 },
+  water_deep: { minSize: 32, maxElongation: Infinity, maxHoleSize: 6 },
   mud: { minSize: 8, maxElongation: 8, maxHoleSize: 3 },
   rubble_ground: { minSize: 4, maxElongation: 6, maxHoleSize: 2 },
   snow: { minSize: 16, maxElongation: 10, maxHoleSize: 4 },

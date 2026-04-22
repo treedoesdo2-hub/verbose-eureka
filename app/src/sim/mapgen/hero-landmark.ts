@@ -259,6 +259,124 @@ export function placeLandmark(
   return best ?? { x: Math.floor(W / 2), y: Math.floor(H / 2) };
 }
 
+// Stamp the landmark footprint into the world buffers. Most landmarks
+// are buildings — writing buildingId + structureHeight + a
+// BuildingRecord that hit.ts + LOS understand. A few are point-object
+// clusters (orchard_cluster = trees, graveyard = graves) or base-kind
+// fills (quarry_pit = rubble, market_square = open plaza).
+//
+// Called from the pipeline right after placeLandmark so the map the
+// player walks through actually has the feature the briefing names.
+
+import { baseToByte, pointToByte, type BuildingRecord } from '../world';
+
+export type StampHeroLandmarkInput = {
+  readonly landmark: HeroLandmark;
+  readonly base: Uint8Array;
+  readonly point: Uint8Array;
+  readonly buildingId: Uint16Array;
+  readonly structureHeight: Uint8Array;
+  readonly buildings: BuildingRecord[];
+  readonly W: number;
+  readonly H: number;
+};
+
+export function stampHeroLandmark(input: StampHeroLandmarkInput): void {
+  const { landmark, base, point, buildingId, structureHeight, buildings, W, H } = input;
+  const tiles = landmark.footprint.filter(
+    (p) => p.x >= 0 && p.y >= 0 && p.x < W && p.y < H,
+  );
+  if (tiles.length === 0) return;
+
+  const asBuilding = (height: number, family: BuildingRecord['family']) => {
+    const id = buildings.length + 1;
+    const footprint: { x: number; y: number }[] = [];
+    for (const p of tiles) {
+      const i = p.y * W + p.x;
+      buildingId[i] = id;
+      structureHeight[i] = height;
+      point[i] = 0;
+      footprint.push({ x: p.x, y: p.y });
+    }
+    buildings.push({
+      id,
+      family,
+      floors: Math.max(1, Math.round(height / 3)),
+      footprintTiles: footprint,
+      wallHpInitial: 200,
+    });
+  };
+
+  const asPointCluster = (kind: 'tree_forest' | 'grave' | 'gravestone' | 'bush_medium') => {
+    const byte = pointToByte(kind);
+    for (const p of tiles) {
+      const i = p.y * W + p.x;
+      if (buildingId[i] !== 0) continue;
+      point[i] = byte;
+    }
+  };
+
+  const asBaseFill = (kind: 'rubble_ground' | 'open') => {
+    const byte = baseToByte(kind);
+    for (const p of tiles) {
+      const i = p.y * W + p.x;
+      base[i] = byte;
+      buildingId[i] = 0;
+      point[i] = 0;
+    }
+  };
+
+  switch (landmark.kind) {
+    case 'refinery':
+      asBuilding(9, 'oil_refinery');
+      break;
+    case 'train_depot':
+    case 'pumping_station':
+    case 'old_mill':
+      asBuilding(6, 'factory');
+      break;
+    case 'barn_complex':
+      asBuilding(5, 'shed');
+      break;
+    case 'chapel':
+    case 'shrine':
+      asBuilding(6, 'church');
+      break;
+    case 'windmill':
+      asBuilding(12, 'windmill');
+      break;
+    case 'clock_tower':
+    case 'water_tower':
+    case 'lighthouse':
+    case 'radio_mast':
+    case 'grain_silo':
+      asBuilding(12, 'tower');
+      break;
+    case 'tank_bunker':
+    case 'ruined_keep':
+    case 'checkpoint':
+    case 'observation_post':
+    case 'bridge_head':
+      asBuilding(4, 'shed');
+      break;
+    case 'monument':
+      asBuilding(5, 'villa');
+      break;
+    case 'market_square':
+      asBaseFill('open');
+      break;
+    case 'quarry_pit':
+      asBaseFill('rubble_ground');
+      break;
+    case 'orchard_cluster':
+      asPointCluster('tree_forest');
+      break;
+    case 'graveyard':
+      asPointCluster('grave');
+      break;
+  }
+}
+
 // Per-kind affinity for coverDensity — market_square wants density,
 // lighthouse wants isolation.
 function landmarkDensityAffinity(kind: LandmarkKind): number {
