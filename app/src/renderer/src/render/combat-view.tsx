@@ -2,6 +2,7 @@ import 'pixi.js/unsafe-eval';
 import type { SimSnapshot, SnapshotUnit, WorldSnapshot } from '@shared/snapshot';
 import { Application, Container, Graphics } from 'pixi.js';
 import { useEffect, useRef } from 'react';
+import { FxEmitter } from './fx-emitter';
 
 const TERRAIN_COLORS: Record<number, number> = {
   0: 0x1a2b1a, // open
@@ -29,11 +30,13 @@ type Scene = {
   visionLayer: Container;
   unitsLayer: Container;
   fxLayer: Container;
+  fx: FxEmitter;
 };
 
 export function CombatView({ world, snapshot }: Props): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<Scene | null>(null);
+  const lastTickRef = useRef<number>(-1);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -73,6 +76,8 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
         worldLayer.addChild(fxLayer);
         app.stage.addChild(worldLayer);
 
+        const fx = new FxEmitter(fxLayer, app.ticker);
+
         sceneRef.current = {
           app,
           worldLayer,
@@ -80,6 +85,7 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
           visionLayer,
           unitsLayer,
           fxLayer,
+          fx,
         };
 
         relayout();
@@ -112,9 +118,11 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
       destroyed = true;
       ro.disconnect();
       if (sceneRef.current) {
+        sceneRef.current.fx.dispose();
         sceneRef.current.app.destroy(true, { children: true, texture: true });
         sceneRef.current = null;
       }
+      lastTickRef.current = -1;
     };
   }, [world]);
 
@@ -124,10 +132,18 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
 
     scene.unitsLayer.removeChildren();
     scene.visionLayer.removeChildren();
-    scene.fxLayer.removeChildren();
 
+    const byId = new Map<number, SnapshotUnit>();
+    for (const u of snapshot.units) byId.set(u.id, u);
     for (const u of snapshot.units) drawUnit(scene.unitsLayer, scene.visionLayer, u);
-    drawFx(scene.fxLayer, snapshot);
+
+    // Snapshots arrive on the render clock; the same tick can arrive twice in
+    // a dev fast-refresh or if React re-runs the effect — de-dupe by tick so
+    // we don't double-ingest events.
+    if (snapshot.tick !== lastTickRef.current) {
+      scene.fx.ingestEvents(snapshot.events, byId);
+      lastTickRef.current = snapshot.tick;
+    }
   }, [snapshot]);
 
   return <div ref={containerRef} className="combat-view" />;
@@ -159,75 +175,90 @@ function drawTerrain(terrain: Graphics, world: WorldSnapshot): void {
 
 function drawUnit(units: Container, vision: Container, u: SnapshotUnit): void {
   const alive = u.actionKind !== 'dead';
+  const downed = u.actionKind === 'downed';
+  const teamColor = TEAM_COLORS[u.teamId] ?? 0xffffff;
 
-  if (alive) {
+  if (alive && !downed) {
     const visionG = new Graphics();
     visionG.position.set(u.x, u.y);
-    const coneRange = 30;
+    const coneRange = u.alerted ? 40 : 30;
     const coneHalf = (20 * Math.PI) / 180;
     visionG.moveTo(0, 0);
     visionG.arc(0, 0, coneRange, u.facing - coneHalf, u.facing + coneHalf);
     visionG.lineTo(0, 0);
-    visionG.fill({ color: TEAM_COLORS[u.teamId] ?? 0xffffff, alpha: 0.1 });
+    visionG.fill({ color: teamColor, alpha: 0.1 });
     if (u.alerted) {
       visionG.circle(0, 0, 25);
-      visionG.stroke({ color: TEAM_COLORS[u.teamId] ?? 0xffffff, alpha: 0.25, width: 0.3 });
+      visionG.stroke({ color: teamColor, alpha: 0.25, width: 0.3 });
     }
     vision.addChild(visionG);
   }
 
   const g = new Graphics();
   g.position.set(u.x, u.y);
-  const radius = 1.5;
-  const color = alive ? (TEAM_COLORS[u.teamId] ?? 0xffffff) : 0x333333;
-  g.circle(0, 0, radius);
+  const baseRadius = 1.5;
+  // Stance changes silhouette footprint.
+  const stanceScale = u.stance === 'prone' ? 1.35 : u.stance === 'crouched' ? 0.9 : 1.0;
+  const stanceSquash = u.stance === 'prone' ? 0.55 : u.stance === 'crouched' ? 0.85 : 1.0;
+  const radius = baseRadius * stanceScale;
+
+  // Suppression halo — pulse ring around suppressed units.
+  if (alive && !downed && u.suppression > 0.3) {
+    g.circle(0, 0, radius + 0.8);
+    g.stroke({
+      color: 0xffaa22,
+      alpha: Math.min(0.8, u.suppression * 0.9),
+      width: 0.25,
+    });
+  }
+
+  const color = alive
+    ? downed
+      ? 0x553333
+      : u.aiState === 'panic'
+        ? 0xaa4488
+        : teamColor
+    : 0x333333;
+
+  // Body — ellipse if prone for lying-down read.
+  g.ellipse(0, 0, radius, radius * stanceSquash);
   g.fill({ color });
   g.stroke({ color: 0x000000, width: 0.15 });
 
-  if (alive) {
+  if (alive && !downed) {
     g.moveTo(0, 0);
     g.lineTo(Math.cos(u.facing) * radius * 1.6, Math.sin(u.facing) * radius * 1.6);
     g.stroke({ color: 0xffffff, width: 0.3 });
   }
 
   if (u.actionKind === 'firing') {
-    g.circle(Math.cos(u.facing) * radius * 2, Math.sin(u.facing) * radius * 2, 0.5);
-    g.fill({ color: 0xffdd55 });
+    const mx = Math.cos(u.facing) * radius * 2.2;
+    const my = Math.sin(u.facing) * radius * 2.2;
+    g.circle(mx, my, 0.6);
+    g.fill({ color: 0xffee88 });
+    g.circle(mx, my, 0.3);
+    g.fill({ color: 0xffffff });
   }
 
+  // Blood bar.
   const bloodPct = Math.max(0, Math.min(1, u.blood / 100));
-  const barW = radius * 2;
+  const barW = baseRadius * 2;
   const barH = 0.3;
-  g.rect(-radius, radius + 0.4, barW, barH);
+  const barY = radius * stanceSquash + 0.4;
+  g.rect(-baseRadius, barY, barW, barH);
   g.fill({ color: 0x222222 });
-  g.rect(-radius, radius + 0.4, barW * bloodPct, barH);
+  g.rect(-baseRadius, barY, barW * bloodPct, barH);
   g.fill({ color: bloodPct > 0.5 ? 0x4caf50 : bloodPct > 0.25 ? 0xff9800 : 0xf44336 });
 
-  units.addChild(g);
-}
-
-function drawFx(fx: Container, snapshot: SimSnapshot): void {
-  const byId = new Map<number, SnapshotUnit>();
-  for (const u of snapshot.units) byId.set(u.id, u);
-
-  for (const e of snapshot.events) {
-    if (e.kind === 'unit-fired') {
-      const s = byId.get(e.shooter);
-      const t = byId.get(e.target);
-      if (!s || !t) continue;
-      const g = new Graphics();
-      g.moveTo(s.x, s.y);
-      g.lineTo(t.x, t.y);
-      g.stroke({ color: 0xffdd55, alpha: 0.7, width: 0.15 });
-      fx.addChild(g);
-    }
-    if (e.kind === 'unit-hit') {
-      const t = byId.get(e.target);
-      if (!t) continue;
-      const g = new Graphics();
-      g.circle(t.x, t.y, 1.0);
-      g.stroke({ color: 0xff4040, alpha: 0.9, width: 0.25 });
-      fx.addChild(g);
-    }
+  // Morale bar just below blood when shaky.
+  if (alive && !downed && u.morale < 0.8) {
+    const mBarY = barY + barH + 0.1;
+    g.rect(-baseRadius, mBarY, barW, barH * 0.7);
+    g.fill({ color: 0x222222 });
+    const mpct = Math.max(0, Math.min(1, u.morale));
+    g.rect(-baseRadius, mBarY, barW * mpct, barH * 0.7);
+    g.fill({ color: mpct > 0.5 ? 0x7bbaff : mpct > 0.25 ? 0xd27bff : 0xff4d8a });
   }
+
+  units.addChild(g);
 }

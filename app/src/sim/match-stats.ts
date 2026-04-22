@@ -13,6 +13,8 @@ export type MutableUnitStats = {
   operatorId: string | null;
   shotsFired: number;
   hitsLanded: number;
+  shotsBlocked: number;
+  shotsMissed: number;
   // Maps shooter id → the wound id whose owner became 'downed' or 'dead'
   lastShotByTarget: Map<UnitId, UnitId>;
   woundsReceived: number;
@@ -36,6 +38,8 @@ export class MatchStatsAccumulator {
           operatorId: u.operatorId,
           shotsFired: 0,
           hitsLanded: 0,
+          shotsBlocked: 0,
+          shotsMissed: 0,
           lastShotByTarget: new Map(),
           woundsReceived: 0,
           kills: 0,
@@ -55,9 +59,15 @@ export class MatchStatsAccumulator {
       } else if (e.kind === 'unit-hit') {
         const shooter = this.stats.get(e.shooter);
         const target = this.stats.get(e.target);
-        if (shooter) shooter.hitsLanded++;
-        if (target) target.woundsReceived++;
-        this.lastShooterFor.set(e.target, e.shooter);
+        if (e.outcome === 'wound') {
+          if (shooter) shooter.hitsLanded++;
+          if (target) target.woundsReceived++;
+          this.lastShooterFor.set(e.target, e.shooter);
+        } else if (e.outcome === 'block') {
+          if (shooter) shooter.shotsBlocked++;
+        } else {
+          if (shooter) shooter.shotsMissed++;
+        }
       } else if (e.kind === 'unit-downed') {
         const victimStats = this.stats.get(e.unitId);
         if (victimStats) victimStats.survived = false;
@@ -90,6 +100,8 @@ export class MatchStatsAccumulator {
         operatorId: s.operatorId,
         shotsFired: s.shotsFired,
         hitsLanded: s.hitsLanded,
+        shotsBlocked: s.shotsBlocked,
+        shotsMissed: s.shotsMissed,
         woundsReceived: s.woundsReceived,
         kills: s.kills,
         downs: s.downs,

@@ -93,6 +93,8 @@ export function Debrief(): React.JSX.Element {
                 <th className="num">wounds</th>
                 <th className="num">shots</th>
                 <th className="num">hits</th>
+                <th className="num">blk</th>
+                <th className="num">miss</th>
                 <th className="num">acc</th>
                 <th className="num">stab</th>
               </tr>
@@ -124,6 +126,8 @@ export function Debrief(): React.JSX.Element {
                     </td>
                     <td className="num mono">{u.shotsFired}</td>
                     <td className="num mono">{u.hitsLanded}</td>
+                    <td className="num mono dim">{u.shotsBlocked}</td>
+                    <td className="num mono dim">{u.shotsMissed}</td>
                     <td className="num mono">{acc}</td>
                     <td className="num mono">{u.alliesStabilized}</td>
                   </tr>

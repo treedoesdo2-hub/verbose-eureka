@@ -228,7 +228,32 @@ function processFiring(
       kind: 'unit-hit',
       shooter: shooter.id,
       target: target.id,
+      outcome: 'wound',
+      zone: outcome.zone,
       woundId: outcome.wound.id,
+      reason: null,
+      tick,
+    });
+  } else if (outcome.kind === 'block') {
+    events.push({
+      kind: 'unit-hit',
+      shooter: shooter.id,
+      target: target.id,
+      outcome: 'block',
+      zone: outcome.zone,
+      woundId: null,
+      reason: null,
+      tick,
+    });
+  } else {
+    events.push({
+      kind: 'unit-hit',
+      shooter: shooter.id,
+      target: target.id,
+      outcome: 'miss',
+      zone: null,
+      woundId: null,
+      reason: outcome.reason,
       tick,
     });
   }
@@ -444,7 +469,7 @@ export function tick(state: SimState, rng: Rng): SimState {
     ) {
       if (isDowned({ ...unit, ...(patches.get(unit.id) ?? {}) })) {
         mergePatch(patches, unit.id, { action: { kind: 'downed' } });
-        events.push({ kind: 'unit-downed', unitId: unit.id, tick: state.tick });
+        events.push({ kind: 'unit-downed', unitId: unit.id, cause: 'bleedout', tick: state.tick });
       }
     }
   }

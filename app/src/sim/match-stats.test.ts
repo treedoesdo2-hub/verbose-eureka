@@ -39,9 +39,27 @@ describe('match stats accumulator', () => {
     acc.seed(makeMatchUnits());
     const events: SimEvent[] = [
       { kind: 'unit-fired', shooter: asUnitId(1), target: asUnitId(10), tick: 1 },
-      { kind: 'unit-hit', shooter: asUnitId(1), target: asUnitId(10), woundId: 1, tick: 2 },
+      {
+        kind: 'unit-hit',
+        shooter: asUnitId(1),
+        target: asUnitId(10),
+        outcome: 'wound',
+        zone: 'torso_front',
+        woundId: 1,
+        reason: null,
+        tick: 2,
+      },
       { kind: 'unit-fired', shooter: asUnitId(1), target: asUnitId(10), tick: 3 },
-      { kind: 'unit-hit', shooter: asUnitId(1), target: asUnitId(10), woundId: 2, tick: 4 },
+      {
+        kind: 'unit-hit',
+        shooter: asUnitId(1),
+        target: asUnitId(10),
+        outcome: 'wound',
+        zone: 'torso_front',
+        woundId: 2,
+        reason: null,
+        tick: 4,
+      },
       { kind: 'unit-died', unitId: asUnitId(10), tick: 5 },
     ];
     acc.ingest(events);
@@ -55,12 +73,58 @@ describe('match stats accumulator', () => {
     expect(enemy?.survived).toBe(false);
   });
 
+  it('tallies blocks and misses distinctly from wounds', () => {
+    const acc = new MatchStatsAccumulator();
+    acc.seed(makeMatchUnits());
+    acc.ingest([
+      { kind: 'unit-fired', shooter: asUnitId(1), target: asUnitId(10), tick: 1 },
+      {
+        kind: 'unit-hit',
+        shooter: asUnitId(1),
+        target: asUnitId(10),
+        outcome: 'block',
+        zone: 'torso_front',
+        woundId: null,
+        reason: null,
+        tick: 1,
+      },
+      { kind: 'unit-fired', shooter: asUnitId(1), target: asUnitId(10), tick: 2 },
+      {
+        kind: 'unit-hit',
+        shooter: asUnitId(1),
+        target: asUnitId(10),
+        outcome: 'miss',
+        zone: null,
+        woundId: null,
+        reason: 'cover',
+        tick: 2,
+      },
+    ]);
+    const stats = acc.finalize(2);
+    const alpha = stats.perUnit.find((u) => u.unitId === 1);
+    const enemy = stats.perUnit.find((u) => u.unitId === 10);
+    expect(alpha?.shotsFired).toBe(2);
+    expect(alpha?.hitsLanded).toBe(0);
+    expect(alpha?.shotsBlocked).toBe(1);
+    expect(alpha?.shotsMissed).toBe(1);
+    expect(enemy?.woundsReceived).toBe(0);
+  });
+
   it('attributes downs to the last shooter', () => {
     const acc = new MatchStatsAccumulator();
     acc.seed(makeMatchUnits());
     acc.ingest([
-      { kind: 'unit-hit', shooter: asUnitId(2), target: asUnitId(10), woundId: 1, tick: 1 },
-      { kind: 'unit-downed', unitId: asUnitId(10), tick: 2 },
+      {
+        kind: 'unit-hit',
+        shooter: asUnitId(2),
+        target: asUnitId(10),
+        outcome: 'wound',
+        zone: 'torso_front',
+        woundId: 1,
+        reason: null,
+        tick: 1,
+      },
+      { kind: 'unit-downed', unitId: asUnitId(10), cause: 'combat', tick: 2 },
     ]);
     const stats = acc.finalize(2);
     const bravo = stats.perUnit.find((u) => u.unitId === 2);
@@ -73,7 +137,16 @@ describe('match stats accumulator', () => {
     acc.seed(makeMatchUnits());
     // Alpha gets two kills → ace highlight.
     acc.ingest([
-      { kind: 'unit-hit', shooter: asUnitId(1), target: asUnitId(10), woundId: 1, tick: 1 },
+      {
+        kind: 'unit-hit',
+        shooter: asUnitId(1),
+        target: asUnitId(10),
+        outcome: 'wound',
+        zone: 'torso_front',
+        woundId: 1,
+        reason: null,
+        tick: 1,
+      },
       { kind: 'unit-died', unitId: asUnitId(10), tick: 2 },
     ]);
     // Invent a second enemy on the fly via a fresh ingestion after seeding.
@@ -90,7 +163,16 @@ describe('match stats accumulator', () => {
     );
     acc.seed(units2);
     acc.ingest([
-      { kind: 'unit-hit', shooter: asUnitId(1), target: asUnitId(11), woundId: 2, tick: 3 },
+      {
+        kind: 'unit-hit',
+        shooter: asUnitId(1),
+        target: asUnitId(11),
+        outcome: 'wound',
+        zone: 'torso_front',
+        woundId: 2,
+        reason: null,
+        tick: 3,
+      },
       { kind: 'unit-died', unitId: asUnitId(11), tick: 4 },
       { kind: 'unit-stabilized', medicId: asUnitId(2), targetId: asUnitId(1), tick: 5 },
     ]);
