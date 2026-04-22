@@ -53,15 +53,15 @@ const header = [
 logStream.write(header);
 process.stdout.write(header);
 
-const child = spawn(
-  process.platform === 'win32' ? 'npx.cmd' : 'npx',
-  ['electron-vite', 'dev'],
-  {
-    cwd: appRoot,
-    env: process.env,
-    stdio: ['inherit', 'pipe', 'pipe'],
-  },
-);
+// Windows spawn of .cmd/.bat requires shell:true; otherwise Node 20+
+// refuses with EINVAL. Cross-platform: pass the invocation as a string
+// + shell:true so the platform's shell resolves the PATH lookup.
+const child = spawn('npx electron-vite dev', {
+  cwd: appRoot,
+  env: process.env,
+  stdio: ['inherit', 'pipe', 'pipe'],
+  shell: true,
+});
 
 function tee(stream, label) {
   stream.on('data', (chunk) => {
