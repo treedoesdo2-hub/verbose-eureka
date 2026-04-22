@@ -24,12 +24,15 @@
     "biomeHint": "urban_sparse",
     "sizeHint": "medium"
   },
-  "briefing": "Second contract on the yard. Bigger crew, heavier gear. A veteran LMG and a heavy rifleman are dug in with the usual rabble.",
+  "briefing": "Second contract on the yard. Bigger crew, heavier gear. A veteran LMG and a heavy rifleman are dug in around a cache the clients want retrieved. Extract at least 2 operators at the cache zone.",
   "objectives": [
     {
-      "id": "obj-eliminate",
-      "kind": "eliminate",
-      "description": "Neutralize all Blackstar defenders at the yard"
+      "id": "obj-extract-cache",
+      "kind": "extract",
+      "description": "Reach the cache (≥2 operators inside the extract zone)",
+      "params": {
+        "minUnitsInside": 2
+      }
     }
   ],
   "enemies": {

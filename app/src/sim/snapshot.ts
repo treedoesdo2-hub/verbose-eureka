@@ -114,7 +114,6 @@ export function snapshotState(state: SimState): SimSnapshot {
   }
 
   const objectives: SnapshotObjective[] = state.objectives.map((o) => {
-    const hasZone = o.params.kind !== 'eliminate';
     const holdTicks =
       o.params.kind === 'defend' || o.params.kind === 'secure' ? o.params.holdTicks : null;
     return {
@@ -124,7 +123,7 @@ export function snapshotState(state: SimState): SimSnapshot {
       status: o.status,
       progressTicks: o.progressTicks,
       holdTicks,
-      zone: hasZone ? o.params.zone : null,
+      zone: o.params.zone,
     };
   });
 

@@ -7,7 +7,7 @@ import type { ContentLookup, Loadout } from './loadout';
 import { deriveCombatProfile, loadoutFromTemplate } from './loadout';
 import { runPipeline } from './mapgen/pipeline';
 import type { MapGenRequest, MapGenResult } from './mapgen/types';
-import type { ObjectiveRuntimeState, SimState } from './state';
+import type { ObjectiveRect, ObjectiveRuntimeState, SimState } from './state';
 import { makeInitialState } from './tick';
 import type { Unit, UnitStats, Vec2 } from './unit';
 import { DEFAULT_STATS, makeUnit } from './unit';
@@ -28,6 +28,10 @@ export type BuildScenarioInput = {
   readonly content: ContentLookup;
   readonly templates: ReadonlyMap<string, LoadoutTemplate>;
   readonly deployments: readonly ScenarioDeployment[];
+  // Optional objective-id → zone overrides, supplied by the contract →
+  // anchor binder after map generation so contracts with missing params
+  // (like "extract" without a zone) resolve to generator-picked anchors.
+  readonly objectiveZoneOverrides?: ReadonlyMap<string, ObjectiveRect>;
 };
 
 function buildWorld(map: GameMap): World {
@@ -125,31 +129,21 @@ function roleFromTemplate(
   return t.role === 'sidearm-only' ? 'rifleman' : t.role;
 }
 
-function translateObjectives(contract: Contract): ObjectiveRuntimeState[] {
+function translateObjectives(
+  contract: Contract,
+  fallbackZone: ObjectiveRect,
+  overrides: ReadonlyMap<string, ObjectiveRect> | undefined,
+): ObjectiveRuntimeState[] {
   const out: ObjectiveRuntimeState[] = [];
   for (const o of contract.objectives) {
     const p = o.params ?? {};
-    if (o.kind === 'eliminate') {
-      out.push({
-        id: o.id,
-        kind: o.kind,
-        description: o.description,
-        params: { kind: 'eliminate', targetTeamId: p.targetTeamId ?? 1 },
-        status: 'active',
-        progressTicks: 0,
-      });
-      continue;
-    }
-    if (!p.zone) {
-      console.warn(`objective ${o.id} of kind ${o.kind} missing params.zone; skipping`);
-      continue;
-    }
+    const zone = overrides?.get(o.id) ?? p.zone ?? fallbackZone;
     if (o.kind === 'extract') {
       out.push({
         id: o.id,
         kind: o.kind,
         description: o.description,
-        params: { kind: 'extract', zone: p.zone, minUnitsInside: p.minUnitsInside ?? 1 },
+        params: { kind: 'extract', zone, minUnitsInside: p.minUnitsInside ?? 1 },
         status: 'active',
         progressTicks: 0,
       });
@@ -159,7 +153,7 @@ function translateObjectives(contract: Contract): ObjectiveRuntimeState[] {
         id: o.id,
         kind: o.kind,
         description: o.description,
-        params: { kind: o.kind, zone: p.zone, holdTicks: p.holdTicks ?? 300 },
+        params: { kind: o.kind, zone, holdTicks: p.holdTicks ?? 300 },
         status: 'active',
         progressTicks: 0,
       });
@@ -258,7 +252,49 @@ export function buildScenario(input: BuildScenarioInput): SimState {
     }
   }
 
-  return makeInitialState(world, input.seed, units, translateObjectives(input.contract));
+  // Compute team home positions (centroids of spawn points in meters) so
+  // the objective layer and BT fallback have anchor positions for waypoint
+  // regeneration. Crucial on procedurally-generated maps where neither
+  // team has authored waypoints and the old code left units standing still.
+  const team0HomePos = centroidOfSpawns(input.map.playerSpawns, input.map.tileSizeMeters);
+  const team1HomePos = centroidOfSpawns(input.map.enemySpawns, input.map.tileSizeMeters);
+
+  // Map-center rect as the fallback when a contract objective has no
+  // authored zone (generated maps in particular — the anchor is decided
+  // at gen time but stays derived from map center here to keep the old
+  // contract JSON tolerant). Deploy/sim passes can override via the
+  // contract binder in future.
+  const fallbackZone: ObjectiveRect = {
+    x: Math.max(0, Math.floor(input.map.width / 2) - 8),
+    y: Math.max(0, Math.floor(input.map.height / 2) - 8),
+    w: 16,
+    h: 16,
+  };
+
+  return makeInitialState(
+    world,
+    input.seed,
+    units,
+    translateObjectives(input.contract, fallbackZone, input.objectiveZoneOverrides),
+    { team0: team0HomePos, team1: team1HomePos },
+  );
+}
+
+function centroidOfSpawns(
+  spawns: readonly { x: number; y: number }[],
+  tileSizeMeters: number,
+): Vec2 {
+  if (spawns.length === 0) return { x: 0, y: 0 };
+  let sx = 0;
+  let sy = 0;
+  for (const s of spawns) {
+    sx += s.x;
+    sy += s.y;
+  }
+  return {
+    x: (sx / spawns.length) * tileSizeMeters,
+    y: (sy / spawns.length) * tileSizeMeters,
+  };
 }
 
 export function autoDeploy(

@@ -24,11 +24,12 @@ export function mapGenRequestFromContract(
 }
 
 function pickBiomeHeuristic(contract: Contract): BiomeId {
-  // Extract/defend contracts suggest rural zones (LZ, farmhouse); eliminate
-  // contracts bias urban. Secure splits down the middle (mixed).
+  // Extract/defend contracts suggest rural zones (LZ, farmhouse). Secure
+  // contracts tend to be urban (holding a building, intersection). Mixed
+  // stays the default catch-all.
   const kinds = new Set(contract.objectives.map((o) => o.kind));
   if (kinds.has('extract') || kinds.has('defend')) return 'rural_open';
-  if (kinds.has('eliminate') && !kinds.has('secure')) return 'urban_sparse';
+  if (kinds.has('secure')) return 'urban_sparse';
   return 'mixed';
 }
 

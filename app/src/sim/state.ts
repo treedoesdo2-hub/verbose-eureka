@@ -17,7 +17,6 @@ export type ObjectiveStatus = 'active' | 'complete' | 'failed';
 export type ObjectiveRect = { x: number; y: number; w: number; h: number };
 
 export type ObjectiveRuntimeParams =
-  | { kind: 'eliminate'; targetTeamId: number }
   | { kind: 'extract'; zone: ObjectiveRect; minUnitsInside: number }
   | { kind: 'defend'; zone: ObjectiveRect; holdTicks: number }
   | { kind: 'secure'; zone: ObjectiveRect; holdTicks: number };
@@ -72,4 +71,9 @@ export type SimState = {
   readonly objectives: readonly ObjectiveRuntimeState[];
   readonly ended: boolean;
   readonly endReason?: string;
+  // Team anchor positions (meters). Used as fallback attractors for the
+  // waypoint regen + BT terminal fallback so units don't idle on empty
+  // maps with no objective progress.
+  readonly team0HomePos: Vec2;
+  readonly team1HomePos: Vec2;
 };

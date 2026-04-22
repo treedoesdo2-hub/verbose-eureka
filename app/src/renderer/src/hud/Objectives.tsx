@@ -6,7 +6,6 @@ type Props = {
 };
 
 const KIND_BADGE: Record<HudObjective['kind'], string> = {
-  eliminate: 'KILL',
   extract: 'EXTR',
   defend: 'DEF',
   secure: 'SEC',

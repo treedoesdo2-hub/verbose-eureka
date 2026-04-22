@@ -86,7 +86,7 @@ export type SnapshotEvent =
     };
 
 export type SnapshotObjectiveStatus = 'active' | 'complete' | 'failed';
-export type SnapshotObjectiveKind = 'eliminate' | 'extract' | 'defend' | 'secure';
+export type SnapshotObjectiveKind = 'extract' | 'defend' | 'secure';
 
 export type SnapshotObjective = {
   readonly id: string;

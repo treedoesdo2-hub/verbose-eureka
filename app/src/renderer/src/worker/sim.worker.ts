@@ -1,7 +1,7 @@
 import type { RendererToWorker, ScenarioRequest, WorkerToRenderer } from '@shared/messages';
 import type { ContentLookup, Loadout } from '@sim/loadout';
 import { loadoutFromTemplate } from '@sim/loadout';
-import { mapGenRequestFromContract } from '@sim/mapgen/contract-binder';
+import { bindObjectivesToAnchors, mapGenRequestFromContract } from '@sim/mapgen/contract-binder';
 import { MatchStatsAccumulator } from '@sim/match-stats';
 import { RecordingSim } from '@sim/replay';
 import type { ScenarioDeployment } from '@sim/scenario';
@@ -77,8 +77,12 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
 
   // Pillar A: contracts with a biomeHint generate a procedural map from the
   // contract seed. Contracts without the hint keep using the authored map
-  // from the content pack.
+  // from the content pack. Generator anchors bind to contract objectives so
+  // "extract" without an authored zone resolves to a generator-picked rect.
   let map: Parameters<typeof buildScenario>[0]['map'];
+  let objectiveZoneOverrides:
+    | ReadonlyMap<string, { x: number; y: number; w: number; h: number }>
+    | undefined;
   if (contract.modifiers.biomeHint !== null) {
     const deployments = buildDeployments(req);
     const genReq = mapGenRequestFromContract(contract, 1.5, 1);
@@ -88,6 +92,7 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
       team1: Math.max(1, enemyCount),
     });
     map = gen.map;
+    objectiveZoneOverrides = bindObjectivesToAnchors(contract, gen.result.objectiveAnchors);
   } else {
     const authored = bundle.maps.get(req.mapId);
     if (!authored) {
@@ -105,6 +110,7 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
     content: buildLookup(bundle),
     templates: bundle.templates,
     deployments: buildDeployments(req),
+    objectiveZoneOverrides,
   });
   return state;
 }

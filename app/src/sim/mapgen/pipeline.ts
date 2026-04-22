@@ -172,11 +172,6 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
 
   const objectiveAnchors: ObjectiveAnchor[] = [
     {
-      kindHint: 'eliminate',
-      rect: { x: 0, y: 0, w: W, h: H },
-      qualityScore: 1,
-    },
-    {
       kindHint: 'extract',
       rect: { x: team1.x, y: team1.y, w: team1.w, h: team1.h },
       qualityScore: 0.8,

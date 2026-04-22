@@ -16,22 +16,6 @@ function zoneCenterMeters(zone: ObjectiveRect, tileSizeMeters: number): Vec2 {
   };
 }
 
-function evalEliminate(
-  obj: ObjectiveRuntimeState,
-  units: ReadonlyMap<UnitId, Unit>,
-): { status: ObjectiveStatus; progressTicks: number } {
-  if (obj.params.kind !== 'eliminate')
-    return { status: obj.status, progressTicks: obj.progressTicks };
-  let anyAlive = false;
-  for (const u of units.values()) {
-    if (u.teamId === obj.params.targetTeamId && canFight(u)) {
-      anyAlive = true;
-      break;
-    }
-  }
-  return { status: anyAlive ? 'active' : 'complete', progressTicks: obj.progressTicks };
-}
-
 function evalExtract(
   obj: ObjectiveRuntimeState,
   units: ReadonlyMap<UnitId, Unit>,
@@ -103,9 +87,6 @@ export function evaluateObjectives(
     }
     let result: { status: ObjectiveStatus; progressTicks: number };
     switch (obj.params.kind) {
-      case 'eliminate':
-        result = evalEliminate(obj, units);
-        break;
       case 'extract':
         result = evalExtract(obj, units, tileSizeMeters);
         break;
@@ -134,8 +115,7 @@ export function evaluateObjectives(
   return { objectives: next, events };
 }
 
-export function focalPoint(obj: ObjectiveRuntimeState, tileSizeMeters: number): Vec2 | null {
-  if (obj.params.kind === 'eliminate') return null;
+export function focalPoint(obj: ObjectiveRuntimeState, tileSizeMeters: number): Vec2 {
   return zoneCenterMeters(obj.params.zone, tileSizeMeters);
 }
 
@@ -153,11 +133,44 @@ export function regeneratePlayerWaypoints(
   const primary = objectives[0];
   if (!primary || primary.status !== 'active') return out;
   const focal = focalPoint(primary, tileSizeMeters);
-  if (!focal) return out;
   for (const u of units.values()) {
     if (u.teamId !== 0 || !canFight(u)) continue;
     if (u.waypointIndex < u.waypoints.length) continue;
     out.set(u.id, [focal]);
+  }
+  return out;
+}
+
+/**
+ * Team-1 (enemy) waypoint regen. Enemies counter the player's primary
+ * objective — for secure/extract they converge on the same zone to contest
+ * it; for defend they stay near their spawn (their held asset). Without
+ * this, enemies on procedurally-generated maps spawn with zero waypoints
+ * and the behavior tree terminal idles, which is why units stand still.
+ */
+export function regenerateEnemyWaypoints(
+  units: ReadonlyMap<UnitId, Unit>,
+  objectives: readonly ObjectiveRuntimeState[],
+  tileSizeMeters: number,
+  enemyHomePosMeters: Vec2 | null,
+): Map<UnitId, Vec2[]> {
+  const out = new Map<UnitId, Vec2[]>();
+  const primary = objectives[0];
+  if (!primary || primary.status !== 'active') return out;
+  let target: Vec2;
+  if (primary.params.kind === 'defend') {
+    // Player is defending; enemies attack the defended zone.
+    target = focalPoint(primary, tileSizeMeters);
+  } else if (primary.params.kind === 'extract' || primary.params.kind === 'secure') {
+    // Player is grabbing a zone; enemies contest it.
+    target = focalPoint(primary, tileSizeMeters);
+  } else {
+    target = enemyHomePosMeters ?? focalPoint(primary, tileSizeMeters);
+  }
+  for (const u of units.values()) {
+    if (u.teamId !== 1 || !canFight(u)) continue;
+    if (u.waypointIndex < u.waypoints.length) continue;
+    out.set(u.id, [target]);
   }
   return out;
 }

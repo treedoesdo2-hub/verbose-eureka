@@ -6,7 +6,11 @@ import { z } from 'zod';
 import { Id } from './common';
 import { BiomeId } from './map';
 
-export const ObjectiveKind = z.enum(['eliminate', 'extract', 'defend', 'secure']);
+// Corpo enforcers run objectives, not assassinations. eliminate is banned
+// at the schema level — every contract must be a zone-anchored task
+// (extract/defend/secure). Enemies in the zone are an obstacle to the
+// objective, not the objective itself.
+export const ObjectiveKind = z.enum(['extract', 'defend', 'secure']);
 export type ObjectiveKind = z.infer<typeof ObjectiveKind>;
 
 export const ObjectiveZone = z.object({
@@ -19,7 +23,6 @@ export type ObjectiveZone = z.infer<typeof ObjectiveZone>;
 
 export const ObjectiveParams = z
   .object({
-    targetTeamId: z.number().int().nonnegative().optional(),
     zone: ObjectiveZone.optional(),
     minUnitsInside: z.number().int().positive().optional(),
     holdTicks: z.number().int().positive().optional(),

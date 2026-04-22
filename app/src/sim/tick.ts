@@ -5,7 +5,11 @@ import { perceive } from './ai/perception';
 import { updateLastHeard } from './hearing';
 import { resolveShot } from './hit';
 import { FOOTSTEP_EMIT_EVERY_TICKS, type NoiseKind } from './noise';
-import { evaluateObjectives, regeneratePlayerWaypoints } from './objectives';
+import {
+  evaluateObjectives,
+  regenerateEnemyWaypoints,
+  regeneratePlayerWaypoints,
+} from './objectives';
 import { Rng } from './rng';
 import { type ObjectiveRuntimeState, SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
 import type { LastSeen, Stance, Unit, UnitAction, Vec2, Wound } from './unit';
@@ -107,19 +111,53 @@ function executeMovement(
     y: unit.position.y + velocity.y * SIM_DT,
   };
   const tile = tileOf(world, candidate);
-  if (!inBounds(world, tile.x, tile.y) || !terrainAt(world, tile.x, tile.y).passable) {
+  if (inBounds(world, tile.x, tile.y) && terrainAt(world, tile.x, tile.y).passable) {
     return {
-      position: unit.position,
-      velocity: { x: 0, y: 0 },
+      position: clampToWorld(candidate, world),
+      velocity,
       facing,
-      arrived: true,
+      arrived: false,
     };
   }
+  // Blocked by impassable tile. Without real pathfinding, try in order:
+  //   1) axis projections (wall-slide along x or y),
+  //   2) perpendicular probes (step sideways relative to velocity so the
+  //      unit routes around buildings on procedurally-generated maps).
+  // Only if every candidate is blocked do we give up and report arrived.
+  const stepX = velocity.x * SIM_DT;
+  const stepY = velocity.y * SIM_DT;
+  const perpScale = 2; // lateral probe stronger than forward step
+  // Perpendicular unit vector to velocity.
+  const vmag = Math.hypot(velocity.x, velocity.y) || 1;
+  const perpX = (-velocity.y / vmag) * SIM_DT * speed * perpScale;
+  const perpY = (velocity.x / vmag) * SIM_DT * speed * perpScale;
+  const candidates: Vec2[] = [
+    { x: unit.position.x + stepX, y: unit.position.y },
+    { x: unit.position.x, y: unit.position.y + stepY },
+    { x: unit.position.x + perpX, y: unit.position.y + perpY },
+    { x: unit.position.x - perpX, y: unit.position.y - perpY },
+    // Diagonals combining forward + perpendicular so narrow gaps resolve.
+    { x: unit.position.x + stepX + perpX, y: unit.position.y + stepY + perpY },
+    { x: unit.position.x + stepX - perpX, y: unit.position.y + stepY - perpY },
+  ];
+  for (const c of candidates) {
+    const t = tileOf(world, c);
+    if (!inBounds(world, t.x, t.y)) continue;
+    if (!terrainAt(world, t.x, t.y).passable) continue;
+    return {
+      position: clampToWorld(c, world),
+      velocity: { x: c.x - unit.position.x, y: c.y - unit.position.y },
+      facing,
+      arrived: false,
+    };
+  }
+  // Truly stuck — report arrival so the BT can try the next waypoint/goal
+  // rather than looping forever against the same wall.
   return {
-    position: clampToWorld(candidate, world),
-    velocity,
+    position: unit.position,
+    velocity: { x: 0, y: 0 },
     facing,
-    arrived: false,
+    arrived: true,
   };
 }
 
@@ -549,16 +587,30 @@ export function tick(state: SimState, rng: Rng): SimState {
   );
   events.push(...objEvents);
 
-  // Regenerate player-side waypoints when objectives point to a focal zone.
-  const wpRegens = regeneratePlayerWaypoints(
+  // Regenerate both teams' waypoints when they exhaust their queue. Before
+  // this existed, procedurally-generated maps handed both teams empty
+  // waypoint lists at spawn and they just stood there; the BT terminal
+  // idle branch fires when no target is spotted and no waypoints remain.
+  const playerWpRegens = regeneratePlayerWaypoints(
     unitsAfterStress,
     nextObjectives,
     state.world.tileSizeMeters,
   );
+  const enemyWpRegens = regenerateEnemyWaypoints(
+    unitsAfterStress,
+    nextObjectives,
+    state.world.tileSizeMeters,
+    state.team0HomePos,
+  );
   let finalUnits = unitsAfterStress;
-  if (wpRegens.size > 0) {
+  if (playerWpRegens.size > 0 || enemyWpRegens.size > 0) {
     const nextMap = new Map(unitsAfterStress);
-    for (const [id, wps] of wpRegens) {
+    for (const [id, wps] of playerWpRegens) {
+      const u = nextMap.get(id);
+      if (!u) continue;
+      nextMap.set(id, { ...u, waypoints: wps, waypointIndex: 0 });
+    }
+    for (const [id, wps] of enemyWpRegens) {
       const u = nextMap.get(id);
       if (!u) continue;
       nextMap.set(id, { ...u, waypoints: wps, waypointIndex: 0 });
@@ -595,6 +647,8 @@ export function tick(state: SimState, rng: Rng): SimState {
     objectives: nextObjectives,
     ended,
     endReason,
+    team0HomePos: state.team0HomePos,
+    team1HomePos: state.team1HomePos,
   };
 }
 
@@ -603,10 +657,14 @@ export function makeInitialState(
   seed: number,
   units: Iterable<Unit>,
   objectives: readonly ObjectiveRuntimeState[] = [],
+  homePos?: { team0: Vec2; team1: Vec2 },
 ): SimState {
   const rng = new Rng(seed);
   const unitMap = new Map<UnitId, Unit>();
   for (const u of units) unitMap.set(u.id, u);
+  // Fallback to unit centroids if the caller didn't supply anchors —
+  // keeps older callers (training fixtures) compiling without edits.
+  const computed = homePos ?? computeTeamCentroids(unitMap);
   return {
     tick: 0,
     rngSnapshot: rng.snapshot(),
@@ -616,5 +674,31 @@ export function makeInitialState(
     nextWoundId: 1,
     objectives,
     ended: false,
+    team0HomePos: computed.team0,
+    team1HomePos: computed.team1,
+  };
+}
+
+function computeTeamCentroids(unitMap: ReadonlyMap<UnitId, Unit>): { team0: Vec2; team1: Vec2 } {
+  let t0x = 0;
+  let t0y = 0;
+  let t0n = 0;
+  let t1x = 0;
+  let t1y = 0;
+  let t1n = 0;
+  for (const u of unitMap.values()) {
+    if (u.teamId === 0) {
+      t0x += u.position.x;
+      t0y += u.position.y;
+      t0n++;
+    } else if (u.teamId === 1) {
+      t1x += u.position.x;
+      t1y += u.position.y;
+      t1n++;
+    }
+  }
+  return {
+    team0: t0n > 0 ? { x: t0x / t0n, y: t0y / t0n } : { x: 0, y: 0 },
+    team1: t1n > 0 ? { x: t1x / t1n, y: t1y / t1n } : { x: 0, y: 0 },
   };
 }

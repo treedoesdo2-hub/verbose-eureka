@@ -1,6 +1,11 @@
 import { asUnitId, type UnitId } from '@shared/ids';
 import { describe, expect, it } from 'vitest';
-import { evaluateObjectives, focalPoint, regeneratePlayerWaypoints } from './objectives';
+import {
+  evaluateObjectives,
+  focalPoint,
+  regenerateEnemyWaypoints,
+  regeneratePlayerWaypoints,
+} from './objectives';
 import type { ObjectiveRuntimeState } from './state';
 import { makeUnit, type Unit } from './unit';
 
@@ -26,33 +31,6 @@ function mkUnitMap(units: Unit[]): ReadonlyMap<UnitId, Unit> {
   for (const u of units) m.set(u.id, u);
   return m;
 }
-
-const eliminateObj: ObjectiveRuntimeState = {
-  id: 'o1',
-  kind: 'eliminate',
-  description: 'kill all',
-  params: { kind: 'eliminate', targetTeamId: 1 },
-  status: 'active',
-  progressTicks: 0,
-};
-
-describe('evaluateObjectives — eliminate', () => {
-  it('stays active while any enemy can fight', () => {
-    const units = mkUnitMap([mkUnit({ id: 1, teamId: 0 }), mkUnit({ id: 2, teamId: 1 })]);
-    const { objectives, events } = evaluateObjectives([eliminateObj], units, 1, 0);
-    expect(objectives[0].status).toBe('active');
-    expect(events).toHaveLength(0);
-  });
-
-  it('flips to complete when all enemies are down', () => {
-    const down = mkUnit({ id: 2, teamId: 1, extra: { action: { kind: 'dead' } } });
-    const units = mkUnitMap([mkUnit({ id: 1, teamId: 0 }), down]);
-    const { objectives, events } = evaluateObjectives([eliminateObj], units, 1, 7);
-    expect(objectives[0].status).toBe('complete');
-    expect(events).toHaveLength(1);
-    expect(events[0].kind).toBe('objective-status-changed');
-  });
-});
 
 describe('evaluateObjectives — extract', () => {
   const obj: ObjectiveRuntimeState = {
@@ -143,12 +121,6 @@ describe('evaluateObjectives — secure', () => {
 });
 
 describe('regeneratePlayerWaypoints', () => {
-  it('returns empty map for eliminate objectives (no focal point)', () => {
-    const units = mkUnitMap([mkUnit({ id: 1, teamId: 0 })]);
-    const out = regeneratePlayerWaypoints(units, [eliminateObj], 1);
-    expect(out.size).toBe(0);
-  });
-
   it('pushes a focal waypoint for team-0 units with empty waypoints', () => {
     const extractObj: ObjectiveRuntimeState = {
       id: 'x',
@@ -189,7 +161,50 @@ describe('regeneratePlayerWaypoints', () => {
 });
 
 describe('focalPoint', () => {
-  it('is null for eliminate', () => {
-    expect(focalPoint(eliminateObj, 1)).toBeNull();
+  it('returns the zone center for any zoned objective', () => {
+    const obj: ObjectiveRuntimeState = {
+      id: 'e',
+      kind: 'extract',
+      description: 'e',
+      params: { kind: 'extract', zone: { x: 10, y: 20, w: 4, h: 4 }, minUnitsInside: 1 },
+      status: 'active',
+      progressTicks: 0,
+    };
+    const p = focalPoint(obj, 1);
+    expect(p.x).toBeCloseTo(12);
+    expect(p.y).toBeCloseTo(22);
+  });
+});
+
+describe('regenerateEnemyWaypoints', () => {
+  it('pushes the objective zone as an attacker waypoint for team 1', () => {
+    const obj: ObjectiveRuntimeState = {
+      id: 'x',
+      kind: 'secure',
+      description: 'hold',
+      params: { kind: 'secure', zone: { x: 10, y: 10, w: 4, h: 4 }, holdTicks: 300 },
+      status: 'active',
+      progressTicks: 0,
+    };
+    const units = mkUnitMap([mkUnit({ id: 2, teamId: 1, x: 100, y: 100 })]);
+    const out = regenerateEnemyWaypoints(units, [obj], 1, { x: 0, y: 0 });
+    expect(out.size).toBe(1);
+    const wps = out.get(asUnitId(2));
+    expect(wps?.[0].x).toBeCloseTo(12);
+    expect(wps?.[0].y).toBeCloseTo(12);
+  });
+
+  it('skips team-0 units', () => {
+    const obj: ObjectiveRuntimeState = {
+      id: 'x',
+      kind: 'secure',
+      description: 'hold',
+      params: { kind: 'secure', zone: { x: 10, y: 10, w: 4, h: 4 }, holdTicks: 300 },
+      status: 'active',
+      progressTicks: 0,
+    };
+    const units = mkUnitMap([mkUnit({ id: 1, teamId: 0, x: 0, y: 0 })]);
+    const out = regenerateEnemyWaypoints(units, [obj], 1, { x: 0, y: 0 });
+    expect(out.size).toBe(0);
   });
 });

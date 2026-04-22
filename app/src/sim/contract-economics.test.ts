@@ -29,7 +29,7 @@ function contract(overrides: Partial<Contract> = {}): Contract {
       sizeHint: 'medium',
     },
     briefing: 'b',
-    objectives: [{ id: 'obj', kind: 'eliminate', description: 'go' }],
+    objectives: [{ id: 'obj', kind: 'secure', description: 'go' }],
     enemies: { factionId: 'f', archetypes: [{ archetype: 'a', count: 1 }] },
     minOperators: 1,
     maxOperators: 4,

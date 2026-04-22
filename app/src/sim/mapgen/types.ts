@@ -22,7 +22,7 @@ export type DeployZone = {
 };
 
 export type ObjectiveAnchor = {
-  readonly kindHint: 'eliminate' | 'extract' | 'defend' | 'secure';
+  readonly kindHint: 'extract' | 'defend' | 'secure';
   readonly rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
   readonly qualityScore: number;
 };

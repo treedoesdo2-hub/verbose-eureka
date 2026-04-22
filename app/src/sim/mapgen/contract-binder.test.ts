@@ -25,7 +25,7 @@ function makeContract(overrides: Partial<Contract> = {}): Contract {
       sizeHint: 'medium',
     },
     briefing: 'b',
-    objectives: [{ id: 'o-1', kind: 'eliminate', description: 'k' }],
+    objectives: [{ id: 'o-1', kind: 'secure', description: 'k' }],
     enemies: { factionId: 'f', archetypes: [{ archetype: 'a', count: 1 }] },
     minOperators: 1,
     maxOperators: 4,
@@ -56,9 +56,9 @@ describe('contract binder', () => {
     expect(req.biome).toBe('rural_open');
   });
 
-  it('falls back to urban_sparse for eliminate-only contracts', () => {
+  it('falls back to urban_sparse for secure-only contracts', () => {
     const c = makeContract({
-      objectives: [{ id: 'o-1', kind: 'eliminate', description: 'kill' }],
+      objectives: [{ id: 'o-1', kind: 'secure', description: 'hold' }],
     });
     const req = mapGenRequestFromContract(c, 1.5, 1);
     expect(req.biome).toBe('urban_sparse');
@@ -67,17 +67,17 @@ describe('contract binder', () => {
   it('binds each objective to the best-matching anchor by kind', () => {
     const c = makeContract({
       objectives: [
-        { id: 'elim', kind: 'eliminate', description: 'e' },
+        { id: 'sec', kind: 'secure', description: 'hold' },
         { id: 'ext', kind: 'extract', description: 'x' },
       ],
     });
     const anchors: ObjectiveAnchor[] = [
-      { kindHint: 'eliminate', rect: { x: 0, y: 0, w: 10, h: 10 }, qualityScore: 0.9 },
-      { kindHint: 'extract', rect: { x: 50, y: 50, w: 5, h: 5 }, qualityScore: 0.8 },
       { kindHint: 'secure', rect: { x: 20, y: 20, w: 4, h: 4 }, qualityScore: 1.0 },
+      { kindHint: 'extract', rect: { x: 50, y: 50, w: 5, h: 5 }, qualityScore: 0.8 },
+      { kindHint: 'defend', rect: { x: 0, y: 0, w: 10, h: 10 }, qualityScore: 0.9 },
     ];
     const bound = bindObjectivesToAnchors(c, anchors);
-    expect(bound.get('elim')).toEqual({ x: 0, y: 0, w: 10, h: 10 });
+    expect(bound.get('sec')).toEqual({ x: 20, y: 20, w: 4, h: 4 });
     expect(bound.get('ext')).toEqual({ x: 50, y: 50, w: 5, h: 5 });
   });
 

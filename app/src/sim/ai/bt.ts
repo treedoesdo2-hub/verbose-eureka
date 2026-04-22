@@ -276,6 +276,23 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
     };
   }
 
+  // Terminal fallback: no target, no waypoint, no heard noise, no last-seen.
+  // Before this existed, units spawned on a procedural map with empty
+  // waypoint lists and never moved. Advance toward the opposing team's
+  // home centroid so the simulation always has momentum. Stops ~8m short
+  // to avoid colliding stacks at the opposing spawn.
+  const enemyHome = unit.teamId === 0 ? state.team1HomePos : state.team0HomePos;
+  const dHome = distance(unit.position.x, unit.position.y, enemyHome.x, enemyHome.y);
+  if (dHome > 8) {
+    return {
+      aiState: 'advance',
+      action: { kind: 'moving', target: enemyHome },
+      currentTarget: null,
+      alerted,
+      advanceWaypoint: false,
+    };
+  }
+
   return {
     aiState: 'hold',
     action: { kind: 'idle' },

@@ -71,10 +71,9 @@ describe('mapgen pipeline', () => {
     }
   });
 
-  it('emits objective anchors covering eliminate, extract, defend, secure', () => {
+  it('emits objective anchors covering extract, defend, secure', () => {
     const r = runPipeline(req());
     const hints = new Set(r.objectiveAnchors.map((a) => a.kindHint));
-    expect(hints.has('eliminate')).toBe(true);
     expect(hints.has('extract')).toBe(true);
     expect(hints.has('defend')).toBe(true);
     expect(hints.has('secure')).toBe(true);

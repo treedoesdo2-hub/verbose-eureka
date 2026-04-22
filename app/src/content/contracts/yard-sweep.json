@@ -22,12 +22,16 @@
     "extractionSeats": 6,
     "requiredRoleTags": []
   },
-  "briefing": "Blackstar has been staging raids out of an abandoned training yard. Go clean it out. Light opposition expected — four runners, maybe a gunner.",
+  "briefing": "Blackstar has been staging raids out of an abandoned training yard. The central admin building is the staging hub — secure it, hold for 20 seconds, and call the cleanup crew. Light opposition expected — four runners, maybe a gunner.",
   "objectives": [
     {
-      "id": "obj-eliminate",
-      "kind": "eliminate",
-      "description": "Eliminate all Blackstar operatives on the training yard"
+      "id": "obj-secure-admin",
+      "kind": "secure",
+      "description": "Secure the admin building at the center of the yard (hold 20s)",
+      "params": {
+        "zone": { "x": 20, "y": 20, "w": 6, "h": 6 },
+        "holdTicks": 600
+      }
     }
   ],
   "enemies": {
