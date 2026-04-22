@@ -115,6 +115,70 @@ describe('pathfinding — hasLineOfWalk', () => {
   });
 });
 
+// COA-8 task #32 — slope cost + cliff guard regression. A*'s step cost
+// ramps with elevation delta (SLOPE_COST_PER_STEP = 0.5) and a single-step
+// delta > MAX_STEP_ELEV_DELTA = 2 cannot be crossed at all.
+
+describe('pathfinding — slope cost + cliff guard', () => {
+  it('routes around a cliff wall (delta > 2) rather than climbing over', () => {
+    const world = makeWorld(20, 10, 1);
+    // Vertical cliff at x=10 from y=0..y=7: elevationStep=7 (high plateau).
+    // Leaves a 2-row corridor y=8..9 at ground level (step=0) for a route.
+    for (let y = 0; y <= 7; y++) {
+      world.elevationStep[y * world.width + 10] = 7;
+    }
+    const path = findPathTiles(world, 5, 4, 15, 4, { partial: false });
+    expect(path.length).toBeGreaterThan(0);
+    // Path must route south through the open corridor (y >= 8) since
+    // climbing the cliff would violate MAX_STEP_ELEV_DELTA = 2.
+    const routedSouth = path.some((p) => Math.floor(p.y) >= 8);
+    expect(routedSouth).toBe(true);
+  });
+
+  it('traverses a symmetric ramp (0→5→0, delta=1 per step) without blocking', () => {
+    const world = makeWorld(24, 10, 1);
+    // Ramp up then down across x=8..19: steps 0,1,2,3,4,5,5,4,3,2,1,0.
+    const ramp = [1, 2, 3, 4, 5, 5, 4, 3, 2, 1];
+    for (let i = 0; i < ramp.length; i++) {
+      for (let y = 0; y < 10; y++) {
+        world.elevationStep[y * world.width + (8 + i)] = ramp[i];
+      }
+    }
+    const path = findPathTiles(world, 2, 5, 22, 5, { partial: false });
+    expect(path.length).toBeGreaterThan(0);
+  });
+
+  it('cannot cross a 3-step cliff edge in a single move', () => {
+    const world = makeWorld(10, 10, 1);
+    // Half the map at step=0, half at step=3 (4.5m drop). Only way across
+    // is via a tile with intermediate elevation — not provided here.
+    for (let y = 0; y < 10; y++) {
+      for (let x = 5; x < 10; x++) {
+        world.elevationStep[y * world.width + x] = 3;
+      }
+    }
+    const path = findPathTiles(world, 2, 5, 8, 5, { partial: false });
+    // With a hard 3-step delta and no ramp, path should fail (empty under
+    // partial:false).
+    expect(path.length).toBe(0);
+  });
+
+  it('partial=true returns best-effort prefix when blocked by cliffs', () => {
+    const world = makeWorld(10, 10, 1);
+    for (let y = 0; y < 10; y++) {
+      for (let x = 5; x < 10; x++) {
+        world.elevationStep[y * world.width + x] = 3;
+      }
+    }
+    const path = findPathTiles(world, 2, 5, 8, 5, { partial: true });
+    expect(path.length).toBeGreaterThan(0);
+    // Must not cross into the high plateau.
+    const lastInMeters = path[path.length - 1];
+    const lastTileX = Math.floor(lastInMeters.x / world.tileSizeMeters);
+    expect(lastTileX).toBeLessThan(5);
+  });
+});
+
 describe('pathfinding — generated-map integration', () => {
   it('produces a routed multi-waypoint path on a generated urban map', () => {
     const result = runPipeline({

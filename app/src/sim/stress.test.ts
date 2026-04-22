@@ -259,3 +259,76 @@ describe('MORALE_ALLY_DOWN_LOSS constant is referenced', () => {
     expect(MORALE_ALLY_DOWN_LOSS).toBeLessThan(MORALE_ALLY_DIED_LOSS);
   });
 });
+
+// COA-8 task #34 — LOS raycast stress benchmark. Generates a populated
+// 64x64 world and fires N rays across it to ensure the stance-aware
+// 3D interpolation + smoke + structureHeight lookups stay under a
+// generous per-ray budget. This is a regression guard, not a hard
+// perf target — we want to catch a 10× slowdown if any hot path is
+// accidentally inner-loop-allocating.
+
+import { castRay, castRayStance, type SmokeVolume } from './los';
+import { setBarrier, setPoint } from './world';
+
+describe('LOS raycast stress', () => {
+  it('2000 rays across a dense 64x64 world complete under 250ms', () => {
+    const w = makeWorld(64, 64, 1);
+    // Populate with ~10% coverage of point objects + a wall network.
+    const denseSeed = 42;
+    let seed = denseSeed;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x80000000;
+    };
+    for (let i = 0; i < 400; i++) {
+      const x = Math.floor(rand() * 64);
+      const y = Math.floor(rand() * 64);
+      const kinds = ['tree_forest', 'bush_medium', 'storage_tank', 'barrel'] as const;
+      setPoint(w, x, y, kinds[Math.floor(rand() * kinds.length)]);
+    }
+    for (let i = 0; i < 80; i++) {
+      const x = Math.floor(rand() * 64);
+      const y = Math.floor(rand() * 64);
+      setBarrier(w, x, y, rand() < 0.5 ? 'N' : 'W', 'stone_wall_low');
+    }
+    // Elevation noise
+    for (let i = 0; i < 300; i++) {
+      const x = Math.floor(rand() * 64);
+      const y = Math.floor(rand() * 64);
+      w.elevationStep[y * 64 + x] = Math.floor(rand() * 6);
+    }
+    const smoke: SmokeVolume[] = [
+      { x: 32, y: 32, radius: 4, opacityTop: 2, opacityPerMeter: 0.1 },
+    ];
+
+    const t0 = performance.now();
+    let hits = 0;
+    for (let i = 0; i < 2000; i++) {
+      const fx = rand() * 60 + 2;
+      const fy = rand() * 60 + 2;
+      const tx = rand() * 60 + 2;
+      const ty = rand() * 60 + 2;
+      const eyeA = rand() < 0.5 ? 1.7 : 0.3;
+      const eyeB = rand() < 0.5 ? 1.7 : 0.3;
+      const r = castRay(w, { x: fx, y: fy }, eyeA, { x: tx, y: ty }, eyeB, { smoke });
+      if (r === 'visible') hits++;
+    }
+    const elapsed = performance.now() - t0;
+    expect(elapsed).toBeLessThan(250);
+    // Sanity: at least one ray should succeed (not all blocked by dense scatter).
+    expect(hits).toBeGreaterThan(0);
+  });
+
+  it('castRayStance against the same world completes under the same budget', () => {
+    const w = makeWorld(64, 64, 1);
+    for (let i = 0; i < 50; i++) {
+      setPoint(w, 10 + i, 30, 'tree_forest');
+    }
+    const t0 = performance.now();
+    for (let i = 0; i < 1000; i++) {
+      castRayStance(w, { x: 5, y: 5 }, 'standing', { x: 60, y: 60 }, 'prone');
+    }
+    const elapsed = performance.now() - t0;
+    expect(elapsed).toBeLessThan(200);
+  });
+});
