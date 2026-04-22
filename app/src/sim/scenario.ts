@@ -10,7 +10,7 @@ import type { MapGenRequest, MapGenResult } from './mapgen/types';
 import { makeSquadRuntime, pickLeader, type SquadRuntimeState } from './squad';
 import type { ObjectiveRect, ObjectiveRuntimeState, SimState } from './state';
 import { makeInitialState } from './tick';
-import type { Unit, UnitStats, Vec2 } from './unit';
+import type { Unit, UnitRole, UnitStats, Vec2 } from './unit';
 import { DEFAULT_STATS, makeUnit } from './unit';
 import { makeWorld, makeWorldFromBuffers, setTerrain, type World } from './world';
 
@@ -127,7 +127,7 @@ function statsForTier(tier: 'green' | 'regular' | 'veteran'): UnitStats {
 function roleFromTemplate(
   templateId: string | undefined,
   templates: ReadonlyMap<string, LoadoutTemplate>,
-): string {
+): UnitRole {
   if (!templateId) return 'rifleman';
   const t = templates.get(templateId);
   if (!t) return 'rifleman';
@@ -231,6 +231,7 @@ export function buildScenario(input: BuildScenarioInput): SimState {
         stats: deploy.stats,
         waypoints,
         squadId: deploy.squadId ?? null,
+        role,
       }),
     );
     if (deploy.squadId) {
@@ -255,7 +256,7 @@ export function buildScenario(input: BuildScenarioInput): SimState {
     const loadout = loadoutFromTemplate(template, input.content);
     const combat = deriveCombatProfile(loadout, input.content);
     const stats = statsForTier(factionMember.tier);
-    const role = template.role === 'sidearm-only' ? 'rifleman' : template.role;
+    const role: UnitRole = template.role === 'sidearm-only' ? 'rifleman' : template.role;
 
     for (let i = 0; i < archetype.count; i++) {
       if (enemyIndex >= input.map.enemySpawns.length) break;
@@ -280,6 +281,7 @@ export function buildScenario(input: BuildScenarioInput): SimState {
           stats,
           waypoints,
           squadId,
+          role,
         }),
       );
       const arr = enemySquadMembers.get(squadId) ?? [];

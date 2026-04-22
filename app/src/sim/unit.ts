@@ -71,6 +71,13 @@ export type UnitAction =
 
 export type AiState = 'advance' | 'hold' | 'retreat' | 'flank' | 'recover' | 'panic';
 
+// Role drives BT branching per ADR 011 Pillar B. LMG engages further and
+// fires longer suppressive bursts; medic already has its own heal branch
+// via hasMedkit + stabilizing; rifleman is the baseline; lead is currently
+// behaviorally identical to rifleman — squad-leader duty is handled via
+// SquadRuntimeState, not the unit's role field.
+export type UnitRole = 'rifleman' | 'lmg' | 'medic' | 'lead';
+
 export type Stance = 'standing' | 'crouched' | 'prone';
 
 // Stance modifiers — stance changes how easy it is to hit the unit (zone
@@ -130,6 +137,7 @@ export type Unit = {
   readonly currentTarget: UnitId | null;
   readonly waypointIndex: number;
   readonly waypoints: readonly Vec2[];
+  readonly role: UnitRole;
 };
 
 export function makeUnit(params: {
@@ -142,6 +150,7 @@ export function makeUnit(params: {
   stats?: UnitStats;
   waypoints?: readonly Vec2[];
   squadId?: string | null;
+  role?: UnitRole;
 }): Unit {
   const combat = params.combat ?? emptyCombatProfile();
   return {
@@ -169,6 +178,7 @@ export function makeUnit(params: {
     currentTarget: null,
     waypointIndex: 0,
     waypoints: params.waypoints ?? [],
+    role: params.role ?? 'rifleman',
   };
 }
 

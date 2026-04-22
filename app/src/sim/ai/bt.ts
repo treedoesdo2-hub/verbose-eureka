@@ -170,12 +170,17 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
       if (alreadyAiming && unit.action.ticksRemaining <= 0) {
         const rpm = unit.combat.primaryWeapon?.rpm ?? 300;
         const tickPer = Math.max(1, Math.round((60 / rpm) * SIM_HZ));
+        // Role-aware burst length. LMG doctrine: sustained fire to
+        // suppress, not single hits — longer bursts → more
+        // SUPPRESSION_PER_SHOT stacks on the target. Rifleman fires
+        // controlled 3-round bursts.
+        const roundsRemaining = unit.role === 'lmg' ? 8 : 3;
         return {
           aiState: 'hold',
           action: {
             kind: 'firing',
             targetId: perception.bestTarget,
-            roundsRemaining: 3,
+            roundsRemaining,
             tickPer,
             cooldown: 0,
           },
