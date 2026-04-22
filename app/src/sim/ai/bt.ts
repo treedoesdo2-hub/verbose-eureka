@@ -1,6 +1,7 @@
 import type { UnitId } from '@shared/ids';
 import { mostRecentHeard } from '../hearing';
 import { HEARD_INVESTIGATE_MIN_CONFIDENCE } from '../noise';
+import { findPathMeters, hasLineOfWalk, simplifyPath } from '../pathfinding';
 import { formationOffset, memberSlotIndex } from '../squad';
 import type { SimState } from '../state';
 import { SIM_HZ } from '../state';
@@ -282,11 +283,11 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
       if (leader && canFight(leader)) {
         const slot = memberSlotIndex(squad.memberIds, squad.leaderId, unit.id);
         const off = formationOffset(leader, unit, slot, squad.formation);
-        const followTarget: Vec2 = {
+        const anchor: Vec2 = {
           x: leader.position.x + off.x,
           y: leader.position.y + off.y,
         };
-        const d = distance(unit.position.x, unit.position.y, followTarget.x, followTarget.y);
+        const d = distance(unit.position.x, unit.position.y, anchor.x, anchor.y);
         // Tight threshold: members don't stop until they're really in
         // formation. Otherwise they drift behind the leader as the
         // leader moves.
@@ -298,6 +299,16 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
             alerted,
             advanceWaypoint: false,
           };
+        }
+        // If there's a clear walkable line from follower → anchor, steer
+        // straight (cheap path). Otherwise pathfind around whatever's
+        // blocking — buildings, rubble, impassable terrain — and steer
+        // toward the first simplified waypoint. Previously followers just
+        // bounced off walls trying to hold formation on the far side.
+        let followTarget = anchor;
+        if (!hasLineOfWalk(state.world, unit.position, anchor)) {
+          const path = simplifyPath([...findPathMeters(state.world, unit.position, anchor)]);
+          if (path.length > 0) followTarget = path[0];
         }
         return {
           aiState: 'advance',

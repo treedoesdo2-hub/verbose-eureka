@@ -231,6 +231,40 @@ export function findPathMeters(
   return tilePath;
 }
 
+// Bresenham-style walkability raycast. Returns true when every tile between
+// (and including) the two meter-space points is passable. Cheap enough to
+// use per-unit per-tick as a "do I need to pathfind?" precheck — followers
+// in open terrain skip the A* call and just steer straight at the leader.
+export function hasLineOfWalk(world: World, from: Vec2, to: Vec2): boolean {
+  const ts = world.tileSizeMeters;
+  let x0 = Math.floor(from.x / ts);
+  let y0 = Math.floor(from.y / ts);
+  const x1 = Math.floor(to.x / ts);
+  const y1 = Math.floor(to.y / ts);
+  const dx = Math.abs(x1 - x0);
+  const dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  // Cap iterations so a pathological input can't hang the tick.
+  const maxSteps = dx + dy + 1;
+  let steps = 0;
+  while (steps++ < maxSteps) {
+    if (!isPassableTile(world, x0, y0)) return false;
+    if (x0 === x1 && y0 === y1) return true;
+    const e2 = 2 * err;
+    if (e2 > -dy) {
+      err -= dy;
+      x0 += sx;
+    }
+    if (e2 < dx) {
+      err += dx;
+      y0 += sy;
+    }
+  }
+  return true;
+}
+
 // Simplify a path by removing collinear intermediate waypoints. Cuts the
 // waypoint count roughly in half for straight corridors and makes the
 // unit's movement visually smoother (fewer micro-corrections).

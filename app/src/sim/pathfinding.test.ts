@@ -8,7 +8,7 @@ import {
 } from './debug-log';
 import { bindObjectivesToAnchors, mapGenRequestFromContract } from './mapgen/contract-binder';
 import { runPipeline } from './mapgen/pipeline';
-import { findPathTiles, simplifyPath } from './pathfinding';
+import { findPathTiles, hasLineOfWalk, simplifyPath } from './pathfinding';
 import { RecordingSim } from './replay';
 import { buildGeneratedMap, buildScenario } from './scenario';
 import { makeWorld, makeWorldFromBuffers, setTerrain } from './world';
@@ -94,6 +94,24 @@ describe('pathfinding — simplifyPath', () => {
     ];
     const s = simplifyPath(path);
     expect(s.length).toBe(3);
+  });
+});
+
+describe('pathfinding — hasLineOfWalk', () => {
+  it('returns true for a clear straight shot', () => {
+    const world = makeWorld(10, 10, 1);
+    expect(hasLineOfWalk(world, { x: 1.5, y: 1.5 }, { x: 8.5, y: 1.5 })).toBe(true);
+  });
+
+  it('returns false when a building sits on the line', () => {
+    const world = makeWorld(10, 10, 1);
+    setTerrain(world, 5, 1, 'building');
+    expect(hasLineOfWalk(world, { x: 1.5, y: 1.5 }, { x: 8.5, y: 1.5 })).toBe(false);
+  });
+
+  it('returns true for same-tile endpoints', () => {
+    const world = makeWorld(10, 10, 1);
+    expect(hasLineOfWalk(world, { x: 2.2, y: 2.8 }, { x: 2.9, y: 2.1 })).toBe(true);
   });
 });
 
