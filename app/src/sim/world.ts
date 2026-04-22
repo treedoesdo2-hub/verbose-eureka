@@ -968,6 +968,40 @@ export function coverByteFromAxes(axes: CoverAxes): number {
   return losBits | (coverBits << 2) | (heightBits << 4);
 }
 
+// Dirty-bit cache invalidation (COA-2 task #15).
+//
+// Default mutation paths (setBase/setPoint/setBarrier/apply*Damage) eagerly
+// rebake the touched tile. Bulk stampers (stampBarrierLine, building walls,
+// forest scatter) can flip the dirty bit instead, defer rebakes, then
+// flushDirtyTiles at the end of the stamp pass to amortize cost.
+
+export const COVER_PROFILE_DIRTY_BIT = 1 << 7;
+
+export function coverProfileDirty(byte: number): boolean {
+  return (byte & COVER_PROFILE_DIRTY_BIT) !== 0;
+}
+
+export function markTileDirty(world: World, x: number, y: number): void {
+  if (!inBounds(world, x, y)) return;
+  const idx = tileIndex(world, x, y);
+  world.coverProfile[idx] |= COVER_PROFILE_DIRTY_BIT;
+}
+
+export function flushDirtyTiles(world: World): number {
+  const W = world.width;
+  const H = world.height;
+  let flushed = 0;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (coverProfileDirty(world.coverProfile[y * W + x])) {
+        rebakeTile(world, x, y);
+        flushed++;
+      }
+    }
+  }
+  return flushed;
+}
+
 // ---------------------------------------------------------------------------
 // Compact axis constructor — keeps the tables above readable.
 
@@ -980,4 +1014,82 @@ function axes(
   moveSpeedMult: number,
 ): CoverAxes {
   return { los, cover, move, heightProfile, heightMeters, moveSpeedMult };
+}
+
+// ---------------------------------------------------------------------------
+// RenderTile contract (COA-2 task #16).
+//
+// The renderer needs a flat read-only view of a tile that combines base +
+// point + edges + building + elevation. getRenderTile is the single entry
+// point — renderers must never read raw grids directly; any grid layout
+// change should be fully absorbed here.
+
+export type RenderTileEdge = {
+  readonly kind: LinearBarrierKind | null;
+  readonly damaged: boolean;
+  readonly doorOpen: boolean;
+  readonly windowIntact: boolean;
+  readonly windowBroken: boolean;
+};
+
+export type RenderTile = {
+  readonly x: number;
+  readonly y: number;
+  readonly base: TerrainBase;
+  readonly point: PointObjectKind | null;
+  readonly pointDamaged: boolean;
+  readonly buildingId: number;
+  readonly building: BuildingRecord | null;
+  readonly elevationStep: number;
+  readonly elevationMeters: number;
+  readonly structureHeightMeters: number;
+  readonly edgeN: RenderTileEdge;
+  readonly edgeW: RenderTileEdge;
+  readonly walkability: number; // raw Uint16 bitmask
+  readonly coverProfile: number; // raw Uint8 pre-baked byte
+  readonly strongestAxes: CoverAxes;
+};
+
+function readEdge(byte: number, overrideByte: number): RenderTileEdge {
+  const kind = barrierKindOf(byte);
+  const damaged = barrierIsDamaged(byte);
+  return {
+    kind,
+    damaged,
+    doorOpen: overrideByte === EDGE_OVERRIDE_DOOR_OPEN,
+    windowIntact: overrideByte === EDGE_OVERRIDE_WINDOW_INTACT,
+    windowBroken: overrideByte === EDGE_OVERRIDE_WINDOW_BROKEN,
+  };
+}
+
+export function getRenderTile(world: World, x: number, y: number): RenderTile | null {
+  if (!inBounds(world, x, y)) return null;
+  const idx = tileIndex(world, x, y);
+  const base = byteToBase(world.base[idx]);
+  const point = byteToPoint(world.point[idx]);
+  const pointDamaged = point ? pointStateAt(world, x, y) === 'damaged' : false;
+  const bId = world.buildingId[idx];
+  const building = bId !== 0 ? world.buildings.find((b) => b.id === bId) ?? null : null;
+  const step = world.elevationStep[idx];
+  const baseAxes = BASE_AXES[base];
+  const pAxes = pointAxesAt(world, x, y);
+  const strongest = pAxes ? stronger(baseAxes, pAxes) : baseAxes;
+
+  return {
+    x,
+    y,
+    base,
+    point,
+    pointDamaged,
+    buildingId: bId,
+    building,
+    elevationStep: step,
+    elevationMeters: elevationMeters(step),
+    structureHeightMeters: world.structureHeight[idx],
+    edgeN: readEdge(world.edgeN[idx], world.edgeOverrideN[idx]),
+    edgeW: readEdge(world.edgeW[idx], world.edgeOverrideW[idx]),
+    walkability: world.walkability[idx],
+    coverProfile: world.coverProfile[idx],
+    strongestAxes: strongest,
+  };
 }
