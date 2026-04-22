@@ -19,6 +19,8 @@ import {
   pointToByte,
   quantizeElevationNorm,
 } from '../world';
+import { DENSITY_PROFILES, generateCoverDensity } from './density-field';
+import { extractHotspots, type Hotspot } from './density-scatter';
 import { fbm2D, hashStringToSeed, makeRng, subRng } from './noise';
 import type {
   DeployZone,
@@ -292,15 +294,61 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
     },
   ];
 
-  // Placeholder coverDensity — COA-1 will populate this. Keep zeroed for now.
-  void coverDensity;
+  // COA-1 density field generation — populate coverDensity from the biome
+  // profile. Deploy zones and center objective are masked out so hotspots
+  // cannot land in spawn areas or on the objective anchor (prevents
+  // "cover cluster landed on top of team 0" regressions).
+  const densityProfile = DENSITY_PROFILES[req.biome];
+  const hotspots: Hotspot[] = [];
+  let hotspotsDropped = 0;
+  if (densityProfile) {
+    const generated = generateCoverDensity(
+      densityProfile,
+      W,
+      H,
+      elevation,
+      fertility,
+      seedBase,
+    );
+    // Mask deploy zones (and a 2-tile buffer) + the central objective.
+    maskZoneInDensity(generated, W, team0, 2);
+    maskZoneInDensity(generated, W, team1, 2);
+    maskZoneInDensity(
+      generated,
+      W,
+      {
+        x: Math.floor(W / 2) - 8,
+        y: Math.floor(H / 2) - 8,
+        w: 16,
+        h: 16,
+      },
+      1,
+    );
+    coverDensity.set(generated);
+    for (const h of extractHotspots(coverDensity, W, H)) hotspots.push(h);
+    // Drop hotspots that still land inside deploy / objective zones (shouldn't
+    // happen after masking but keeps the invariant robust under future edits).
+    const keepHotspots: Hotspot[] = [];
+    for (const h of hotspots) {
+      if (insideZone(h, team0) || insideZone(h, team1)) {
+        hotspotsDropped++;
+        continue;
+      }
+      keepHotspots.push(h);
+    }
+    hotspots.length = 0;
+    hotspots.push(...keepHotspots);
+  }
+  const clusterMembership = new Int16Array(N).fill(-1);
 
   const diagnostics: MapGenDiagnostics = {
     retryCount: 0,
-    hotspotsFound: 0,
-    hotspotsDropped: 0,
+    hotspotsFound: hotspots.length,
+    hotspotsDropped,
     carvedCells,
     prunedClusters,
+    densityScatterChildren: 0,
+    densityScatterRejected: 0,
   };
 
   const hash = hashBuffers(base, point, edgeN, edgeW, walkability);
@@ -326,6 +374,8 @@ export function runPipeline(req: MapGenRequest): MapGenResult {
     buildings,
     elevation,
     coverDensity,
+    hotspots,
+    clusterMembership,
     deployZones: { team0, team1 },
     objectiveAnchors,
     diagnostics,
@@ -618,6 +668,29 @@ function pickDeployZones(W: number, H: number): { team0: DeployZone; team1: Depl
     h: zh,
   };
   return { team0, team1 };
+}
+
+function maskZoneInDensity(
+  field: Float32Array,
+  W: number,
+  zone: DeployZone,
+  buffer: number,
+): void {
+  const x0 = Math.max(0, zone.x - buffer);
+  const y0 = Math.max(0, zone.y - buffer);
+  const x1 = Math.min(W - 1, zone.x + zone.w - 1 + buffer);
+  const y1 = zone.y + zone.h - 1 + buffer;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const i = y * W + x;
+      if (i < 0 || i >= field.length) continue;
+      field[i] = 0;
+    }
+  }
+}
+
+function insideZone(p: { x: number; y: number }, zone: DeployZone): boolean {
+  return p.x >= zone.x && p.x < zone.x + zone.w && p.y >= zone.y && p.y < zone.y + zone.h;
 }
 
 function ensureZoneWalkable(

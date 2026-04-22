@@ -73,6 +73,24 @@ export function valueNoise2D(x: number, y: number, freq: number, seed: number): 
   return a + (b - a) * ty;
 }
 
+// Gaussian 2D offset (COA-1 task #36) — Box-Muller transform producing
+// a deterministic-per-call pair of standard-normal samples scaled by
+// sigmaX/sigmaY. Used by density-field cluster scatter to jitter
+// children around a hotspot centroid with a falloff consistent with
+// the density field's RBF kernels.
+export function gaussian2D(rng: Rng, sigmaX = 1, sigmaY = sigmaX): { x: number; y: number } {
+  // Draw two uniforms in (0, 1]. Avoid u1 == 0 — log(0) = -Infinity.
+  let u1 = rng();
+  if (u1 === 0) u1 = 1 / 0x100000000; // minimum quantum of the xorshift output
+  const u2 = rng();
+  const mag = Math.sqrt(-2 * Math.log(u1));
+  const theta = 2 * Math.PI * u2;
+  return {
+    x: mag * Math.cos(theta) * sigmaX,
+    y: mag * Math.sin(theta) * sigmaY,
+  };
+}
+
 // Fractal noise (fBm) — several octaves summed with decaying amplitude.
 // Frequency is normalized against `referenceSize` so a given `baseFreq` is
 // scale-invariant: the same visual pattern at different map sizes.

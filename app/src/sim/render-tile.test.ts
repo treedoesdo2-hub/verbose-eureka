@@ -76,12 +76,12 @@ describe('getRenderTile', () => {
     // append-only by the pipeline so direct mutation here is fine for tests.
     const footprint = [{ x: 5, y: 5 }];
     (w as { -readonly [K in keyof typeof w]: (typeof w)[K] }).buildings = [
-      { id: 1, family: 'residential', floors: 2, footprintTiles: footprint, wallHpInitial: 120 },
+      { id: 1, family: 'house_red_tiles', floors: 2, footprintTiles: footprint, wallHpInitial: 120 },
     ];
     w.buildingId[5 * 8 + 5] = 1;
     const t = getRenderTile(w, 5, 5)!;
     expect(t.buildingId).toBe(1);
-    expect(t.building?.family).toBe('residential');
+    expect(t.building?.family).toBe('house_red_tiles');
     expect(t.building?.floors).toBe(2);
   });
 });

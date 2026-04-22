@@ -1,5 +1,6 @@
 import type { BiomeId, TerrainBase } from '@schema/map';
 import type { BuildingRecord } from '../world';
+import type { Hotspot } from './density-scatter';
 
 // Re-export walkability bit constants from world.ts so existing pipeline /
 // scenario callers don't need two imports. Authoritative layout lives in
@@ -57,6 +58,10 @@ export type MapGenDiagnostics = {
   readonly hotspotsDropped: number;
   readonly carvedCells: number;
   readonly prunedClusters: number;
+  // COA-1 density-driven scatter diagnostics. 0 means density scatter was
+  // not used (pre-COA-1 pipeline path).
+  readonly densityScatterChildren: number;
+  readonly densityScatterRejected: number;
 };
 
 export type MapGenResult = {
@@ -83,6 +88,11 @@ export type MapGenResult = {
   readonly elevation: Float32Array;
   // Continuous cover-density field driving cluster scatter (COA-1).
   readonly coverDensity: Float32Array;
+  // COA-1 hotspot + cluster outputs. Non-COA-1 pipelines leave these empty /
+  // null. clusterMembership is a per-tile Int16Array where -1 = not in any
+  // cluster, 0..n-1 = assigned to hotspots[i].
+  readonly hotspots: readonly Hotspot[];
+  readonly clusterMembership: Int16Array;
   readonly deployZones: { readonly team0: DeployZone; readonly team1: DeployZone };
   readonly objectiveAnchors: readonly ObjectiveAnchor[];
   readonly diagnostics: MapGenDiagnostics;

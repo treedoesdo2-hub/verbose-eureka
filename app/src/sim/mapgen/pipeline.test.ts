@@ -99,6 +99,79 @@ describe('mapgen pipeline', () => {
     expect(elapsed).toBeLessThan(10000);
   });
 
+  // COA-1 task #48 — density-driven scatter assertions.
+
+  it('populates coverDensity with values in [0, 1]', () => {
+    const r = runPipeline(req());
+    expect(r.coverDensity.length).toBe(r.width * r.height);
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < r.coverDensity.length; i++) {
+      const v = r.coverDensity[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    expect(min).toBeGreaterThanOrEqual(0);
+    expect(max).toBeLessThanOrEqual(1);
+  });
+
+  it('emits at least one hotspot on a mixed 128x128 map', () => {
+    const r = runPipeline(req({ seed: 'hotspot-seed', size: 128 }));
+    expect(r.hotspots.length).toBeGreaterThan(0);
+    expect(r.diagnostics.hotspotsFound).toBe(r.hotspots.length);
+  });
+
+  it('hotspots never land inside deploy zones', () => {
+    const r = runPipeline(req({ seed: 'nomask-seed', size: 128 }));
+    for (const h of r.hotspots) {
+      const inT0 =
+        h.x >= r.deployZones.team0.x &&
+        h.x < r.deployZones.team0.x + r.deployZones.team0.w &&
+        h.y >= r.deployZones.team0.y &&
+        h.y < r.deployZones.team0.y + r.deployZones.team0.h;
+      const inT1 =
+        h.x >= r.deployZones.team1.x &&
+        h.x < r.deployZones.team1.x + r.deployZones.team1.w &&
+        h.y >= r.deployZones.team1.y &&
+        h.y < r.deployZones.team1.y + r.deployZones.team1.h;
+      expect(inT0).toBe(false);
+      expect(inT1).toBe(false);
+    }
+  });
+
+  it('coverDensity is zeroed inside deploy zones (masked before extraction)', () => {
+    const r = runPipeline(req({ seed: 'mask-seed', size: 128 }));
+    for (const zone of [r.deployZones.team0, r.deployZones.team1]) {
+      for (let yy = zone.y; yy < zone.y + zone.h; yy++) {
+        for (let xx = zone.x; xx < zone.x + zone.w; xx++) {
+          expect(r.coverDensity[yy * r.width + xx]).toBe(0);
+        }
+      }
+    }
+  });
+
+  it('clusterMembership allocated and defaults to -1 (unassigned)', () => {
+    const r = runPipeline(req());
+    expect(r.clusterMembership.length).toBe(r.width * r.height);
+    // At this phase of COA-1 no children are assigned yet — all -1.
+    for (let i = 0; i < r.clusterMembership.length; i++) {
+      expect(r.clusterMembership[i]).toBe(-1);
+    }
+  });
+
+  it('urban_sparse biome produces different hotspot set than rural_open for the same seed', () => {
+    const a = runPipeline(req({ seed: 'biome-sep', biome: 'urban_sparse', size: 128 }));
+    const b = runPipeline(req({ seed: 'biome-sep', biome: 'rural_open', size: 128 }));
+    // Hotspot counts will diverge; even if counts match, positions won't.
+    const toKey = (h: { x: number; y: number }) => `${h.x},${h.y}`;
+    const aSet = new Set(a.hotspots.map(toKey));
+    const bSet = new Set(b.hotspots.map(toKey));
+    let overlap = 0;
+    for (const k of aSet) if (bSet.has(k)) overlap++;
+    // Large overlap would imply biome-agnostic hotspot extraction — bug.
+    expect(overlap).toBeLessThan(Math.max(aSet.size, bSet.size));
+  });
+
   it('guarantees reachability between team0 and team1 deploy zones for 20 seeds', () => {
     const seeds = Array.from({ length: 20 }, (_, i) => `reach-seed-${i}`);
     const biomes: Array<'urban_sparse' | 'rural_open' | 'mixed'> = [
