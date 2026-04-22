@@ -241,6 +241,7 @@ function processFiring(
       zone: outcome.zone,
       woundId: outcome.wound.id,
       reason: null,
+      woundType: outcome.wound.type,
       tick,
     });
   } else if (outcome.kind === 'block') {
@@ -252,6 +253,7 @@ function processFiring(
       zone: outcome.zone,
       woundId: null,
       reason: null,
+      woundType: null,
       tick,
     });
   } else {
@@ -263,6 +265,7 @@ function processFiring(
       zone: null,
       woundId: null,
       reason: outcome.reason,
+      woundType: null,
       tick,
     });
   }

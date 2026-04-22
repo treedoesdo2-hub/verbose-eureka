@@ -2,6 +2,7 @@ import 'pixi.js/unsafe-eval';
 import type { SimSnapshot, SnapshotUnit, WorldSnapshot } from '@shared/snapshot';
 import { Application, Container, Graphics } from 'pixi.js';
 import { useEffect, useRef } from 'react';
+import { AtmosphereState } from './atmosphere-state';
 import { FxEmitter } from './fx-emitter';
 import { stanceFootprint } from './fx-math';
 import { DOWNED_BODY, DOWNED_OUTLINE, SUPPRESSION_HALO, SUPPRESSION_PULSE } from './fx-palette';
@@ -34,6 +35,7 @@ type Scene = {
   unitsLayer: Container;
   fxLayer: Container;
   fx: FxEmitter;
+  atmosphere: AtmosphereState;
 };
 
 export function CombatView({ world, snapshot }: Props): React.JSX.Element {
@@ -81,7 +83,8 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
         worldLayer.addChild(fxLayer);
         app.stage.addChild(worldLayer);
 
-        const fx = new FxEmitter(fxLayer, app.ticker, decalLayer);
+        const atmosphere = new AtmosphereState(world.width, world.height, world.tileSizeMeters);
+        const fx = new FxEmitter(fxLayer, app.ticker, decalLayer, atmosphere, world);
 
         sceneRef.current = {
           app,
@@ -92,6 +95,7 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
           unitsLayer,
           fxLayer,
           fx,
+          atmosphere,
         };
 
         relayout();
@@ -148,6 +152,7 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
     // dev fast-refresh or if React re-runs the effect — de-dupe by tick so we
     // don't double-ingest events.
     if (snapshot.tick !== lastTickRef.current) {
+      scene.atmosphere.decay(now);
       scene.fx.ingestEvents(snapshot.events, byId);
       lastTickRef.current = snapshot.tick;
     }

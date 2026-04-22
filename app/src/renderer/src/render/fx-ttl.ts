@@ -10,7 +10,13 @@ export type FxKind =
   | 'block-spark'
   | 'block-ring'
   | 'miss-dust'
-  | 'miss-debris';
+  | 'miss-debris'
+  | 'explosion-core'
+  | 'explosion-ring'
+  | 'explosion-shock'
+  | 'explosion-debris'
+  | 'smoke-puff'
+  | 'dust-puff';
 
 export const ALL_FX_KINDS: readonly FxKind[] = [
   'tracer',
@@ -25,6 +31,12 @@ export const ALL_FX_KINDS: readonly FxKind[] = [
   'block-ring',
   'miss-dust',
   'miss-debris',
+  'explosion-core',
+  'explosion-ring',
+  'explosion-shock',
+  'explosion-debris',
+  'smoke-puff',
+  'dust-puff',
 ];
 
 export const TTL_MS: Record<FxKind, number> = {
@@ -40,4 +52,10 @@ export const TTL_MS: Record<FxKind, number> = {
   'block-ring': 180,
   'miss-dust': 260,
   'miss-debris': 200,
+  'explosion-core': 120,
+  'explosion-ring': 220,
+  'explosion-shock': 300,
+  'explosion-debris': 450,
+  'smoke-puff': 2800,
+  'dust-puff': 500,
 };

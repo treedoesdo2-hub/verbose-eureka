@@ -2,7 +2,7 @@ import type { BodyZone } from '@schema/common';
 import type { UnitId } from '@shared/ids';
 import type { NoiseKind } from './noise';
 import type { RngSnapshot } from './rng';
-import type { Unit, Vec2 } from './unit';
+import type { Unit, Vec2, WoundType } from './unit';
 import type { World } from './world';
 
 export const SIM_HZ = 30;
@@ -25,6 +25,7 @@ export type SimEvent =
       zone: BodyZone | null;
       woundId: number | null;
       reason: ShotMissReason | null;
+      woundType: WoundType | null;
       tick: number;
     }
   | { kind: 'unit-downed'; unitId: UnitId; cause: DownedCause; tick: number }

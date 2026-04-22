@@ -5,6 +5,7 @@ export type SnapshotAiState = 'advance' | 'hold' | 'retreat' | 'flank' | 'recove
 export type SnapshotShotOutcome = 'wound' | 'block' | 'miss';
 export type SnapshotMissReason = 'accuracy' | 'cover' | 'range';
 export type SnapshotDownedCause = 'bleedout' | 'combat';
+export type SnapshotWoundType = 'gunshot' | 'fragmentation' | 'blunt' | 'burn' | 'cut';
 export type SnapshotNoiseKind =
   | 'weapon-fire'
   | 'explosion'
@@ -59,6 +60,7 @@ export type SnapshotEvent =
       zone: BodyZone | null;
       woundId: number | null;
       reason: SnapshotMissReason | null;
+      woundType: SnapshotWoundType | null;
       tick: number;
     }
   | { kind: 'unit-downed'; unitId: number; cause: SnapshotDownedCause; tick: number }

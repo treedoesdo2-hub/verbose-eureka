@@ -61,6 +61,7 @@ describe('formatEvent', () => {
       zone: null,
       woundId: null,
       reason: 'cover',
+      woundType: null,
       tick: 6,
     };
     const block: SnapshotEvent = {
@@ -71,6 +72,7 @@ describe('formatEvent', () => {
       zone: 'torso_front',
       woundId: null,
       reason: null,
+      woundType: null,
       tick: 7,
     };
     expect(formatEvent(miss, unitsById, ops)).toBeNull();
@@ -86,6 +88,7 @@ describe('formatEvent', () => {
       zone: 'torso_front',
       woundId: 10,
       reason: null,
+      woundType: 'gunshot',
       tick: 8,
     };
     const entry = formatEvent(ev, unitsById, ops);

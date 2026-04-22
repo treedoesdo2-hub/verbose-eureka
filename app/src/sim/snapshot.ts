@@ -72,6 +72,7 @@ export function snapshotState(state: SimState): SimSnapshot {
         zone: e.zone,
         woundId: e.woundId,
         reason: e.reason,
+        woundType: e.woundType,
         tick: e.tick,
       });
     } else if (e.kind === 'unit-downed') {

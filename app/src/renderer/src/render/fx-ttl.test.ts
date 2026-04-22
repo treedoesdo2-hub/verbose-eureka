@@ -22,4 +22,12 @@ describe('fx TTL table', () => {
   it('lingers wound spray longer than the tracer', () => {
     expect(TTL_MS['wound-spray']).toBeGreaterThan(TTL_MS.tracer);
   });
+
+  it('explosion shock outlasts explosion core', () => {
+    expect(TTL_MS['explosion-shock']).toBeGreaterThan(TTL_MS['explosion-core']);
+  });
+
+  it('smoke puff lingers longer than muzzle smoke', () => {
+    expect(TTL_MS['smoke-puff']).toBeGreaterThan(TTL_MS['muzzle-smoke']);
+  });
 });

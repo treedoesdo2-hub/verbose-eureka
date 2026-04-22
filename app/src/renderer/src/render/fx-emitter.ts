@@ -1,5 +1,11 @@
-import type { SnapshotDownedCause, SnapshotEvent, SnapshotUnit } from '@shared/snapshot';
+import type {
+  SnapshotDownedCause,
+  SnapshotEvent,
+  SnapshotUnit,
+  WorldSnapshot,
+} from '@shared/snapshot';
 import { type Container, Graphics, type Ticker } from 'pixi.js';
+import type { AtmosphereState, BuildingDamage } from './atmosphere-state';
 import {
   direction,
   jitter,
@@ -10,10 +16,21 @@ import {
 } from './fx-math';
 import {
   BLOOD_POOL,
+  BUILDING_CRACK,
+  CRATER_FLOOR,
+  CRATER_RIM,
+  CRATER_SCORCH,
+  EXPLOSION_CORE,
+  EXPLOSION_DARK,
+  EXPLOSION_MID,
+  EXPLOSION_SHOCK,
   MUZZLE_BLOOM,
   MUZZLE_CORE,
   MUZZLE_SMOKE,
   POOL_BLOOD,
+  RUBBLE_TINT,
+  SMOKE_PUFF,
+  SMOKE_PUFF_LIGHT,
   SPARK_COOL,
   SPARK_CORE,
   SPARK_HOT,
@@ -37,16 +54,28 @@ type FxSeed = { tick: number; a: number; b: number };
 export class FxEmitter {
   private readonly layer: Container;
   private readonly decalLayer: Container | null;
+  private readonly atmosphere: AtmosphereState | null;
+  private readonly world: WorldSnapshot | null;
   private readonly ticker: Ticker;
   private readonly entries: FxEntry[] = [];
   private readonly decals: Graphics[] = [];
+  private readonly paintedBuildingTiles = new Map<number, number>();
+  private readonly paintedRubbleTiles = new Set<number>();
   private elapsedMs = 0;
   private readonly onTick: (t: Ticker) => void;
   private disposed = false;
 
-  constructor(layer: Container, ticker: Ticker, decalLayer: Container | null = null) {
+  constructor(
+    layer: Container,
+    ticker: Ticker,
+    decalLayer: Container | null = null,
+    atmosphere: AtmosphereState | null = null,
+    world: WorldSnapshot | null = null,
+  ) {
     this.layer = layer;
     this.decalLayer = decalLayer;
+    this.atmosphere = atmosphere;
+    this.world = world;
     this.ticker = ticker;
     this.onTick = (t: Ticker) => {
       this.elapsedMs += t.deltaMS;
@@ -242,6 +271,137 @@ export class FxEmitter {
     this.push('miss-debris', debris, 'easeOut');
   }
 
+  spawnExplosion(at: { x: number; y: number }, seed: FxSeed): void {
+    if (this.disposed) return;
+    // Core flash.
+    const core = new Graphics();
+    core.circle(at.x, at.y, 1.4);
+    core.fill({ color: EXPLOSION_CORE, alpha: 0.95 });
+    this.push('explosion-core', core, 'easeOut');
+
+    // Mid star.
+    const mid = new Graphics();
+    const points = 6;
+    for (let i = 0; i < points; i++) {
+      const a = (i / points) * Math.PI * 2;
+      const jr = 1 + jitter(seed, i) * 0.4;
+      if (i === 0) mid.moveTo(at.x + Math.cos(a) * jr, at.y + Math.sin(a) * jr);
+      else mid.lineTo(at.x + Math.cos(a) * jr, at.y + Math.sin(a) * jr);
+    }
+    mid.closePath();
+    mid.fill({ color: EXPLOSION_MID, alpha: 0.85 });
+    this.push('explosion-ring', mid, 'easeOut');
+
+    // Shock ring.
+    const shock = new Graphics();
+    shock.circle(at.x, at.y, 2.2);
+    shock.stroke({ color: EXPLOSION_SHOCK, alpha: 0.9, width: 0.25 });
+    this.push('explosion-shock', shock, 'easeOut');
+
+    // Debris.
+    const debris = new Graphics();
+    const debrisCount = 6;
+    for (let i = 0; i < debrisCount; i++) {
+      const a = (i / debrisCount) * Math.PI * 2 + jitter(seed, i + points) * 0.3;
+      const len = 1.2 + Math.abs(jitter(seed, i + points + 1)) * 1.5;
+      debris.moveTo(at.x + Math.cos(a) * 0.4, at.y + Math.sin(a) * 0.4);
+      debris.lineTo(at.x + Math.cos(a) * len, at.y + Math.sin(a) * len);
+    }
+    debris.stroke({ color: EXPLOSION_DARK, alpha: 0.85, width: 0.12 });
+    this.push('explosion-debris', debris, 'easeOut');
+
+    // Persistent crater decal.
+    const target = this.decalLayer ?? this.layer;
+    const crater = new Graphics();
+    crater.circle(at.x, at.y, 1.8);
+    crater.fill({ color: CRATER_RIM, alpha: 0.8 });
+    crater.circle(at.x, at.y, 1.2);
+    crater.fill({ color: CRATER_FLOOR, alpha: 0.85 });
+    for (let i = 0; i < 3; i++) {
+      const j1 = jitter(seed, i * 3);
+      const j2 = jitter(seed, i * 3 + 1);
+      crater.circle(
+        at.x + j1 * 1.5,
+        at.y + j2 * 1.5,
+        0.25 + Math.abs(jitter(seed, i * 3 + 2)) * 0.2,
+      );
+      crater.fill({ color: CRATER_SCORCH, alpha: 0.7 });
+    }
+    target.addChild(crater);
+    this.decals.push(crater);
+  }
+
+  spawnSmokePuff(at: { x: number; y: number }, seed: FxSeed): void {
+    if (this.disposed) return;
+    const g = new Graphics();
+    const radii = [0.7, 1.0, 1.3];
+    for (let i = 0; i < radii.length; i++) {
+      const j1 = jitter(seed, i * 2);
+      const j2 = jitter(seed, i * 2 + 1);
+      g.circle(at.x + j1 * 0.3, at.y + j2 * 0.3, radii[i]);
+      g.fill({ color: i % 2 === 0 ? SMOKE_PUFF_LIGHT : SMOKE_PUFF, alpha: 0.5 });
+    }
+    this.push('smoke-puff', g, 'linear');
+  }
+
+  spawnDustPuff(at: { x: number; y: number }, seed: FxSeed, small = false): void {
+    if (this.disposed) return;
+    const g = new Graphics();
+    const r = small ? 0.25 : 0.4;
+    const j1 = jitter(seed, 0);
+    const j2 = jitter(seed, 1);
+    g.circle(at.x + j1 * 0.15, at.y + j2 * 0.15, r);
+    g.fill({ color: 0xb8a880, alpha: 0.5 });
+    g.circle(at.x - j1 * 0.1, at.y - j2 * 0.1, r * 0.7);
+    g.fill({ color: 0x5a4a30, alpha: 0.4 });
+    this.push('dust-puff', g, 'easeOut');
+  }
+
+  paintBuildingDamage(tileIdx: number, damage: BuildingDamage): void {
+    if (this.disposed) return;
+    const world = this.world;
+    if (!world) return;
+    const target = this.decalLayer ?? this.layer;
+    const tx = tileIdx % world.width;
+    const ty = Math.floor(tileIdx / world.width);
+    const worldX = tx * world.tileSizeMeters;
+    const worldY = ty * world.tileSizeMeters;
+    const size = world.tileSizeMeters;
+
+    const prevLevel = this.paintedBuildingTiles.get(tileIdx) ?? 0;
+    if (damage.crackLevel > prevLevel) {
+      const g = new Graphics();
+      const strokes = damage.crackLevel + 1;
+      const seed: FxSeed = { tick: tileIdx, a: damage.crackLevel, b: 0 };
+      for (let i = 0; i < strokes; i++) {
+        const j1 = jitter(seed, i * 2);
+        const j2 = jitter(seed, i * 2 + 1);
+        const sx = worldX + size * (0.2 + Math.abs(j1) * 0.6);
+        const sy = worldY + size * (0.2 + Math.abs(j2) * 0.6);
+        g.moveTo(sx, sy);
+        g.lineTo(sx + j1 * size * 0.4, sy + j2 * size * 0.4);
+      }
+      g.stroke({ color: BUILDING_CRACK, alpha: 0.7, width: 0.08 });
+      target.addChild(g);
+      this.decals.push(g);
+      this.paintedBuildingTiles.set(tileIdx, damage.crackLevel);
+    }
+    if (damage.rubbled && !this.paintedRubbleTiles.has(tileIdx)) {
+      const tint = new Graphics();
+      tint.rect(worldX, worldY, size, size);
+      tint.fill({ color: RUBBLE_TINT, alpha: 0.55 });
+      target.addChild(tint);
+      this.decals.push(tint);
+      this.paintedRubbleTiles.add(tileIdx);
+    }
+  }
+
+  countByKind(kind: FxKind): number {
+    let n = 0;
+    for (const e of this.entries) if (e.kind === kind) n++;
+    return n;
+  }
+
   spawnBloodPool(at: { x: number; y: number }, cause: SnapshotDownedCause, seed: FxSeed): void {
     if (this.disposed) return;
     const target = this.decalLayer ?? this.layer;
@@ -269,6 +429,13 @@ export class FxEmitter {
         const seed: FxSeed = { tick: e.tick, a: e.shooter, b: e.target };
         this.spawnMuzzleFlash(origin, d.angle, seed);
         this.spawnTracer(origin, { x: t.x, y: t.y }, seed);
+        const smokeSource = this.atmosphere?.recordFire(s.x, s.y, this.elapsedMs);
+        if (smokeSource) {
+          this.spawnSmokePuff(
+            { x: smokeSource.x, y: smokeSource.y },
+            { tick: e.tick, a: e.shooter, b: -1 },
+          );
+        }
       } else if (e.kind === 'unit-hit') {
         const t = byId.get(e.target);
         if (!t) continue;
@@ -280,18 +447,52 @@ export class FxEmitter {
         const seed: FxSeed = { tick: e.tick, a: e.shooter, b: e.target };
         if (e.outcome === 'wound') {
           this.spawnWoundImpact({ x: t.x, y: t.y }, dir, e.zone, seed);
+          if (e.woundType === 'fragmentation') {
+            this.spawnExplosion({ x: t.x, y: t.y }, seed);
+          }
         } else if (e.outcome === 'block') {
           this.spawnBlockSpark({ x: t.x, y: t.y }, dir, seed);
         } else {
           const beyond = { x: t.x + dir.nx * 1.5, y: t.y + dir.ny * 1.5 };
           this.spawnMissDust(beyond, dir, e.reason, seed);
         }
+        this.routeBuildingHit(t.x, t.y);
       } else if (e.kind === 'unit-downed') {
         const u = byId.get(e.unitId);
         if (!u) continue;
         this.spawnBloodPool({ x: u.x, y: u.y }, e.cause, { tick: e.tick, a: e.unitId, b: 0 });
+      } else if (e.kind === 'noise-emitted') {
+        if (e.noiseKind === 'footstep-standing' || e.noiseKind === 'footstep-crouched') {
+          this.routeFootstepDust(e.x, e.y, e.tick, e.sourceUnitId, e.noiseKind);
+        }
       }
     }
+  }
+
+  private routeBuildingHit(x: number, y: number): void {
+    if (!this.atmosphere || !this.world) return;
+    const tileIdx = this.atmosphere.tileIndexAt(x, y);
+    const terrainByte = this.world.terrain[tileIdx] ?? 0;
+    const isBuilding = terrainByte === 2;
+    const damage = this.atmosphere.recordBuildingHit(tileIdx, isBuilding);
+    if (damage) this.paintBuildingDamage(tileIdx, damage);
+  }
+
+  private routeFootstepDust(
+    x: number,
+    y: number,
+    tick: number,
+    sourceId: number,
+    kind: 'footstep-standing' | 'footstep-crouched',
+  ): void {
+    if (!this.world) return;
+    const tx = Math.floor(x / this.world.tileSizeMeters);
+    const ty = Math.floor(y / this.world.tileSizeMeters);
+    if (tx < 0 || ty < 0 || tx >= this.world.width || ty >= this.world.height) return;
+    const terrain = this.world.terrain[ty * this.world.width + tx] ?? 0;
+    // Road (1) and rubble (5) produce dust.
+    if (terrain !== 1 && terrain !== 5) return;
+    this.spawnDustPuff({ x, y }, { tick, a: sourceId, b: terrain }, kind === 'footstep-crouched');
   }
 
   activeCount(): number {
