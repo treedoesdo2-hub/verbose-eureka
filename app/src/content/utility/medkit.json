@@ -9,5 +9,6 @@
   "params": {
     "stabilizeSeconds": 3
   },
-  "cost": 250
+  "cost": 250,
+  "consumableCategory": "ifak"
 }

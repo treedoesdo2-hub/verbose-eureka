@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { BodyZone, Id } from './common';
+import { BodyZone, ConsumableCategory, Id } from './common';
+import { HardpointNeed, InternalSlots, SlotFootprint } from './weapon';
 
 export const UtilityKind = z.enum(['grenade', 'smoke', 'medkit', 'tool']);
 export type UtilityKind = z.infer<typeof UtilityKind>;
@@ -17,5 +18,9 @@ export const Utility = z.object({
   uses: z.number().int().positive(),
   params: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])).default({}),
   cost: z.number().int().nonnegative(),
+  slotFootprint: SlotFootprint.default({}),
+  hardpointNeeds: z.array(HardpointNeed).default([]),
+  internalSlots: InternalSlots.default({}),
+  consumableCategory: ConsumableCategory.optional(),
 });
 export type Utility = z.infer<typeof Utility>;

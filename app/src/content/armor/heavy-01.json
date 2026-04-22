@@ -11,5 +11,20 @@
     { "zone": "right_arm", "damageReduction": 25, "weightKg": 1.2, "plate": "soft" },
     { "zone": "left_leg", "damageReduction": 30, "weightKg": 1.5, "plate": "soft" },
     { "zone": "right_leg", "damageReduction": 30, "weightKg": 1.5, "plate": "soft" }
+  ],
+  "slotFootprint": {
+    "head": 2,
+    "torso_front": 4,
+    "torso_back": 4,
+    "left_arm": 2,
+    "right_arm": 2,
+    "left_leg": 2,
+    "right_leg": 2
+  },
+  "hardpointNeeds": [
+    { "zone": "torso_front", "kind": "plate_mount" },
+    { "zone": "torso_back", "kind": "plate_mount" },
+    { "zone": "left_arm", "kind": "sleeve_mount" },
+    { "zone": "right_arm", "kind": "sleeve_mount" }
   ]
 }

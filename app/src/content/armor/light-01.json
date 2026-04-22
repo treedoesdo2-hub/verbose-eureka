@@ -7,5 +7,10 @@
     { "zone": "torso_front", "damageReduction": 25, "weightKg": 2.5, "plate": "soft" },
     { "zone": "torso_back", "damageReduction": 20, "weightKg": 2.0, "plate": "soft" },
     { "zone": "head", "damageReduction": 15, "weightKg": 0.8, "plate": "soft" }
+  ],
+  "slotFootprint": { "torso_front": 2, "torso_back": 2, "head": 1 },
+  "hardpointNeeds": [
+    { "zone": "torso_front", "kind": "plate_mount" },
+    { "zone": "torso_back", "kind": "plate_mount" }
   ]
 }

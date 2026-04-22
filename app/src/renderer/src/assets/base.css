@@ -930,6 +930,27 @@ dd {
   flex-direction: column;
   gap: 2px;
 }
+.internal-slots {
+  margin: 12px 0 0 0;
+  padding: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+}
+.internal-slots h4 {
+  margin: 0 0 6px 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.internal-slot-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
 .armory-placeholder {
   padding: 20px;
   color: var(--fg-1);

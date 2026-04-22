@@ -10,5 +10,6 @@
     "radiusMeters": 10,
     "durationSeconds": 20
   },
-  "cost": 40
+  "cost": 40,
+  "consumableCategory": "grenade_loop"
 }

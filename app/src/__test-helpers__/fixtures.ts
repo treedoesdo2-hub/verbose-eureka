@@ -27,6 +27,9 @@ export function makeWeapon(overrides: Partial<Weapon> = {}): Weapon {
     weightKg: 3.6,
     hands: 2,
     cost: 1200,
+    slotFootprint: {},
+    hardpointNeeds: [],
+    internalSlots: {},
     ...overrides,
   };
 }
@@ -62,6 +65,9 @@ export function makeLightArmor(overrides: Partial<Armor> = {}): Armor {
       { zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' },
       { zone: 'torso_back', damageReduction: 20, weightKg: 2, plate: 'soft' },
     ],
+    slotFootprint: {},
+    hardpointNeeds: [],
+    internalSlots: {},
     ...overrides,
   };
 }
@@ -80,6 +86,9 @@ export function makeHeavyArmor(overrides: Partial<Armor> = {}): Armor {
       { zone: 'left_arm', damageReduction: 40, weightKg: 1.5, plate: 'hard' },
       { zone: 'right_arm', damageReduction: 40, weightKg: 1.5, plate: 'hard' },
     ],
+    slotFootprint: {},
+    hardpointNeeds: [],
+    internalSlots: {},
     ...overrides,
   };
 }
@@ -95,6 +104,46 @@ export function makeMedkit(overrides: Partial<Utility> = {}): Utility {
     uses: 3,
     params: {},
     cost: 200,
+    slotFootprint: {},
+    hardpointNeeds: [],
+    internalSlots: {},
+    ...overrides,
+  };
+}
+
+export function makeChestRig(overrides: Partial<Utility> = {}): Utility {
+  return {
+    id: asUtilityId('chest-rig'),
+    name: 'Chest Rig',
+    kind: 'tool',
+    mount: 'large',
+    allowedZones: ['torso_front'],
+    weightKg: 1.8,
+    uses: 1,
+    params: {},
+    cost: 300,
+    slotFootprint: { torso_front: 2, torso_back: 1 },
+    hardpointNeeds: [],
+    internalSlots: { mag_rifle: 4, grenade_loop: 2, ifak: 1 },
+    ...overrides,
+  };
+}
+
+export function makeMagBin(overrides: Partial<Utility> = {}): Utility {
+  return {
+    id: asUtilityId('mag-rifle'),
+    name: 'Rifle Mag',
+    kind: 'tool',
+    mount: 'consumable',
+    allowedZones: ['waist', 'torso_front', 'torso_back'],
+    weightKg: 0.5,
+    uses: 30,
+    params: {},
+    cost: 20,
+    slotFootprint: {},
+    hardpointNeeds: [],
+    internalSlots: {},
+    consumableCategory: 'mag_rifle',
     ...overrides,
   };
 }

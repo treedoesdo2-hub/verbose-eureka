@@ -10,5 +10,6 @@
     "radiusMeters": 8,
     "damage": 35
   },
-  "cost": 80
+  "cost": 80,
+  "consumableCategory": "grenade_loop"
 }

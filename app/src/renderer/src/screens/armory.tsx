@@ -10,6 +10,7 @@ import {
   loadoutFromTemplate,
   validateLoadout,
 } from '@sim/loadout';
+import { computeFit, defaultBodyProfile, type FitError } from '@sim/loadoutFit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { contentLookup, getContent } from '../content';
 import { useHotkeys } from '../hooks/useHotkeys';
@@ -44,7 +45,7 @@ export function Armory(): React.JSX.Element {
           ← menu
         </button>
         <h2>Armory</h2>
-        <nav className="armory-tabs" role="tablist">
+        <div className="armory-tabs" role="tablist">
           <button
             type="button"
             role="tab"
@@ -65,7 +66,7 @@ export function Armory(): React.JSX.Element {
           >
             Templates <span className="hotkey-hint mono">2</span>
           </button>
-        </nav>
+        </div>
       </div>
       {tab === 'squads' ? <SquadsTab /> : <TemplatesTab />}
     </div>
@@ -593,6 +594,7 @@ function LoadoutEditorPane({
 
   const validation = validateLoadout(member.loadout, lookup);
   const profile = deriveCombatProfile(member.loadout, lookup);
+  const fit = computeFit(member.loadout, defaultBodyProfile(), lookup);
 
   function updateItems(next: LoadoutItem[]): void {
     setMemberLoadout(squadId, member.operatorId, { items: next });
@@ -665,8 +667,10 @@ function LoadoutEditorPane({
           const cap = ZONE_CAPACITY_KG[zone];
           const dr = profile.zoneDr[zone];
           const over = zoneKg > cap + 0.001;
+          const zb = fit.perZone[zone];
+          const slotsOver = zb.slotsUsed > zb.slotsCap;
           return (
-            <div key={zone} className={`zone-card ${over ? 'over' : ''}`}>
+            <div key={zone} className={`zone-card ${over || slotsOver ? 'over' : ''}`}>
               <header>
                 <span className="zone-name">{zone.replace(/_/g, ' ')}</span>
                 <span
@@ -674,6 +678,12 @@ function LoadoutEditorPane({
                   title="kilograms used / zone kilogram capacity"
                 >
                   {zoneKg.toFixed(1)} / {cap} kg
+                </span>
+                <span
+                  className={`mono ${slotsOver ? 'danger' : 'dim'}`}
+                  title="crit slots used / zone slot capacity — MechLab-style gear footprint"
+                >
+                  {zb.slotsUsed} / {zb.slotsCap} slots
                 </span>
                 {dr > 0 ? (
                   <span
@@ -724,17 +734,56 @@ function LoadoutEditorPane({
         })}
       </div>
 
-      {validation.errors.length > 0 ? (
+      {fit.internalUsage.length > 0 ? (
+        <div className="internal-slots">
+          <h4 className="mono dim">Internal slots (host → bins)</h4>
+          <ul className="internal-slot-list mono">
+            {fit.internalUsage.map((u) => (
+              <li key={`${u.hostItemId}:${u.category}`}>
+                <span>{u.hostItemId}</span> · <span>{u.category}</span>{' '}
+                <span className={u.used > u.cap ? 'danger' : 'dim'}>
+                  {u.used} / {u.cap}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {validation.errors.length > 0 || fit.errors.length > 0 ? (
         <ul className="validation-errors mono">
           {validation.errors.map((e) => (
-            <li key={e}>⚠ {e}</li>
+            <li key={`kg:${e}`}>⚠ {e}</li>
           ))}
+          {fit.errors.map((e) => {
+            const msg = formatFitError(e);
+            return <li key={`fit:${msg}`}>⚠ {msg}</li>;
+          })}
         </ul>
       ) : (
         <p className="mono ok">✓ loadout valid</p>
       )}
     </section>
   );
+}
+
+function formatFitError(e: FitError): string {
+  switch (e.kind) {
+    case 'zone_slot_overflow':
+      return `${e.zone} slot overflow (${e.used}/${e.cap})`;
+    case 'zone_kg_overflow':
+      return `${e.zone} kg overflow (${e.used.toFixed(1)}/${e.cap})`;
+    case 'global_kg_overflow':
+      return `total kg overflow (${e.used.toFixed(1)}/${e.cap})`;
+    case 'hardpoint_missing':
+      return `${e.zone} lacks ${e.hardpoint}`;
+    case 'hardpoint_exhausted':
+      return `${e.zone} ${e.hardpoint} exhausted (${e.used}/${e.avail})`;
+    case 'consumable_no_host':
+      return `${e.itemId} has no ${e.category} host or fallback pouch`;
+    case 'internal_slot_overflow':
+      return `${e.hostItemId} ${e.category} internal slots overflow`;
+  }
 }
 
 function AddItemDropdown({

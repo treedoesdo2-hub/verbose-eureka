@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { DamageType, HardpointType, Id } from './common';
+import {
+  BodyZone,
+  ConsumableCategory,
+  DamageType,
+  HardpointType,
+  Id,
+  SlotHardpointKind,
+} from './common';
 
 export const Ballistics = z.object({
   caliberMm: z.number().positive(),
@@ -8,6 +15,16 @@ export const Ballistics = z.object({
   penetration: z.number().min(0).max(100),
 });
 export type Ballistics = z.infer<typeof Ballistics>;
+
+// Partial records — sparse shapes are the norm (a rifle only fills right_hand).
+export const SlotFootprint = z.partialRecord(BodyZone, z.number().int().positive());
+export type SlotFootprint = z.infer<typeof SlotFootprint>;
+
+export const HardpointNeed = z.object({ zone: BodyZone, kind: SlotHardpointKind });
+export type HardpointNeed = z.infer<typeof HardpointNeed>;
+
+export const InternalSlots = z.partialRecord(ConsumableCategory, z.number().int().nonnegative());
+export type InternalSlots = z.infer<typeof InternalSlots>;
 
 export const Weapon = z.object({
   id: Id,
@@ -23,5 +40,8 @@ export const Weapon = z.object({
   weightKg: z.number().positive(),
   hands: z.union([z.literal(1), z.literal(2)]),
   cost: z.number().int().nonnegative(),
+  slotFootprint: SlotFootprint.default({}),
+  hardpointNeeds: z.array(HardpointNeed).default([]),
+  internalSlots: InternalSlots.default({}),
 });
 export type Weapon = z.infer<typeof Weapon>;

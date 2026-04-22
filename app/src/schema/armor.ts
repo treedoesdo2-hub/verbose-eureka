@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BodyZone, Id } from './common';
+import { HardpointNeed, InternalSlots, SlotFootprint } from './weapon';
 
 export const PlateKind = z.enum(['soft', 'hard']);
 export type PlateKind = z.infer<typeof PlateKind>;
@@ -18,5 +19,8 @@ export const Armor = z.object({
   class: z.enum(['light', 'medium', 'heavy']),
   placements: z.array(ArmorPlacement).min(1),
   cost: z.number().int().nonnegative(),
+  slotFootprint: SlotFootprint.default({}),
+  hardpointNeeds: z.array(HardpointNeed).default([]),
+  internalSlots: InternalSlots.default({}),
 });
 export type Armor = z.infer<typeof Armor>;

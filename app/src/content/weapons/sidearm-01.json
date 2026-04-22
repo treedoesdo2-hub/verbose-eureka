@@ -16,5 +16,7 @@
   "rangeMeters": 60,
   "weightKg": 1.0,
   "hands": 1,
-  "cost": 400
+  "cost": 400,
+  "slotFootprint": { "waist": 1 },
+  "hardpointNeeds": [{ "zone": "waist", "kind": "holster_mount" }]
 }

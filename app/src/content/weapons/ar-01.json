@@ -16,5 +16,7 @@
   "rangeMeters": 300,
   "weightKg": 3.6,
   "hands": 2,
-  "cost": 1800
+  "cost": 1800,
+  "slotFootprint": { "right_hand": 2 },
+  "hardpointNeeds": [{ "zone": "right_hand", "kind": "grip" }]
 }
