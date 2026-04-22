@@ -114,6 +114,7 @@ export function Briefing(): React.JSX.Element {
   const launch = useCallback((): void => {
     if (!contract) return;
     const perOperatorLoadouts: ScenarioRequest['perOperatorLoadouts'] = {};
+    const operatorSquadIds: Record<string, string> = {};
     const deployedIds: string[] = [];
     for (const sq of assignedSquads) {
       for (const m of sq.members) {
@@ -123,6 +124,7 @@ export function Briefing(): React.JSX.Element {
           templateId: m.templateId,
         };
         perOperatorLoadouts[m.operatorId] = wire;
+        operatorSquadIds[m.operatorId] = sq.id;
       }
     }
 
@@ -140,6 +142,7 @@ export function Briefing(): React.JSX.Element {
           mapId: contract.mapId,
           deployedOperatorIds: deployedIds,
           perOperatorLoadouts,
+          operatorSquadIds,
         },
       },
     });

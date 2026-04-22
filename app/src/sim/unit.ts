@@ -107,6 +107,9 @@ export type Unit = {
   readonly id: UnitId;
   readonly teamId: number;
   readonly operatorId: OperatorId | null;
+  // ADR 003 hierarchy: player commands at squad level. Null for enemies
+  // and for hand-authored fixtures that spawn units directly.
+  readonly squadId: string | null;
   readonly stats: UnitStats;
   readonly combat: CombatProfile;
   readonly position: Vec2;
@@ -138,12 +141,14 @@ export function makeUnit(params: {
   combat?: CombatProfile;
   stats?: UnitStats;
   waypoints?: readonly Vec2[];
+  squadId?: string | null;
 }): Unit {
   const combat = params.combat ?? emptyCombatProfile();
   return {
     id: params.id,
     teamId: params.teamId,
     operatorId: params.operatorId,
+    squadId: params.squadId ?? null,
     stats: params.stats ?? DEFAULT_STATS,
     combat,
     position: params.position,

@@ -40,11 +40,13 @@ function statsForOperator(opId: string): UnitStats {
 
 function buildDeployments(req: ScenarioRequest): ScenarioDeployment[] {
   const lookup = buildLookup(bundle);
+  const squadIds = req.operatorSquadIds ?? {};
   const out: ScenarioDeployment[] = [];
   for (const opId of req.deployedOperatorIds) {
     const op = bundle.operators.get(opId);
     if (!op) continue;
     const wire = req.perOperatorLoadouts[opId];
+    const squadId = squadIds[opId] ?? null;
     if (!wire) {
       const tpl = bundle.templates.get(op.defaultTemplateId);
       if (!tpl) continue;
@@ -53,6 +55,7 @@ function buildDeployments(req: ScenarioRequest): ScenarioDeployment[] {
         stats: statsForOperator(opId),
         loadout: loadoutFromTemplate(tpl, lookup),
         templateId: op.defaultTemplateId,
+        squadId,
       });
     } else {
       const l: Loadout = { items: [...wire.items] };
@@ -61,6 +64,7 @@ function buildDeployments(req: ScenarioRequest): ScenarioDeployment[] {
         stats: statsForOperator(opId),
         loadout: l,
         templateId: wire.templateId,
+        squadId,
       });
     }
   }

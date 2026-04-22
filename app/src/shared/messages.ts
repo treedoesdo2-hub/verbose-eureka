@@ -25,6 +25,10 @@ export type ScenarioRequest = {
   readonly mapId: string;
   readonly deployedOperatorIds: readonly string[];
   readonly perOperatorLoadouts: Record<string, WireLoadout>;
+  // ADR 003 squad hierarchy — operatorId → squadId. Missing entries mean
+  // the operator deploys loose (no squad). Usually every player operator
+  // belongs to exactly one squad.
+  readonly operatorSquadIds?: Record<string, string>;
 };
 
 export type RendererToWorker =

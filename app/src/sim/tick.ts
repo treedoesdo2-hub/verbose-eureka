@@ -11,6 +11,7 @@ import {
   regeneratePlayerWaypoints,
 } from './objectives';
 import { Rng } from './rng';
+import { promoteLeaders, type SquadRuntimeState } from './squad';
 import { type ObjectiveRuntimeState, SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
 import type { LastSeen, Stance, Unit, UnitAction, Vec2, Wound } from './unit';
 import {
@@ -444,6 +445,32 @@ function footstepKind(stance: Stance): NoiseKind {
   return 'footstep-standing';
 }
 
+// Squad-cohesion leader throttle: if this unit leads a squad whose
+// furthest-out member exceeds the cohesion radius, additional mobility
+// penalty slows the leader so followers can close the formation gap.
+// Without this, followers lag ~25m behind a sprinting leader because
+// both units move at the same max speed and the leader keeps advancing.
+function squadCohesionPenalty(unit: Unit, state: SimState): number {
+  if (unit.squadId === null) return 0;
+  const squad = state.squads.get(unit.squadId);
+  if (!squad || squad.leaderId !== unit.id) return 0;
+  let worstLag = 0;
+  for (const memberId of squad.memberIds) {
+    if (memberId === unit.id) continue;
+    const m = state.units.get(memberId);
+    if (!m) continue;
+    if (!canFight(m)) continue;
+    const d = Math.hypot(m.position.x - unit.position.x, m.position.y - unit.position.y);
+    if (d > worstLag) worstLag = d;
+  }
+  // No penalty inside 6m (tight formation); ramps to 70% penalty at 20m
+  // and caps there so the leader never fully stops (a totally-stuck
+  // follower shouldn't paralyze the whole squad).
+  if (worstLag <= 6) return 0;
+  const extra = Math.min(20, worstLag) - 6;
+  return (extra / 14) * 70;
+}
+
 function processMovement(
   unit: Unit,
   state: SimState,
@@ -452,7 +479,8 @@ function processMovement(
   patches: Map<UnitId, UnitPatch>,
 ): void {
   if (unit.action.kind !== 'moving') return;
-  const m = executeMovement(unit, unit.action.target, state.world, unit.combat.mobilityPenalty);
+  const mobility = unit.combat.mobilityPenalty + squadCohesionPenalty(unit, state);
+  const m = executeMovement(unit, unit.action.target, state.world, mobility);
   if (m.arrived) {
     mergePatch(patches, unit.id, {
       position: m.position,
@@ -639,6 +667,11 @@ export function tick(state: SimState, rng: Rng): SimState {
     endReason = 'team-1-defeated';
   }
 
+  // Leader promotion: if a squad's current leader is down/dead, pick the
+  // next combat-capable member. Cheap O(squads × members) — there are a
+  // handful of squads per match.
+  const nextSquads = promoteLeaders(state.squads, finalUnits);
+
   return {
     tick: state.tick + 1,
     rngSnapshot: rng.snapshot(),
@@ -651,6 +684,7 @@ export function tick(state: SimState, rng: Rng): SimState {
     endReason,
     team0HomePos: state.team0HomePos,
     team1HomePos: state.team1HomePos,
+    squads: nextSquads,
   };
 }
 
@@ -660,6 +694,7 @@ export function makeInitialState(
   units: Iterable<Unit>,
   objectives: readonly ObjectiveRuntimeState[] = [],
   homePos?: { team0: Vec2; team1: Vec2 },
+  squads: ReadonlyMap<string, SquadRuntimeState> = new Map(),
 ): SimState {
   const rng = new Rng(seed);
   const unitMap = new Map<UnitId, Unit>();
@@ -678,6 +713,7 @@ export function makeInitialState(
     ended: false,
     team0HomePos: computed.team0,
     team1HomePos: computed.team1,
+    squads,
   };
 }
 

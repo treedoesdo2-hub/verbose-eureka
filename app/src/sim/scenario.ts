@@ -7,6 +7,7 @@ import type { ContentLookup, Loadout } from './loadout';
 import { deriveCombatProfile, loadoutFromTemplate } from './loadout';
 import { runPipeline } from './mapgen/pipeline';
 import type { MapGenRequest, MapGenResult } from './mapgen/types';
+import { makeSquadRuntime, pickLeader, type SquadRuntimeState } from './squad';
 import type { ObjectiveRect, ObjectiveRuntimeState, SimState } from './state';
 import { makeInitialState } from './tick';
 import type { Unit, UnitStats, Vec2 } from './unit';
@@ -18,6 +19,9 @@ export type ScenarioDeployment = {
   readonly stats: UnitStats;
   readonly loadout: Loadout;
   readonly templateId?: string;
+  // ADR 003 squad hierarchy — the player deploys squads, not loose
+  // operators. Null/absent means "no squad" (enemies; training fixtures).
+  readonly squadId?: string | null;
 };
 
 export type BuildScenarioInput = {
@@ -200,6 +204,12 @@ export function buildScenario(input: BuildScenarioInput): SimState {
     y: y * input.map.tileSizeMeters,
   });
 
+  // Track squad→memberIds so we can build SquadRuntimeState after all
+  // player units are spawned. Order preserved (first member of the squad
+  // in the deployment list becomes the initial leader via pickLeader's
+  // "first combat-capable" rule).
+  const squadMembers = new Map<string, UnitId[]>();
+
   for (let i = 0; i < input.deployments.length && i < input.map.playerSpawns.length; i++) {
     const deploy = input.deployments[i];
     const spawn = input.map.playerSpawns[i];
@@ -209,9 +219,10 @@ export function buildScenario(input: BuildScenarioInput): SimState {
     const role = roleFromTemplate(deploy.templateId, input.templates);
     const waypoints = waypointsFor(input.map, role, 'advance').map((p) => tileToMeters(p.x, p.y));
 
+    const unitId = asUnitId(nextId++) as UnitId;
     units.push(
       makeUnit({
-        id: asUnitId(nextId++) as UnitId,
+        id: unitId,
         teamId: 0,
         operatorId: deploy.operatorId,
         position: pos,
@@ -219,8 +230,14 @@ export function buildScenario(input: BuildScenarioInput): SimState {
         combat,
         stats: deploy.stats,
         waypoints,
+        squadId: deploy.squadId ?? null,
       }),
     );
+    if (deploy.squadId) {
+      const arr = squadMembers.get(deploy.squadId) ?? [];
+      arr.push(unitId);
+      squadMembers.set(deploy.squadId, arr);
+    }
   }
 
   let enemyIndex = 0;
@@ -277,12 +294,23 @@ export function buildScenario(input: BuildScenarioInput): SimState {
     h: 16,
   };
 
+  // Build squad runtime states from the collected membership. Done after
+  // the unit list is finalized so pickLeader sees real units.
+  const unitMap = new Map<UnitId, Unit>();
+  for (const u of units) unitMap.set(u.id, u);
+  const squads = new Map<string, SquadRuntimeState>();
+  for (const [squadId, memberIds] of squadMembers) {
+    const leader = pickLeader(memberIds, unitMap);
+    squads.set(squadId, makeSquadRuntime(squadId, 0, memberIds, leader));
+  }
+
   return makeInitialState(
     world,
     input.seed,
     units,
     translateObjectives(input.contract, fallbackZone, input.objectiveZoneOverrides),
     { team0: team0HomePos, team1: team1HomePos },
+    squads,
   );
 }
 

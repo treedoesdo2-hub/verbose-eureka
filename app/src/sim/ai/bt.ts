@@ -1,6 +1,7 @@
 import type { UnitId } from '@shared/ids';
 import { mostRecentHeard } from '../hearing';
 import { HEARD_INVESTIGATE_MIN_CONFIDENCE } from '../noise';
+import { formationOffset, memberSlotIndex } from '../squad';
 import type { SimState } from '../state';
 import { SIM_HZ } from '../state';
 import type { AiState, Stance, Unit, UnitAction, Vec2 } from '../unit';
@@ -261,6 +262,51 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
         alerted,
         advanceWaypoint: false,
       };
+    }
+  }
+
+  // ADR 003 / ADR 011 Pillar B squad coherence: non-leader members of an
+  // advancing squad shadow the leader in formation rather than chasing
+  // their own objective path. The leader runs the normal waypoint loop
+  // below — this branch only activates for members when a live leader
+  // exists and the squad is still advancing.
+  if (unit.squadId !== null) {
+    const squad = state.squads.get(unit.squadId);
+    if (
+      squad &&
+      squad.leaderId !== null &&
+      squad.leaderId !== unit.id &&
+      squad.order === 'advance'
+    ) {
+      const leader = state.units.get(squad.leaderId);
+      if (leader && canFight(leader)) {
+        const slot = memberSlotIndex(squad.memberIds, squad.leaderId, unit.id);
+        const off = formationOffset(leader, unit, slot, squad.formation);
+        const followTarget: Vec2 = {
+          x: leader.position.x + off.x,
+          y: leader.position.y + off.y,
+        };
+        const d = distance(unit.position.x, unit.position.y, followTarget.x, followTarget.y);
+        // Tight threshold: members don't stop until they're really in
+        // formation. Otherwise they drift behind the leader as the
+        // leader moves.
+        if (d < 0.8) {
+          return {
+            aiState: 'hold',
+            action: { kind: 'idle' },
+            currentTarget: null,
+            alerted,
+            advanceWaypoint: false,
+          };
+        }
+        return {
+          aiState: 'advance',
+          action: { kind: 'moving', target: followTarget },
+          currentTarget: null,
+          alerted,
+          advanceWaypoint: false,
+        };
+      }
     }
   }
 

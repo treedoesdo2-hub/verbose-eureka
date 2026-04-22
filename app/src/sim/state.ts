@@ -3,6 +3,7 @@ import type { ObjectiveKind } from '@schema/contract';
 import type { UnitId } from '@shared/ids';
 import type { NoiseKind } from './noise';
 import type { RngSnapshot } from './rng';
+import type { SquadRuntimeState } from './squad';
 import type { Unit, Vec2, WoundType } from './unit';
 import type { World } from './world';
 
@@ -76,4 +77,7 @@ export type SimState = {
   // maps with no objective progress.
   readonly team0HomePos: Vec2;
   readonly team1HomePos: Vec2;
+  // ADR 003 squad hierarchy: player units belong to squads and follow a
+  // leader while the squad's order is 'advance'. Keyed by SquadRuntimeState.id.
+  readonly squads: ReadonlyMap<string, SquadRuntimeState>;
 };
