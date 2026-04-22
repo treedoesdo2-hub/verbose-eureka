@@ -19,12 +19,18 @@ import {
   pointToByte,
   quantizeElevationNorm,
 } from '../world';
+import { pickCapillaries, stampCapillary } from './capillary';
 import { makeDebugSink } from './debug-sink';
 import { DENSITY_PROFILES, generateCoverDensity } from './density-field';
 import { extractHotspots, type Hotspot } from './density-scatter';
+import type { DominantCapillary, DominantLine } from './dominant-line';
+import { pickLineKind } from './dominant-line';
 import { enforceReachability } from './enforce-reachability';
+import { footprintFor, pickLandmarkKind, placeLandmark, type HeroLandmark } from './hero-landmark';
+import { generateLandmarkName } from './landmark-names';
 import { fbm2D, hashStringToSeed, makeRng, subRng } from './noise';
 import { pruneByThresholdTable } from './prune-by-threshold';
+import { buildDominantLine, stampLine } from './route-line';
 import type {
   DeployZone,
   MapGenDiagnostics,
@@ -293,9 +299,27 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     Math.max(32, Math.floor(N * 0.002)),
   );
 
-  // ---- Step: road skeleton (temporary cardinal cross; replaced by COA-4) ----
+  // ---- Step: dominant line (COA-4 task #93, replaces stampRoadSkeleton) ----
+  let dominantLine: DominantLine | null = null;
+  const capillaries: DominantCapillary[] = [];
   if (biomeDef.roadDensity > 0) {
-    stampRoadSkeleton(base, W, H, biomeDef.roadDensity, seedBase);
+    const lineRng = subRng(seedBase, 'dominant-line');
+    const lineKind = pickLineKind(req.biome, lineRng);
+    dominantLine = buildDominantLine(
+      lineKind,
+      W,
+      H,
+      elevationStep,
+      new Float32Array(N), // density not yet computed — passed empty; highstreet falls back
+      lineRng,
+    );
+    stampLine(dominantLine, base, W, H);
+    // Capillaries — 0-3 perpendicular branches.
+    const caps = pickCapillaries(dominantLine, lineRng, W, H);
+    for (const c of caps) {
+      stampCapillary(c, base, W, H);
+      capillaries.push(c);
+    }
   }
 
   // ---- Step: building clusters ----
@@ -448,6 +472,28 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   }
   const clusterMembership = new Int16Array(N).fill(-1);
 
+  // COA-4 hero landmark — pick + place + name. One landmark per map.
+  let heroLandmark: HeroLandmark | null = null;
+  {
+    const landmarkRng = subRng(seedBase, 'landmark');
+    const kind = pickLandmarkKind(req.biome, landmarkRng);
+    const lineWaypoints = dominantLine?.waypoints ?? [];
+    const center = placeLandmark(
+      kind,
+      W,
+      H,
+      coverDensity,
+      lineWaypoints,
+      [team0, team1],
+      landmarkRng,
+    );
+    const footprint = footprintFor(kind, center).filter(
+      (p) => p.x >= 0 && p.y >= 0 && p.x < W && p.y < H,
+    );
+    const { name, shortName } = generateLandmarkName(kind, landmarkRng);
+    heroLandmark = { kind, name, shortName, footprint, center };
+  }
+
   const diagnostics: MapGenDiagnostics = {
     retryCount: 0,
     hotspotsFound: hotspots.length,
@@ -483,6 +529,9 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     coverDensity,
     hotspots,
     clusterMembership,
+    dominantLine,
+    capillaries,
+    heroLandmark,
     deployZones: { team0, team1 },
     objectiveAnchors,
     diagnostics,
@@ -529,44 +578,6 @@ function removeSmallBaseIslands(
     }
   }
   return pruned;
-}
-
-function stampRoadSkeleton(
-  base: Uint8Array,
-  W: number,
-  H: number,
-  density: number,
-  seed: number,
-): void {
-  const rng = makeRng(seed ^ 0xa5a5a5a5);
-  const midX = Math.floor(W / 2);
-  const midY = Math.floor(H / 2);
-  for (let x = 0; x < W; x++) {
-    const i = midY * W + x;
-    if (base[i] === B.open) base[i] = B.road;
-    if (midY > 0 && base[i - W] === B.open) base[i - W] = B.road;
-  }
-  for (let y = 0; y < H; y++) {
-    const i = y * W + midX;
-    if (base[i] === B.open) base[i] = B.road;
-    if (midX > 0 && base[i - 1] === B.open) base[i - 1] = B.road;
-  }
-  const branches = Math.max(1, Math.floor(density * 8));
-  for (let b = 0; b < branches; b++) {
-    if (rng() < 0.5) {
-      const y = Math.floor(rng() * H);
-      for (let x = 0; x < W; x++) {
-        const i = y * W + x;
-        if (base[i] === B.open) base[i] = B.road;
-      }
-    } else {
-      const x = Math.floor(rng() * W);
-      for (let y = 0; y < H; y++) {
-        const i = y * W + x;
-        if (base[i] === B.open) base[i] = B.road;
-      }
-    }
-  }
 }
 
 function scatterBuildingClusters(

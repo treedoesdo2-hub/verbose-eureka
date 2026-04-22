@@ -1,6 +1,8 @@
 import type { BiomeId, TerrainBase } from '@schema/map';
 import type { BuildingRecord } from '../world';
 import type { Hotspot } from './density-scatter';
+import type { DominantCapillary, DominantLine } from './dominant-line';
+import type { HeroLandmark } from './hero-landmark';
 
 // Re-export walkability bit constants from world.ts so existing pipeline /
 // scenario callers don't need two imports. Authoritative layout lives in
@@ -93,6 +95,12 @@ export type MapGenResult = {
   // cluster, 0..n-1 = assigned to hotspots[i].
   readonly hotspots: readonly Hotspot[];
   readonly clusterMembership: Int16Array;
+  // COA-4 spatial identity. Dominant line + capillaries + single hero
+  // landmark carry the map's visual character through to briefings. Empty
+  // arrays / null for pre-COA-4 pipelines.
+  readonly dominantLine: DominantLine | null;
+  readonly capillaries: readonly DominantCapillary[];
+  readonly heroLandmark: HeroLandmark | null;
   readonly deployZones: { readonly team0: DeployZone; readonly team1: DeployZone };
   readonly objectiveAnchors: readonly ObjectiveAnchor[];
   readonly diagnostics: MapGenDiagnostics;
