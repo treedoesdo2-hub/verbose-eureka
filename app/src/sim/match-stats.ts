@@ -138,6 +138,9 @@ function computeHighlights(perUnit: readonly PerUnitStats[]): MatchHighlight[] {
         text: `stabilized ${u.alliesStabilized} ${u.alliesStabilized === 1 ? 'ally' : 'allies'} under fire`,
       });
     }
+    // "Held under fire" is for survivors; "heavy casualty" is for those
+    // who went down. Same op can't be both in the same match — before
+    // this split a 5+-wound survivor rolled both highlights.
     if (u.woundsReceived >= 3 && u.survived) {
       out.push({
         kind: 'held-under-fire',
@@ -146,7 +149,7 @@ function computeHighlights(perUnit: readonly PerUnitStats[]): MatchHighlight[] {
         text: `took ${u.woundsReceived} wounds and held`,
       });
     }
-    if (u.woundsReceived >= 5) {
+    if (u.woundsReceived >= 5 && !u.survived) {
       out.push({
         kind: 'heavy-casualty',
         unitId: u.unitId,

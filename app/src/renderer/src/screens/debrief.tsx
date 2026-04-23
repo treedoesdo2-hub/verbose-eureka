@@ -59,7 +59,7 @@ export function Debrief(): React.JSX.Element {
           </dd>
           <dt>enemy down</dt>
           <dd className="mono">
-            {enemyKills} killed · {enemyDowns - enemyKills} wounded
+            {enemyKills} killed · {Math.max(0, enemyDowns - enemyKills)} wounded
           </dd>
           <dt>wounds taken</dt>
           <dd className={`mono ${playerWounds > 5 ? 'danger' : ''}`}>{playerWounds} total</dd>
@@ -126,17 +126,19 @@ export function Debrief(): React.JSX.Element {
                         <span className="danger">down</span>
                       )}
                     </td>
-                    <td className="num mono">{u.kills}</td>
-                    <td className="num mono">{u.downs}</td>
+                    <td className="num mono">{u.kills || <span className="dim">·</span>}</td>
+                    <td className="num mono">{u.downs || <span className="dim">·</span>}</td>
                     <td className={`num mono ${u.woundsReceived > 0 ? 'danger' : ''}`}>
-                      {u.woundsReceived}
+                      {u.woundsReceived || <span className="dim">·</span>}
                     </td>
                     <td className="num mono">{u.shotsFired}</td>
                     <td className="num mono">{u.hitsLanded}</td>
-                    <td className="num mono dim">{u.shotsBlocked}</td>
-                    <td className="num mono dim">{u.shotsMissed}</td>
+                    <td className="num mono dim">{u.shotsBlocked || '·'}</td>
+                    <td className="num mono dim">{u.shotsMissed || '·'}</td>
                     <td className="num mono">{acc}</td>
-                    <td className="num mono">{u.alliesStabilized}</td>
+                    <td className="num mono">
+                      {u.alliesStabilized || <span className="dim">·</span>}
+                    </td>
                   </tr>
                 );
               })}
