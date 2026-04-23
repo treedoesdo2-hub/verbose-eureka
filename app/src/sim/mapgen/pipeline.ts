@@ -641,12 +641,12 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     rosterTeam1: req.rosterTeam1 ?? DEFAULT_ROSTER,
   }, placerResult);
 
-  ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team0);
-  ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team1);
-
   // ADR 014 — density masking of deploy zones removed. Terrain generation
   // now spans the whole map edge-to-edge; spawn planner below lands units
-  // on walkable tiles regardless of cover density.
+  // on walkable tiles regardless of cover density. Per-slot walkability
+  // clearing happens *after* the planner runs (see ensureSpawnSlotsWalkable
+  // call below) so feature scatter (buildings, trees, hotspots) survives
+  // in the flanks instead of being zeroed by a rear-third rect pass.
 
   // Resample objective anchors around the spawn placer's bisector so
   // both teams have similar travel distance to each objective.
@@ -739,6 +739,12 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     team1Zone: team1,
   });
   const unitSlots: UnitSlots = spawnPlan.slots;
+  // Per-slot walkability: clear deep water / buildings / points at the
+  // actual spawn tiles only. Prior versions cleared the whole rear-third
+  // deploy-zone rect, which also zeroed building + tree scatter in the
+  // map flanks — causing the center-heavy feature distribution that
+  // @desktop's 2026-04-23 smoke pass measured (30% center vs 2-3% flanks).
+  ensureSpawnSlotsWalkable(base, buildingId, point, walkability, elevationStep, W, H, unitSlots);
 
   return {
     request: req,
@@ -1038,42 +1044,72 @@ function insideZone(p: { x: number; y: number }, zone: DeployZone): boolean {
   return p.x >= zone.x && p.x < zone.x + zone.w && p.y >= zone.y && p.y < zone.y + zone.h;
 }
 
-function ensureZoneWalkable(
+// ADR 014 — per-slot walkability clearing. Replaces the old zone-wide
+// ensureZoneWalkable that flattened whole rear-third rectangles and
+// zeroed building + tree scatter across the map flanks. Here we only
+// touch the slot tiles themselves and a 1-tile ring for elevation
+// feathering so units can step out without tripping the cliff guard.
+function ensureSpawnSlotsWalkable(
   base: Uint8Array,
   buildingId: Uint16Array,
   point: Uint8Array,
   walkability: Uint16Array,
   elevationStep: Uint8Array,
   W: number,
-  zone: DeployZone,
+  H: number,
+  unitSlots: UnitSlots,
 ): void {
-  // Sample the zone-center elevation and flatten the whole rectangle to it.
-  // Without this, fBm elevation plus the COA-8 cliff guard can strand spawn
-  // units — they land on a 4-step step and can't cross into adjacent tiles
-  // more than 2 steps away.
-  const cx = Math.floor(zone.x + zone.w / 2);
-  const cy = Math.floor(zone.y + zone.h / 2);
-  const flatStep = elevationStep[cy * W + cx];
-  for (let yy = zone.y; yy < zone.y + zone.h; yy++) {
-    for (let xx = zone.x; xx < zone.x + zone.w; xx++) {
-      const i = yy * W + xx;
-      if (base[i] === B.water_deep) base[i] = B.open;
-      if (buildingId[i] !== 0) buildingId[i] = 0;
-      point[i] = 0;
-      elevationStep[i] = flatStep;
-      walkability[i] =
-        WALK_FOOT | WALK_PRONE | WALK_MECH | WALK_POWER_ARMOR | WALK_WHEELED | WALK_TRACKED;
+  const WALK_ALL_GROUND =
+    WALK_FOOT | WALK_PRONE | WALK_MECH | WALK_POWER_ARMOR | WALK_WHEELED | WALK_TRACKED;
+  const slots = [...unitSlots.team0, ...unitSlots.team1];
+  for (const s of slots) {
+    if (s.x < 0 || s.x >= W || s.y < 0 || s.y >= H) continue;
+    const i = s.y * W + s.x;
+    if (base[i] === B.water_deep) base[i] = B.open;
+    if (buildingId[i] !== 0) buildingId[i] = 0;
+    point[i] = 0;
+    walkability[i] = WALK_ALL_GROUND;
+    // Feather elevation to neighbors so the cliff guard (+2 step block)
+    // doesn't strand units on a spawn tile. Take the min of the current
+    // step and the 4-neighbor avg — pulls down cliffs, leaves low ground.
+    let sum = 0;
+    let count = 0;
+    const neighbors = [
+      s.y > 0 ? (s.y - 1) * W + s.x : -1,
+      s.y < H - 1 ? (s.y + 1) * W + s.x : -1,
+      s.x > 0 ? s.y * W + (s.x - 1) : -1,
+      s.x < W - 1 ? s.y * W + (s.x + 1) : -1,
+    ];
+    for (const n of neighbors) {
+      if (n < 0) continue;
+      sum += elevationStep[n];
+      count++;
+    }
+    if (count > 0) {
+      const avg = Math.round(sum / count);
+      const cur = elevationStep[i];
+      if (Math.abs(cur - avg) > 2) elevationStep[i] = avg;
     }
   }
-  // Feather a 1-tile ring around the deploy zone down to a delta of at most
-  // MAX_STEP_ELEV_DELTA (2) so units can step out of the zone.
-  for (let yy = Math.max(0, zone.y - 1); yy <= Math.min(W - 1, zone.y + zone.h); yy++) {
-    for (let xx = Math.max(0, zone.x - 1); xx <= Math.min(W - 1, zone.x + zone.w); xx++) {
-      if (xx >= zone.x && xx < zone.x + zone.w && yy >= zone.y && yy < zone.y + zone.h) continue;
-      const i = yy * W + xx;
-      const d = elevationStep[i] - flatStep;
-      if (d > 2) elevationStep[i] = flatStep + 2;
-      else if (d < -2) elevationStep[i] = flatStep - 2;
+  // Second pass: feather each slot's 1-tile ring to within 2 steps of
+  // the slot so the unit can step out. Skip ring tiles that are
+  // themselves slots (already handled above).
+  const slotKeys = new Set<number>(slots.map((s) => s.y * W + s.x));
+  for (const s of slots) {
+    if (s.x < 0 || s.x >= W || s.y < 0 || s.y >= H) continue;
+    const baseStep = elevationStep[s.y * W + s.x];
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = s.x + dx;
+        const ny = s.y + dy;
+        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+        const ni = ny * W + nx;
+        if (slotKeys.has(ni)) continue;
+        const d = elevationStep[ni] - baseStep;
+        if (d > 2) elevationStep[ni] = baseStep + 2;
+        else if (d < -2) elevationStep[ni] = baseStep - 2;
+      }
     }
   }
 }

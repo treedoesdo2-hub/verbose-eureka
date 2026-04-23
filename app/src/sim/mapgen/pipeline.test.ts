@@ -72,16 +72,16 @@ describe('mapgen pipeline', () => {
     expect(r.hotspots.length).toBeGreaterThanOrEqual(6);
   });
 
-  it('clears deploy zones of water and buildings so units can spawn', () => {
+  it('clears spawn SLOT tiles of water and buildings so units can spawn (ADR 014)', () => {
+    // ADR 014: clearing is per-slot now, not per-zone. The old test
+    // asserted whole rear-third rects were cleared, which also nuked
+    // building + tree scatter from the map flanks.
     const r = runPipeline(req());
-    for (const zone of [r.deployZones.team0, r.deployZones.team1]) {
-      for (let yy = zone.y; yy < zone.y + zone.h; yy++) {
-        for (let xx = zone.x; xx < zone.x + zone.w; xx++) {
-          const i = yy * r.width + xx;
-          expect(r.base[i]).not.toBe(WATER_DEEP);
-          expect(r.buildingId[i]).toBe(0);
-        }
-      }
+    for (const s of [...r.unitSlots.team0, ...r.unitSlots.team1]) {
+      const i = s.y * r.width + s.x;
+      expect(r.base[i]).not.toBe(WATER_DEEP);
+      expect(r.buildingId[i]).toBe(0);
+      expect((r.walkability[i] & WALK_FOOT) !== 0).toBe(true);
     }
   });
 
