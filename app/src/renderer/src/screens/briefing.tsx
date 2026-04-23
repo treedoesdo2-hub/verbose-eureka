@@ -589,6 +589,10 @@ function buildPrebuiltMap(
       team0: { ...r.deployZones.team0, x: r.deployZones.team0.x, y: r.deployZones.team0.y, w: r.deployZones.team0.w, h: r.deployZones.team0.h },
       team1: { ...r.deployZones.team1, x: r.deployZones.team1.x, y: r.deployZones.team1.y, w: r.deployZones.team1.w, h: r.deployZones.team1.h },
     },
+    unitSlots: {
+      team0: r.unitSlots.team0.map((s) => ({ x: s.x, y: s.y, facing: s.facing })),
+      team1: r.unitSlots.team1.map((s) => ({ x: s.x, y: s.y, facing: s.facing })),
+    },
     objectiveAnchors: r.objectiveAnchors.map((a) => ({
       kindHint: a.kindHint,
       rect: { ...a.rect },

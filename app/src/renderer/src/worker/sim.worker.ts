@@ -95,6 +95,32 @@ function buildDeployments(req: ScenarioRequest): ScenarioDeployment[] {
   return out;
 }
 
+function sliceSlotsForWorker(
+  slots: readonly { readonly x: number; readonly y: number; readonly facing: number }[],
+  count: number,
+  zoneFallback: { readonly x: number; readonly y: number; readonly w: number; readonly h: number },
+): { x: number; y: number; facing: number }[] {
+  const out: { x: number; y: number; facing: number }[] = slots
+    .slice(0, count)
+    .map((s) => ({ x: s.x, y: s.y, facing: s.facing }));
+  if (out.length >= count) return out;
+  const missing = count - out.length;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(missing)));
+  const rows = Math.max(1, Math.ceil(missing / cols));
+  const dx = zoneFallback.w / (cols + 1);
+  const dy = zoneFallback.h / (rows + 1);
+  for (let r = 0; r < rows && out.length < count; r++) {
+    for (let c = 0; c < cols && out.length < count; c++) {
+      out.push({
+        x: Math.floor(zoneFallback.x + dx * (c + 1)),
+        y: Math.floor(zoneFallback.y + dy * (r + 1)),
+        facing: 0,
+      });
+    }
+  }
+  return out;
+}
+
 function startSim(seed: number, req: ScenarioRequest): SimState | null {
   const contract = bundle.contracts.get(req.contractId);
   const faction = contract && bundle.factions.get(contract.enemies.factionId);
@@ -156,6 +182,14 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
         dominantLine: null,
         heroLandmark: null,
       };
+      // ADR 014 — unitSlots carry concrete per-unit spawn tiles produced
+      // at pipeline time (team 0 marching-order, team 1 objective ring).
+      // Slice to the actual roster size; fall back to grid-sampling the
+      // deploy-zone rect for the remainder only if the planner ran short.
+      const deployCount = req.deployedOperatorIds.length;
+      const enemyCount = contract.enemies.archetypes.reduce((sum, a) => sum + a.count, 0);
+      const team0Spawns = sliceSlotsForWorker(pm.unitSlots.team0, deployCount, pm.deployZones.team0);
+      const team1Spawns = sliceSlotsForWorker(pm.unitSlots.team1, enemyCount, pm.deployZones.team1);
       const stubMap: GameMap = {
         schemaVersion: 2,
         id: `gen:${pm.seed}`,
@@ -165,8 +199,8 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
         tileSizeMeters: pm.tileSizeMeters,
         tiles: [],
         buildings: [],
-        playerSpawns: [],
-        enemySpawns: [],
+        playerSpawns: team0Spawns,
+        enemySpawns: team1Spawns,
         waypointRoutes: [],
         generationSeed: pm.seed,
         generationVersion: pm.generationVersion,

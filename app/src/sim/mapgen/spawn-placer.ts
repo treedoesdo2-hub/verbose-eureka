@@ -16,6 +16,7 @@
 // search and forces spawn zones into reachable open terrain.
 
 import { WALK_FOOT } from '../world';
+import type { DominantLine } from './dominant-line';
 import { largestRectangle, maskToSubrect, type Rect, topKLargestRectangles } from './largest-rect';
 import {
   respectsMinimumSeparation,
@@ -23,7 +24,7 @@ import {
   separationBandsFor,
   separationScore,
 } from './separation-bands';
-import type { DeployZone, ObjectiveAnchor, RosterSpec, SpawnRegime } from './types';
+import type { DeployZone, ObjectiveAnchor, RosterSpec, SpawnRegime, UnitSlot, UnitSlots } from './types';
 
 export type SpawnPlacerInput = {
   readonly W: number;
@@ -360,4 +361,292 @@ export function placeSpawns(input: SpawnPlacerInput): SpawnPlacerResult {
   };
 
   return { team0, team1, axis, bands, fallbackUsed };
+}
+
+// ---------------------------------------------------------------------------
+// ADR 014 — marching-order + objective-ring spawn planner.
+//
+// Replaces the old rect-grid spawn model. Team 0 marches in along a
+// road-connected map edge; team 1 rings the dominant objective anchor.
+// The zones remain as a back-compat shape but no longer drive terrain
+// suppression in the pipeline. See decisions/014 for the full rationale.
+
+const MARCH_MAX_SLOTS = 16; // over-provision; consumers slice to roster size
+const RING_MAX_SLOTS = 24;
+
+type MapEdge = 'top' | 'bottom' | 'left' | 'right';
+
+function nearestMapEdge(p: { x: number; y: number }, W: number, H: number): { edge: MapEdge; dist: number } {
+  const candidates: { edge: MapEdge; dist: number }[] = [
+    { edge: 'top', dist: p.y },
+    { edge: 'bottom', dist: H - 1 - p.y },
+    { edge: 'left', dist: p.x },
+    { edge: 'right', dist: W - 1 - p.x },
+  ];
+  candidates.sort((a, b) => a.dist - b.dist);
+  return candidates[0];
+}
+
+function edgeIsRoadLike(kind: DominantLine['kind']): boolean {
+  return kind === 'road-straight' || kind === 'road-star' || kind === 'rail' || kind === 'highstreet';
+}
+
+function inwardVector(edge: MapEdge): { dx: number; dy: number } {
+  switch (edge) {
+    case 'top': return { dx: 0, dy: 1 };
+    case 'bottom': return { dx: 0, dy: -1 };
+    case 'left': return { dx: 1, dy: 0 };
+    case 'right': return { dx: -1, dy: 0 };
+  }
+}
+
+function lateralVector(edge: MapEdge): { dx: number; dy: number } {
+  switch (edge) {
+    case 'top':
+    case 'bottom': return { dx: 1, dy: 0 };
+    case 'left':
+    case 'right': return { dx: 0, dy: 1 };
+  }
+}
+
+function inBounds(x: number, y: number, W: number, H: number): boolean {
+  return x >= 0 && x < W && y >= 0 && y < H;
+}
+
+function walkableFoot(walkability: Uint16Array, idx: number): boolean {
+  return (walkability[idx] & WALK_FOOT) !== 0;
+}
+
+// Pick the entry point on a map edge. Prefer a road-like dominantLine
+// endpoint that actually reaches an edge tile; otherwise fall back to the
+// center of the team0 deploy zone projected to its nearest edge.
+function pickMarchEntry(
+  W: number,
+  H: number,
+  walkability: Uint16Array,
+  dominantLine: DominantLine | null,
+  team0Zone: DeployZone,
+): { edge: MapEdge; entry: { x: number; y: number }; facingRad: number } {
+  if (dominantLine && edgeIsRoadLike(dominantLine.kind) && dominantLine.waypoints.length >= 2) {
+    const endpoints = [dominantLine.waypoints[0], dominantLine.waypoints[dominantLine.waypoints.length - 1]];
+    let best: { edge: MapEdge; entry: { x: number; y: number }; dist: number } | null = null;
+    for (const p of endpoints) {
+      const ne = nearestMapEdge(p, W, H);
+      // Keep endpoints within 3 tiles of the edge — farther than that and
+      // it's not really an entry point.
+      if (ne.dist > 3) continue;
+      const entry = {
+        x: ne.edge === 'left' ? 0 : ne.edge === 'right' ? W - 1 : Math.max(0, Math.min(W - 1, p.x)),
+        y: ne.edge === 'top' ? 0 : ne.edge === 'bottom' ? H - 1 : Math.max(0, Math.min(H - 1, p.y)),
+      };
+      if (!best || ne.dist < best.dist) best = { edge: ne.edge, entry, dist: ne.dist };
+    }
+    if (best) {
+      const inward = inwardVector(best.edge);
+      return { edge: best.edge, entry: best.entry, facingRad: Math.atan2(inward.dy, inward.dx) };
+    }
+  }
+  // Fallback: project team0 zone center to its nearest edge and use that.
+  const cx = Math.floor(team0Zone.x + team0Zone.w / 2);
+  const cy = Math.floor(team0Zone.y + team0Zone.h / 2);
+  const ne = nearestMapEdge({ x: cx, y: cy }, W, H);
+  const entry = {
+    x: ne.edge === 'left' ? 0 : ne.edge === 'right' ? W - 1 : cx,
+    y: ne.edge === 'top' ? 0 : ne.edge === 'bottom' ? H - 1 : cy,
+  };
+  // Nudge to nearest foot-passable tile along the edge if the direct
+  // projection is blocked.
+  const adjusted = nudgeToWalkable(entry, ne.edge, W, H, walkability);
+  const inward = inwardVector(ne.edge);
+  return { edge: ne.edge, entry: adjusted, facingRad: Math.atan2(inward.dy, inward.dx) };
+}
+
+function nudgeToWalkable(
+  p: { x: number; y: number },
+  edge: MapEdge,
+  W: number,
+  H: number,
+  walkability: Uint16Array,
+): { x: number; y: number } {
+  if (walkableFoot(walkability, p.y * W + p.x)) return p;
+  const lat = lateralVector(edge);
+  for (let step = 1; step < Math.max(W, H); step++) {
+    for (const s of [1, -1]) {
+      const nx = p.x + lat.dx * step * s;
+      const ny = p.y + lat.dy * step * s;
+      if (!inBounds(nx, ny, W, H)) continue;
+      if (walkableFoot(walkability, ny * W + nx)) return { x: nx, y: ny };
+    }
+  }
+  return p;
+}
+
+// Generate marching-order slots starting from the edge tile and walking
+// inland. Squads stack along the road (squad 0 closest to edge, squad N
+// deepest). Within a squad we stagger members laterally so they form a
+// loose column rather than a conga line.
+function generateMarchSlots(
+  entry: { x: number; y: number },
+  edge: MapEdge,
+  facingRad: number,
+  W: number,
+  H: number,
+  walkability: Uint16Array,
+  maxSlots: number,
+): UnitSlot[] {
+  const inward = inwardVector(edge);
+  const lat = lateralVector(edge);
+  const out: UnitSlot[] = [];
+  const squadSize = 4; // ADR 003 squads chunk by 4
+  const squadCount = Math.ceil(maxSlots / squadSize);
+  const squadSpacing = 3; // tiles of gap between squads inland
+  const memberSpacing = 2; // tiles between members within a squad
+
+  for (let s = 0; s < squadCount && out.length < maxSlots; s++) {
+    const inlandOffset = s * (squadSpacing + memberSpacing);
+    for (let m = 0; m < squadSize && out.length < maxSlots; m++) {
+      // Column layout: two abreast per rank, alternating sides.
+      const rank = Math.floor(m / 2);
+      const side = m % 2 === 0 ? 1 : -1;
+      const lateralOffset = side * Math.ceil((rank + 1) / 2);
+      const depth = inlandOffset + rank * memberSpacing + 1;
+      const x = entry.x + inward.dx * depth + lat.dx * lateralOffset;
+      const y = entry.y + inward.dy * depth + lat.dy * lateralOffset;
+      const slot = nudgeToWalkable({ x, y }, edge, W, H, walkability);
+      // Skip duplicates (nudge can collapse many slots onto one tile on narrow maps).
+      if (out.some((p) => p.x === slot.x && p.y === slot.y)) continue;
+      if (!inBounds(slot.x, slot.y, W, H)) continue;
+      if (!walkableFoot(walkability, slot.y * W + slot.x)) continue;
+      out.push({ x: slot.x, y: slot.y, facing: facingRad });
+    }
+  }
+  return out;
+}
+
+function pickRingAnchor(anchors: readonly ObjectiveAnchor[]): ObjectiveAnchor | null {
+  if (anchors.length === 0) return null;
+  const priority: Record<ObjectiveAnchor['kindHint'], number> = { defend: 3, secure: 2, extract: 1 };
+  return anchors.slice().sort((a, b) => {
+    const pa = priority[a.kindHint] ?? 0;
+    const pb = priority[b.kindHint] ?? 0;
+    if (pa !== pb) return pb - pa;
+    return b.qualityScore - a.qualityScore;
+  })[0];
+}
+
+// Ring of tiles around a center point. Grows outward in concentric rings
+// until we've produced maxSlots foot-passable positions. Units face
+// outward (away from the anchor center).
+function generateRingSlots(
+  anchor: ObjectiveAnchor,
+  W: number,
+  H: number,
+  walkability: Uint16Array,
+  maxSlots: number,
+): UnitSlot[] {
+  const cx = anchor.rect.x + anchor.rect.w / 2;
+  const cy = anchor.rect.y + anchor.rect.h / 2;
+  const out: UnitSlot[] = [];
+  const minRadius = Math.max(2, Math.ceil(Math.max(anchor.rect.w, anchor.rect.h) / 2) + 1);
+  const maxRadius = minRadius + 6;
+  for (let radius = minRadius; radius <= maxRadius && out.length < maxSlots; radius++) {
+    const circumference = Math.max(6, Math.ceil(2 * Math.PI * radius));
+    for (let i = 0; i < circumference && out.length < maxSlots; i++) {
+      const theta = (i / circumference) * 2 * Math.PI;
+      const x = Math.round(cx + Math.cos(theta) * radius);
+      const y = Math.round(cy + Math.sin(theta) * radius);
+      if (!inBounds(x, y, W, H)) continue;
+      if (!walkableFoot(walkability, y * W + x)) continue;
+      if (out.some((p) => Math.abs(p.x - x) + Math.abs(p.y - y) < 2)) continue;
+      // Face outward.
+      const facing = Math.atan2(y - cy, x - cx);
+      out.push({ x, y, facing });
+    }
+  }
+  return out;
+}
+
+function gridSampleZone(zone: DeployZone, count: number): UnitSlot[] {
+  const out: UnitSlot[] = [];
+  const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+  const rows = Math.max(1, Math.ceil(count / cols));
+  const dx = zone.w / (cols + 1);
+  const dy = zone.h / (rows + 1);
+  const facing = zone.facing ?? 0;
+  for (let r = 0; r < rows && out.length < count; r++) {
+    for (let c = 0; c < cols && out.length < count; c++) {
+      out.push({
+        x: Math.floor(zone.x + dx * (c + 1)),
+        y: Math.floor(zone.y + dy * (r + 1)),
+        facing,
+      });
+    }
+  }
+  return out;
+}
+
+export type SpawnPlanInput = {
+  readonly W: number;
+  readonly H: number;
+  readonly walkability: Uint16Array;
+  readonly dominantLine: DominantLine | null;
+  readonly objectiveAnchors: readonly ObjectiveAnchor[];
+  readonly team0Zone: DeployZone;
+  readonly team1Zone: DeployZone;
+};
+
+export type SpawnPlanResult = {
+  readonly slots: UnitSlots;
+  readonly team0FallbackUsed: boolean;
+  readonly team1FallbackUsed: boolean;
+  readonly team0Entry: { readonly edge: MapEdge; readonly x: number; readonly y: number; readonly facing: number } | null;
+  readonly team1Anchor: ObjectiveAnchor | null;
+};
+
+export function planUnitSlots(input: SpawnPlanInput): SpawnPlanResult {
+  const { W, H, walkability, dominantLine, objectiveAnchors, team0Zone, team1Zone } = input;
+
+  // Team 0: marching-order road entry.
+  const entry = pickMarchEntry(W, H, walkability, dominantLine, team0Zone);
+  const team0Slots = generateMarchSlots(
+    entry.entry,
+    entry.edge,
+    entry.facingRad,
+    W,
+    H,
+    walkability,
+    MARCH_MAX_SLOTS,
+  );
+  let team0FallbackUsed = false;
+  let team0Final: readonly UnitSlot[] = team0Slots;
+  if (team0Final.length === 0) {
+    team0Final = gridSampleZone(team0Zone, MARCH_MAX_SLOTS);
+    team0FallbackUsed = true;
+  }
+
+  // Team 1: ring around dominant objective.
+  const ringAnchor = pickRingAnchor(objectiveAnchors);
+  let team1Slots: UnitSlot[] = [];
+  if (ringAnchor) {
+    team1Slots = generateRingSlots(ringAnchor, W, H, walkability, RING_MAX_SLOTS);
+  }
+  let team1FallbackUsed = false;
+  let team1Final: readonly UnitSlot[] = team1Slots;
+  if (team1Final.length === 0) {
+    team1Final = gridSampleZone(team1Zone, RING_MAX_SLOTS);
+    team1FallbackUsed = true;
+  }
+
+  return {
+    slots: { team0: team0Final, team1: team1Final },
+    team0FallbackUsed,
+    team1FallbackUsed,
+    team0Entry: {
+      edge: entry.edge,
+      x: entry.entry.x,
+      y: entry.entry.y,
+      facing: entry.facingRad,
+    },
+    team1Anchor: ringAnchor,
+  };
 }

@@ -209,15 +209,51 @@ describe('mapgen pipeline', () => {
     }
   });
 
-  it('coverDensity is zeroed inside deploy zones (masked before extraction)', () => {
+  it('unitSlots are populated for both teams and all on foot-walkable tiles (ADR 014)', () => {
+    const r = runPipeline(req({ seed: 'unit-slots-seed', size: 128 }));
+    expect(r.unitSlots.team0.length).toBeGreaterThan(0);
+    expect(r.unitSlots.team1.length).toBeGreaterThan(0);
+    for (const s of [...r.unitSlots.team0, ...r.unitSlots.team1]) {
+      expect(s.x).toBeGreaterThanOrEqual(0);
+      expect(s.x).toBeLessThan(r.width);
+      expect(s.y).toBeGreaterThanOrEqual(0);
+      expect(s.y).toBeLessThan(r.height);
+      const walk = r.walkability[s.y * r.width + s.x];
+      expect((walk & WALK_FOOT) !== 0).toBe(true);
+    }
+  });
+
+  it('team 0 march entry touches a map edge (ADR 014)', () => {
+    const r = runPipeline(req({ seed: 'march-entry-seed', size: 128 }));
+    // First squad-0 member is closest to the entry edge. Relaxed threshold
+    // (≤3 tiles) because the nudge-to-walkable helper may step inland a
+    // little if the direct edge tile is water / impassable.
+    const leadSlot = r.unitSlots.team0[0];
+    const distToEdge = Math.min(
+      leadSlot.x,
+      leadSlot.y,
+      r.width - 1 - leadSlot.x,
+      r.height - 1 - leadSlot.y,
+    );
+    expect(distToEdge).toBeLessThanOrEqual(3);
+  });
+
+  it('coverDensity spans the whole map — no rear-third / deploy-zone mask (ADR 014)', () => {
+    // ADR 014 deprecated the deploy-zone density mask. Density is driven
+    // by biome + terrain alone; the previous rear-third suppression
+    // emptied two-thirds of the map and is no longer applied.
     const r = runPipeline(req({ seed: 'mask-seed', size: 128 }));
+    let nonZeroInsideZones = 0;
     for (const zone of [r.deployZones.team0, r.deployZones.team1]) {
       for (let yy = zone.y; yy < zone.y + zone.h; yy++) {
         for (let xx = zone.x; xx < zone.x + zone.w; xx++) {
-          expect(r.coverDensity[yy * r.width + xx]).toBe(0);
+          if (r.coverDensity[yy * r.width + xx] > 0) nonZeroInsideZones++;
         }
       }
     }
+    // Some non-zero density must exist inside zone rects — the terrain
+    // generator now fills the full map edge-to-edge.
+    expect(nonZeroInsideZones).toBeGreaterThan(0);
   });
 
   it('clusterMembership allocated and defaults to -1 (unassigned)', () => {

@@ -28,20 +28,23 @@ describe('generated map → scenario world', () => {
     expect(map.biome).toBe('mixed');
   });
 
-  it('places spawn points inside their deploy zones', () => {
-    const { map, result } = buildGeneratedMap(req(), 'Test', 'test', {
+  it('places spawn points on walkable map tiles (ADR 014 march + ring)', () => {
+    // ADR 014: spawns no longer land inside deploy-zone rects — team 0
+    // marches in from a road-connected edge, team 1 rings a defensive
+    // objective. Assert spawns are in-bounds and on walkable tiles.
+    const { map, world } = buildGeneratedMap(req(), 'Test', 'test', {
       team0: 5,
       team1: 5,
     });
-    for (const s of map.playerSpawns) {
-      expect(s.x).toBeGreaterThanOrEqual(result.deployZones.team0.x);
-      expect(s.x).toBeLessThan(result.deployZones.team0.x + result.deployZones.team0.w);
-      expect(s.y).toBeGreaterThanOrEqual(result.deployZones.team0.y);
-      expect(s.y).toBeLessThan(result.deployZones.team0.y + result.deployZones.team0.h);
-    }
-    for (const s of map.enemySpawns) {
-      expect(s.x).toBeGreaterThanOrEqual(result.deployZones.team1.x);
-      expect(s.x).toBeLessThan(result.deployZones.team1.x + result.deployZones.team1.w);
+    const W = world.width;
+    const H = world.height;
+    expect(map.playerSpawns.length).toBe(5);
+    expect(map.enemySpawns.length).toBe(5);
+    for (const s of [...map.playerSpawns, ...map.enemySpawns]) {
+      expect(s.x).toBeGreaterThanOrEqual(0);
+      expect(s.x).toBeLessThan(W);
+      expect(s.y).toBeGreaterThanOrEqual(0);
+      expect(s.y).toBeLessThan(H);
     }
   });
 

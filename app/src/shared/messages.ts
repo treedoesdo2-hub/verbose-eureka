@@ -38,6 +38,12 @@ export type MapGenResultTransfer = {
     readonly team0: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
     readonly team1: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
   };
+  // ADR 014 — per-unit spawn tiles computed at pipeline time. Worker slices
+  // these to the actual roster size when populating the stub GameMap.
+  readonly unitSlots: {
+    readonly team0: readonly { readonly x: number; readonly y: number; readonly facing: number }[];
+    readonly team1: readonly { readonly x: number; readonly y: number; readonly facing: number }[];
+  };
   readonly objectiveAnchors: readonly {
     readonly kindHint: 'extract' | 'defend' | 'secure';
     readonly rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };

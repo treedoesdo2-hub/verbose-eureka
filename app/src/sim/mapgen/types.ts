@@ -54,6 +54,20 @@ export type DeployZone = {
   readonly squadRects?: readonly { readonly x: number; readonly y: number; readonly w: number; readonly h: number }[];
 };
 
+// ADR 014 — per-team unit slot list. The spawn planner produces one
+// concrete tile position (plus facing) per slot; buildScenario / the
+// worker stub map slice this down to the roster size at deploy time.
+export type UnitSlot = {
+  readonly x: number;
+  readonly y: number;
+  readonly facing: number;
+};
+
+export type UnitSlots = {
+  readonly team0: readonly UnitSlot[];
+  readonly team1: readonly UnitSlot[];
+};
+
 export type ObjectiveAnchor = {
   readonly kindHint: 'extract' | 'defend' | 'secure';
   readonly rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
@@ -120,6 +134,10 @@ export type MapGenResult = {
   readonly capillaries: readonly DominantCapillary[];
   readonly heroLandmark: HeroLandmark | null;
   readonly deployZones: { readonly team0: DeployZone; readonly team1: DeployZone };
+  // ADR 014 — concrete per-unit spawn tiles. team0 is marching-order along a
+  // road-edge entry; team1 is a ring around the dominant objective anchor.
+  // Consumers slice this to their roster size at deploy time.
+  readonly unitSlots: UnitSlots;
   readonly objectiveAnchors: readonly ObjectiveAnchor[];
   readonly diagnostics: MapGenDiagnostics;
   readonly hash: number;

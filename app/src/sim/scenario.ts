@@ -199,8 +199,8 @@ export function buildGeneratedMap(
     shadingBake: result.shadingBake,
     contours: result.contours,
   });
-  const team0Spawns = sampleSpawns(result.deployZones.team0, spawnCount.team0);
-  const team1Spawns = sampleSpawns(result.deployZones.team1, spawnCount.team1);
+  const team0Spawns = sliceSlots(result.unitSlots.team0, spawnCount.team0, result.deployZones.team0);
+  const team1Spawns = sliceSlots(result.unitSlots.team1, spawnCount.team1, result.deployZones.team1);
   const map: GameMap = {
     schemaVersion: 2,
     id,
@@ -220,20 +220,26 @@ export function buildGeneratedMap(
   return { map, world, result };
 }
 
-function sampleSpawns(
-  zone: { x: number; y: number; w: number; h: number },
+// ADR 014 — slots are produced by the mapgen spawn planner. Consumers
+// slice to their roster size. Fallback to grid-sampling the zone only
+// when the planner returned fewer slots than the roster needs.
+function sliceSlots(
+  slots: readonly { x: number; y: number; facing: number }[],
   count: number,
+  zoneFallback: { x: number; y: number; w: number; h: number },
 ): { x: number; y: number; facing: number }[] {
-  const out: { x: number; y: number; facing: number }[] = [];
-  const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
-  const rows = Math.max(1, Math.ceil(count / cols));
-  const dx = zone.w / (cols + 1);
-  const dy = zone.h / (rows + 1);
+  if (slots.length >= count) return slots.slice(0, count).map((s) => ({ ...s }));
+  const out = slots.slice().map((s) => ({ ...s }));
+  const missing = count - out.length;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(missing)));
+  const rows = Math.max(1, Math.ceil(missing / cols));
+  const dx = zoneFallback.w / (cols + 1);
+  const dy = zoneFallback.h / (rows + 1);
   for (let r = 0; r < rows && out.length < count; r++) {
     for (let c = 0; c < cols && out.length < count; c++) {
       out.push({
-        x: Math.floor(zone.x + dx * (c + 1)),
-        y: Math.floor(zone.y + dy * (r + 1)),
+        x: Math.floor(zoneFallback.x + dx * (c + 1)),
+        y: Math.floor(zoneFallback.y + dy * (r + 1)),
         facing: 0,
       });
     }

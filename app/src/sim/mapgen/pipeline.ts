@@ -52,7 +52,7 @@ import { fbm2D, gaussian2D, hashStringToSeed, makeRng, subRng } from './noise';
 import { resampleObjectiveAroundBisector } from './objective-resample';
 import { pruneByThresholdTable } from './prune-by-threshold';
 import { buildDominantLine, stampLine } from './route-line';
-import { placeSpawns } from './spawn-placer';
+import { placeSpawns, planUnitSlots } from './spawn-placer';
 import type {
   DeployZone,
   MapGenDiagnostics,
@@ -60,6 +60,7 @@ import type {
   MapGenResult,
   ObjectiveAnchor,
   RosterSpec,
+  UnitSlots,
 } from './types';
 
 const DEFAULT_ROSTER: RosterSpec = { squadCount: 2, unitCount: 8 };
@@ -643,12 +644,9 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team0);
   ensureZoneWalkable(base, buildingId, point, walkability, elevationStep, W, team1);
 
-  // Zero coverDensity inside the final deploy zones — the up-front mask
-  // used rear-third heuristics; the placer may have shifted zones, and
-  // downstream consumers (thumbnail heatmap, future AI density queries)
-  // expect coverDensity inside spawn territory to be zero.
-  maskZoneInDensity(coverDensity, W, team0, 2);
-  maskZoneInDensity(coverDensity, W, team1, 2);
+  // ADR 014 — density masking of deploy zones removed. Terrain generation
+  // now spans the whole map edge-to-edge; spawn planner below lands units
+  // on walkable tiles regardless of cover density.
 
   // Resample objective anchors around the spawn placer's bisector so
   // both teams have similar travel distance to each objective.
@@ -727,6 +725,21 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   const shadingBake = bakeShading(elevationStep, W, H);
   const contours = bakeContours(elevationStep, W, H);
 
+  // ADR 014 — plan per-unit spawn tiles. Team 0 marches in along a road-
+  // connected map edge; team 1 rings the dominant objective anchor. The
+  // planner falls back to grid-sampling the deploy zone rects when no
+  // road endpoint / anchor is available.
+  const spawnPlan = planUnitSlots({
+    W,
+    H,
+    walkability,
+    dominantLine,
+    objectiveAnchors,
+    team0Zone: team0,
+    team1Zone: team1,
+  });
+  const unitSlots: UnitSlots = spawnPlan.slots;
+
   return {
     request: req,
     width: W,
@@ -755,6 +768,7 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     capillaries,
     heroLandmark,
     deployZones: { team0, team1 },
+    unitSlots,
     objectiveAnchors,
     diagnostics,
     hash,
@@ -1017,25 +1031,6 @@ function walkMaskFromMove(
       return WALK_INFANTRY_MASK;
     case 'blocked-all':
       return 0;
-  }
-}
-
-function maskZoneInDensity(
-  field: Float32Array,
-  W: number,
-  zone: DeployZone,
-  buffer: number,
-): void {
-  const x0 = Math.max(0, zone.x - buffer);
-  const y0 = Math.max(0, zone.y - buffer);
-  const x1 = Math.min(W - 1, zone.x + zone.w - 1 + buffer);
-  const y1 = zone.y + zone.h - 1 + buffer;
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      const i = y * W + x;
-      if (i < 0 || i >= field.length) continue;
-      field[i] = 0;
-    }
   }
 }
 
