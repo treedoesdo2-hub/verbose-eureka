@@ -137,6 +137,21 @@ export function Deploy(): React.JSX.Element {
           >
             {paused ? '▶ resume' : '❙❙ pause'}
           </button>
+          <button
+            type="button"
+            className="btn btn-small danger"
+            onClick={() => {
+              // Stalled-sim escape: stop the worker loop, go back to the
+              // board as a forfeit. No debrief state written — the user
+              // abandoned the contract rather than finishing it.
+              getSimBridge().send({ type: 'stopSim' });
+              setPaused(false);
+              go('board');
+            }}
+            title="Abort this match and return to the contract board"
+          >
+            ✖ abort
+          </button>
         </div>
         <h3 style={{ marginTop: 10 }}>Speed</h3>
         <div className="speed-controls">
@@ -175,13 +190,15 @@ export function Deploy(): React.JSX.Element {
         <hr />
         <h3>Units</h3>
         <ul className="unit-list">
-          {snapshot?.units.map((u) => (
-            <li key={u.id} className={`unit-item team-${u.teamId}`}>
-              <span className="name">#{u.id}</span>
-              <span className="mono blood">{Math.round(u.blood)}</span>
-              <span className="action">{u.actionKind}</span>
-            </li>
-          ))}
+          {snapshot?.units
+            .filter((u) => u.teamId === 1)
+            .map((u) => (
+              <li key={u.id} className={`unit-item team-${u.teamId}`}>
+                <span className="name">#{u.id}</span>
+                <span className="mono blood">{Math.round(u.blood)}</span>
+                <span className="action">{u.actionKind}</span>
+              </li>
+            ))}
         </ul>
       </aside>
     </div>

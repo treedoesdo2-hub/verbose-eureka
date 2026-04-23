@@ -82,6 +82,11 @@ export type SimState = {
   // ADR 003 squad hierarchy: player units belong to squads and follow a
   // leader while the squad's order is 'advance'. Keyed by SquadRuntimeState.id.
   readonly squads: ReadonlyMap<string, SquadRuntimeState>;
+  // Tick of the most recent combat-shaped event (fired / hit / downed /
+  // died / stabilized). Used by the stalemate watchdog to force-end
+  // matches where both sides have fallen out of engagement and the BT
+  // can't re-acquire — see @desktop's 2026-04-23 stall finding.
+  readonly lastCombatTick: number;
   // COA-4 map metadata — dominant line + hero landmark carry the map's
   // spatial identity through to briefing UI + AI waypoint hints. Null on
   // pre-COA-4 scenarios (authored fixtures that predate the pipeline

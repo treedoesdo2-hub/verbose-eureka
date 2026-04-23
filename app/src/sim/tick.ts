@@ -650,6 +650,24 @@ export function tick(state: SimState, rng: Rng): SimState {
   const team0Alive = [...finalUnits.values()].some((u) => u.teamId === 0 && canFight(u));
   const team1Alive = [...finalUnits.values()].some((u) => u.teamId === 1 && canFight(u));
   const primary = nextObjectives[0];
+
+  // Stalemate watchdog. Tracks the most recent combat-shaped event; if
+  // nothing combat-shaped has happened for STALEMATE_TIMEOUT_TICKS, the
+  // BT has fallen out of engagement and can't re-acquire (follow-target
+  // not pathfound for enemies — see project_squad_behavior.md known
+  // gap). Force-end with 'stalemate' so the player at least gets a
+  // debrief instead of an infinite loop.
+  const combatEventThisTick = events.some(
+    (e) =>
+      e.kind === 'unit-fired' ||
+      e.kind === 'unit-hit' ||
+      e.kind === 'unit-downed' ||
+      e.kind === 'unit-died' ||
+      e.kind === 'unit-stabilized',
+  );
+  const lastCombatTick = combatEventThisTick ? state.tick + 1 : state.lastCombatTick;
+  const STALEMATE_TIMEOUT_TICKS = SIM_HZ * 60; // 60 sim-seconds of no combat
+
   let ended = false;
   let endReason: string | undefined;
   if (primary && primary.status === 'complete') {
@@ -664,6 +682,9 @@ export function tick(state: SimState, rng: Rng): SimState {
   } else if (!team1Alive) {
     ended = true;
     endReason = 'team-1-defeated';
+  } else if (state.tick - lastCombatTick > STALEMATE_TIMEOUT_TICKS) {
+    ended = true;
+    endReason = 'stalemate';
   }
 
   // Leader promotion: if a squad's current leader is down/dead, pick the
@@ -685,6 +706,7 @@ export function tick(state: SimState, rng: Rng): SimState {
     team1HomePos: state.team1HomePos,
     squads: nextSquads,
     mapMeta: state.mapMeta,
+    lastCombatTick,
   };
 }
 
@@ -716,6 +738,7 @@ export function makeInitialState(
     team1HomePos: computed.team1,
     squads,
     mapMeta,
+    lastCombatTick: 0,
   };
 }
 
