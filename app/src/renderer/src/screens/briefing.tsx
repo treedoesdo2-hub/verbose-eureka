@@ -1,9 +1,10 @@
 import type { Operator } from '@schema/operator';
-import type { ScenarioRequest, WireLoadout } from '@shared/messages';
+import type { MapGenResultTransfer, ScenarioRequest, WireLoadout } from '@shared/messages';
 import { computeNetEconomics } from '@sim/contract-economics';
 import { interpolateBriefing, mapGenRequestFromContract } from '@sim/mapgen/contract-binder';
 import type { HeroLandmark } from '@sim/mapgen/hero-landmark';
-import { runPipeline } from '@sim/mapgen/pipeline';
+import { runPipelineWithRetry } from '@sim/mapgen/pipeline';
+import type { MapGenResult } from '@sim/mapgen/types';
 import { renderThumbnail } from '@sim/mapgen/thumbnail';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getContent } from '../content';
@@ -142,6 +143,10 @@ export function Briefing(): React.JSX.Element {
     // just inspected in the preview. startSim's seed is both the sim RNG
     // seed AND the map-gen runSeed via mapGenRequestFromContract.
     const seed = previewSeed;
+    // P1.9 — hand the already-generated map over to the worker so it
+    // doesn't re-run runPipeline and diverge. Fallback to legacy path for
+    // authored-map contracts (biomeHint === null) where preview is null.
+    const prebuiltMap = preview ? buildPrebuiltMap(preview) : undefined;
     bridge.send({
       type: 'startSim',
       payload: {
@@ -155,11 +160,12 @@ export function Briefing(): React.JSX.Element {
           deployedOperatorIds: deployedIds,
           perOperatorLoadouts,
           operatorSquadIds,
+          prebuiltMap,
         },
       },
     });
     go('deploy');
-  }, [contract, assignedSquads, go, previewSeed]);
+  }, [contract, assignedSquads, go, previewSeed, preview]);
 
   const hotkeys = useMemo(
     () => [
@@ -227,7 +233,11 @@ export function Briefing(): React.JSX.Element {
             <>
               <dt>preview</dt>
               <dd>
-                <MapThumbnailCanvas pixels={preview?.pixels ?? null} />
+                <MapThumbnailCanvas
+                  pixels={preview?.pixels ?? null}
+                  sourceSize={256}
+                  displaySize={384}
+                />
               </dd>
             </>
           ) : null}
@@ -482,6 +492,19 @@ type MapPreview = {
   readonly pixels: Uint8ClampedArray;
   readonly width: number;
   readonly height: number;
+  // P1.8 — the full MapGenResult and its originating request are cached
+  // alongside the preview so Deploy can send the exact same map buffer
+  // to the worker instead of re-running runPipeline. Kept with the
+  // preview so the cache lifetime matches the UI lifetime (single
+  // contract-board → briefing → deploy traversal).
+  readonly result: MapGenResult;
+  readonly request: {
+    readonly seed: string;
+    readonly biome: string;
+    readonly size: number;
+    readonly tileSizeMeters: number;
+    readonly generationVersion: number;
+  };
 };
 
 function useMapPreview(contractId: string | null, runSeed: number): MapPreview | null {
@@ -502,22 +525,86 @@ function useMapPreview(contractId: string | null, runSeed: number): MapPreview |
     // not a small map at the same seed, which the pipeline's RNG-per-
     // tile loops would make visually unrelated.
     const req = mapGenRequestFromContract(contract, 1.5, 1, runSeed);
-    const result = runPipeline(req);
-    const thumb = renderThumbnail(result, 96, { tier: 'briefing' });
+    const result = runPipelineWithRetry(req);
+    // P7.4 — render at 256 source resolution; display scales to 384 in
+    // MapThumbnailCanvas. Larger source → more legible landmarks.
+    const thumb = renderThumbnail(result, 256, { tier: 'briefing' });
     setPreview({
       landmark: result.heroLandmark,
       pixels: thumb.pixels,
       width: thumb.width,
       height: thumb.height,
+      result,
+      request: {
+        seed: req.seed,
+        biome: req.biome,
+        size: req.size,
+        tileSizeMeters: req.tileSizeMeters,
+        generationVersion: req.generationVersion,
+      },
     });
   }, [contractId, bundle, runSeed]);
   return preview;
 }
 
+// Extract the worker-transferable subset from a briefing-side MapGenResult.
+// Clones typed-array views so the worker owns the payload after postMessage
+// without disturbing the renderer cache.
+function buildPrebuiltMap(
+  preview: MapPreview,
+): MapGenResultTransfer {
+  const r = preview.result;
+  return {
+    seed: preview.request.seed,
+    biome: preview.request.biome,
+    size: preview.request.size,
+    tileSizeMeters: preview.request.tileSizeMeters,
+    generationVersion: preview.request.generationVersion,
+    width: r.width,
+    height: r.height,
+    base: new Uint8Array(r.base),
+    point: new Uint8Array(r.point),
+    edgeN: new Uint8Array(r.edgeN),
+    edgeW: new Uint8Array(r.edgeW),
+    edgeOverrideN: new Uint8Array(r.edgeOverrideN),
+    edgeOverrideW: new Uint8Array(r.edgeOverrideW),
+    buildingId: new Uint16Array(r.buildingId),
+    walkability: new Uint16Array(r.walkability),
+    coverProfile: new Uint8Array(r.coverProfile),
+    elevationStep: new Uint8Array(r.elevationStep),
+    structureHeight: new Uint8Array(r.structureHeight),
+    hpN: new Uint16Array(r.hpN),
+    hpW: new Uint16Array(r.hpW),
+    hpPoint: new Uint16Array(r.hpPoint),
+    buildings: r.buildings.map((b) => ({
+      id: b.id,
+      family: b.family,
+      floors: b.floors,
+      footprintTiles: b.footprintTiles.map((t) => ({ x: t.x, y: t.y })),
+      wallHpInitial: b.wallHpInitial,
+    })),
+    shadingBake: new Uint8ClampedArray(r.shadingBake),
+    contours: new Uint8Array(r.contours),
+    deployZones: {
+      team0: { ...r.deployZones.team0, x: r.deployZones.team0.x, y: r.deployZones.team0.y, w: r.deployZones.team0.w, h: r.deployZones.team0.h },
+      team1: { ...r.deployZones.team1, x: r.deployZones.team1.x, y: r.deployZones.team1.y, w: r.deployZones.team1.w, h: r.deployZones.team1.h },
+    },
+    objectiveAnchors: r.objectiveAnchors.map((a) => ({
+      kindHint: a.kindHint,
+      rect: { ...a.rect },
+      qualityScore: a.qualityScore,
+    })),
+  };
+}
+
 function MapThumbnailCanvas({
   pixels,
+  sourceSize = 96,
+  displaySize = 384,
 }: {
   pixels: Uint8ClampedArray | null;
+  sourceSize?: number;
+  displaySize?: number;
 }): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
@@ -526,18 +613,21 @@ function MapThumbnailCanvas({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const imageData = ctx.createImageData(96, 96);
+    const imageData = ctx.createImageData(sourceSize, sourceSize);
     imageData.data.set(pixels);
     ctx.putImageData(imageData, 0, 0);
-  }, [pixels]);
+  }, [pixels, sourceSize]);
 
   return (
     <canvas
       ref={canvasRef}
       className="map-thumbnail"
-      width={96}
-      height={96}
-      style={{ imageRendering: 'pixelated', width: 192, height: 192 }}
+      width={sourceSize}
+      height={sourceSize}
+      // P7.4 — display at 384×384 (was 192×192). Landmark visibility
+      // was the driver per @desktop's audit: Firefight uses ~190×190
+      // at 1920×1080 (≈10% of screen height); we scale 2× for legibility.
+      style={{ imageRendering: 'pixelated', width: displaySize, height: displaySize }}
     />
   );
 }

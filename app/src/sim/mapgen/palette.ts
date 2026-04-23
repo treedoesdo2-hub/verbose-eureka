@@ -20,27 +20,33 @@ export type RGBA = readonly [number, number, number, number];
 export type PaletteTier = 'battle' | 'strategic' | 'briefing' | 'planning';
 
 // ---- Base-surface colors indexed by world.ts BASE_KINDS order -------------
+// Firefight v9.0.2 authoritative palette per terrain-palette.json
+// (D5 in AUDIT_INTEGRATION.md). Desaturated warm earth tones; water is
+// olive-grey, not blue.
 
 const TERRAIN_PALETTE_BATTLE: RGB[] = [
-  [178, 164, 134], // 0 open — tan
-  [150, 130, 94], //  1 road — dirt brown
-  [53, 80, 102], //   2 water_shallow
-  [20, 30, 46], //    3 water_deep
-  [75, 58, 42], //    4 mud
-  [102, 92, 78], //   5 rubble_ground
-  [214, 221, 224], // 6 snow
-  [208, 183, 132], // 7 sand
+  [100, 96, 37], //   0 open — Firefight olive (#646025)
+  [150, 138, 117], // 1 road — Firefight warm grey (#968A75)
+  [95, 97, 29], //    2 water_shallow — Firefight olive-grey (#5F611D)
+  [78, 80, 22], //    3 water_deep — deeper olive for contrast
+  [106, 91, 42], //   4 mud — Firefight (#6A5B2A)
+  [85, 75, 63], //    5 rubble_ground — darker greyer mud variant
+  [220, 224, 220], // 6 snow — lightly warm bone (no Firefight sample)
+  [150, 127, 81], //  7 sand — Firefight (#967F51)
 ];
 
+// Minimap tier brightens the Firefight base values to keep small tiles
+// legible, but preserves hue so the aesthetic stays continuous with the
+// battle view.
 const TERRAIN_PALETTE_MINIMAP: RGB[] = [
-  [200, 188, 148], // 0 open — lifted slightly
-  [160, 138, 96], //  1 road
-  [80, 110, 130], //  2 water_shallow
-  [50, 75, 100], //   3 water_deep — lifted for visibility on thumbnails
-  [90, 75, 55], //    4 mud
-  [120, 110, 96], //  5 rubble_ground
-  [230, 236, 240], // 6 snow
-  [220, 198, 148], // 7 sand
+  [130, 125, 55], //  0 open — lifted Firefight olive
+  [170, 158, 137], // 1 road
+  [115, 117, 45], //  2 water_shallow
+  [95, 98, 32], //    3 water_deep
+  [130, 112, 60], //  4 mud
+  [110, 98, 82], //   5 rubble_ground
+  [232, 236, 232], // 6 snow
+  [180, 155, 101], // 7 sand
 ];
 
 export function terrainColor(baseByte: number, tier: PaletteTier): RGB {
@@ -115,6 +121,18 @@ export type FeatureVisibility = {
   readonly legend: boolean;
   readonly frame: boolean;
   readonly labels: boolean;
+  // Density-driven COA-1 scatter debugging — shows the coverDensity
+  // field as a red heatmap and marks hotspots with white pips. Useful
+  // when diagnosing "why did scatter land here" or "why is this biome
+  // barren". Planning tier only (COA-1 #46).
+  readonly densityHeatmap: boolean;
+  // P3.6 — baked Sobel hill shading applied to every tile. Battle tier
+  // always shows it; strategic/briefing/planning toggle based on tier
+  // preference.
+  readonly shadedRelief: boolean;
+  // P3.7b — per-tile elevation-step contour strokes. Renderer shows
+  // only at zoom-out; thumbnail always.
+  readonly contours: boolean;
 };
 
 export const FEATURE_VISIBILITY: Record<PaletteTier, FeatureVisibility> = {
@@ -132,6 +150,9 @@ export const FEATURE_VISIBILITY: Record<PaletteTier, FeatureVisibility> = {
     legend: false,
     frame: false,
     labels: false,
+    densityHeatmap: false,
+    shadedRelief: true,
+    contours: false,
   },
   strategic: {
     terrain: true,
@@ -147,6 +168,9 @@ export const FEATURE_VISIBILITY: Record<PaletteTier, FeatureVisibility> = {
     legend: false,
     frame: true,
     labels: false,
+    densityHeatmap: false,
+    shadedRelief: true,
+    contours: true,
   },
   briefing: {
     terrain: true,
@@ -162,6 +186,9 @@ export const FEATURE_VISIBILITY: Record<PaletteTier, FeatureVisibility> = {
     legend: true,
     frame: true,
     labels: true,
+    densityHeatmap: false,
+    shadedRelief: true,
+    contours: true,
   },
   planning: {
     terrain: true,
@@ -177,5 +204,10 @@ export const FEATURE_VISIBILITY: Record<PaletteTier, FeatureVisibility> = {
     legend: true,
     frame: true,
     labels: true,
+    // Planning tier is dev/debug — enable the heatmap so map-gen
+    // regressions are visible in the thumbnail (COA-1 #46).
+    densityHeatmap: true,
+    shadedRelief: true,
+    contours: true,
   },
 };

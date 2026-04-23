@@ -1,25 +1,19 @@
 import type { WorldSnapshot } from '@shared/snapshot';
-import { Container, Graphics } from 'pixi.js';
-
-const TERRAIN_COLORS: Record<number, number> = {
-  0: 0x1a2b1a,
-  1: 0x3a342b,
-  2: 0x4a3e2f,
-  3: 0x1b3a1f,
-  4: 0x193352,
-  5: 0x342c26,
-};
+import { Container, Sprite, Texture } from 'pixi.js';
+import { terrainColor, pointColor } from '@sim/mapgen/palette';
 
 const CHUNK_TILES = 32;
 
-// Chunked terrain renderer: one Graphics per CHUNK_TILES×CHUNK_TILES block,
-// baked once at scene init. Viewport culling hides off-screen chunks without
-// re-rendering. At 4096² this is 16384 chunk graphics — still a lot, but
-// tractable because each chunk is a single draw call and only visible chunks
-// are rendered by Pixi each frame.
+// Sprite-per-chunk terrain renderer (P1.4).
+//
+// Previous design used Pixi Graphics (one rect per tile per color). This
+// version bakes each chunk to an offscreen Canvas2D ImageData and wraps it
+// in a Sprite. Result: one draw call per chunk, per-tile tint-capable
+// (enables the P3.5 shaded-relief pass), and the ImageData path gives us
+// direct per-pixel control for subsequent baked effects like contours.
 export class TerrainLayer {
   readonly container: Container;
-  private chunks: { g: Graphics; x: number; y: number; w: number; h: number }[] = [];
+  private chunks: { sprite: Sprite; x: number; y: number; w: number; h: number }[] = [];
   private tileSize: number;
 
   constructor(world: WorldSnapshot) {
@@ -34,28 +28,91 @@ export class TerrainLayer {
       for (let cx = 0; cx < world.width; cx += CHUNK_TILES) {
         const cw = Math.min(CHUNK_TILES, world.width - cx);
         const ch = Math.min(CHUNK_TILES, world.height - cy);
-        const g = new Graphics();
-        // Group tiles by color within the chunk so each color is one fill call.
-        const byColor = new Map<number, { x: number; y: number }[]>();
+        const canvas = document.createElement('canvas');
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext('2d', { willReadFrequently: false });
+        if (!ctx) throw new Error('2d context unavailable');
+        const imageData = ctx.createImageData(cw, ch);
+        const pixels = imageData.data;
+        // shadingBake: 128 = neutral; <128 darkens, >128 brightens. Applied
+        // as a multiplier (shade / 128).
+        const shading = world.shadingBake;
         for (let y = 0; y < ch; y++) {
           for (let x = 0; x < cw; x++) {
-            const i = (cy + y) * world.width + (cx + x);
-            const color = TERRAIN_COLORS[world.base[i]] ?? 0x1a2b1a;
-            let arr = byColor.get(color);
-            if (!arr) {
-              arr = [];
-              byColor.set(color, arr);
+            const worldIdx = (cy + y) * world.width + (cx + x);
+            // Feature priority at bake-time: buildings > point-objects >
+            // base. Edges paint on top as 1px strokes after the base fill.
+            let r: number;
+            let g: number;
+            let b: number;
+            const buildingId = world.buildingId[worldIdx];
+            if (buildingId > 0) {
+              // Flat building fill — darker warm grey so sprite+shadow
+              // overlays (P5+) read clearly against it. Same tone for all
+              // families until family-specific sprites land.
+              r = 88;
+              g = 80;
+              b = 68;
+            } else {
+              const point = world.point[worldIdx];
+              const pointRgb = point > 0 ? pointColor(point) : null;
+              if (pointRgb) {
+                r = pointRgb[0];
+                g = pointRgb[1];
+                b = pointRgb[2];
+              } else {
+                const baseRgb = terrainColor(world.base[worldIdx], 'battle');
+                r = baseRgb[0];
+                g = baseRgb[1];
+                b = baseRgb[2];
+              }
             }
-            arr.push({ x: (cx + x) * ts, y: (cy + y) * ts });
+            const shade = shading[worldIdx] / 128;
+            const pi = (y * cw + x) * 4;
+            pixels[pi] = Math.min(255, Math.max(0, r * shade));
+            pixels[pi + 1] = Math.min(255, Math.max(0, g * shade));
+            pixels[pi + 2] = Math.min(255, Math.max(0, b * shade));
+            pixels[pi + 3] = 255;
           }
         }
-        for (const [color, tiles] of byColor) {
-          for (const t of tiles) g.rect(t.x, t.y, ts, ts);
-          g.fill({ color });
+        ctx.putImageData(imageData, 0, 0);
+        // Edges paint after the base fill via Canvas2D fillRect. Hedge
+        // (kind 1) + bocage (kind 2) → dark green; stone_wall_low (kind
+        // 3) → grey; wood_fence (kind 4) → brown. The kind occupies the
+        // low 4 bits; state/material the high 4 bits are ignored at this
+        // tier.
+        const edgeColorFor = (kind: number): string | null => {
+          if (kind === 1 || kind === 2) return '#303e22';
+          if (kind === 3) return '#6a6660';
+          if (kind === 4) return '#5a4a32';
+          return null;
+        };
+        for (let y = 0; y < ch; y++) {
+          for (let x = 0; x < cw; x++) {
+            const worldIdx = (cy + y) * world.width + (cx + x);
+            const colorN = edgeColorFor(world.edgeN[worldIdx] & 0x0f);
+            if (colorN) {
+              ctx.fillStyle = colorN;
+              ctx.fillRect(x, y, 1, 1);
+            }
+            const colorW = edgeColorFor(world.edgeW[worldIdx] & 0x0f);
+            if (colorW) {
+              ctx.fillStyle = colorW;
+              ctx.fillRect(x, y, 1, 1);
+            }
+          }
         }
-        this.container.addChild(g);
+        const tex = Texture.from(canvas);
+        const sprite = new Sprite(tex);
+        sprite.position.set(cx * ts, cy * ts);
+        sprite.scale.set(ts, ts);
+        // Sprites default to bilinear; nearest keeps tile edges crisp when
+        // zoomed in.
+        tex.source.scaleMode = 'nearest';
+        this.container.addChild(sprite);
         this.chunks.push({
-          g,
+          sprite,
           x: cx * ts,
           y: cy * ts,
           w: cw * ts,
@@ -71,7 +128,7 @@ export class TerrainLayer {
     for (const c of this.chunks) {
       const visible =
         c.x + c.w >= viewMinX && c.x <= viewMaxX && c.y + c.h >= viewMinY && c.y <= viewMaxY;
-      c.g.visible = visible;
+      c.sprite.visible = visible;
     }
   }
 
@@ -80,7 +137,10 @@ export class TerrainLayer {
   }
 
   dispose(): void {
-    for (const c of this.chunks) c.g.destroy();
+    for (const c of this.chunks) {
+      c.sprite.texture.destroy(true);
+      c.sprite.destroy();
+    }
     this.chunks = [];
     this.container.destroy({ children: true });
   }

@@ -12,6 +12,8 @@ import { MatchStatsAccumulator } from '@sim/match-stats';
 import { RecordingSim } from '@sim/replay';
 import type { ScenarioDeployment } from '@sim/scenario';
 import { buildGeneratedMap, buildScenario } from '@sim/scenario';
+import { makeWorldFromBuffers } from '@sim/world';
+import type { GameMap } from '@schema/map';
 import { snapshotState, snapshotWorld } from '@sim/snapshot';
 import type { SimState } from '@sim/state';
 import type { UnitStats } from '@sim/unit';
@@ -110,23 +112,95 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
   // from the content pack. Generator anchors bind to contract objectives so
   // "extract" without an authored zone resolves to a generator-picked rect.
   let map: Parameters<typeof buildScenario>[0]['map'];
+  let prebuiltWorld: Parameters<typeof buildScenario>[0]['prebuiltWorld'] = undefined;
+  let prebuiltMapMeta: Parameters<typeof buildScenario>[0]['prebuiltMapMeta'] = undefined;
   let objectiveZoneOverrides:
     | ReadonlyMap<string, { x: number; y: number; w: number; h: number }>
     | undefined;
   if (contract.modifiers.biomeHint !== null) {
-    const deployments = buildDeployments(req);
-    // Mix the playthrough seed into the map seed so every Deploy
-    // produces a fresh map for the same contract. Without this the
-    // seed was `contract.id`, making every run of yard-assault play on
-    // the identical map.
-    const genReq = mapGenRequestFromContract(contract, 1.5, 1, seed);
-    const enemyCount = contract.enemies.archetypes.reduce((sum, a) => sum + a.count, 0);
-    const gen = buildGeneratedMap(genReq, contract.name, `gen:${genReq.seed}`, {
-      team0: Math.max(1, deployments.length),
-      team1: Math.max(1, enemyCount),
-    });
-    map = gen.map;
-    objectiveZoneOverrides = bindObjectivesToAnchors(contract, gen.result.objectiveAnchors);
+    if (req.prebuiltMap) {
+      // P1.10 — briefing already ran the pipeline and cached the result.
+      // Rehydrate directly into a World + stub GameMap instead of re-
+      // running mapgen; otherwise the thumbnail and the battle map
+      // diverge.
+      const pm = req.prebuiltMap;
+      prebuiltWorld = makeWorldFromBuffers({
+        width: pm.width,
+        height: pm.height,
+        tileSizeMeters: pm.tileSizeMeters,
+        base: pm.base,
+        point: pm.point,
+        edgeN: pm.edgeN,
+        edgeW: pm.edgeW,
+        edgeOverrideN: pm.edgeOverrideN,
+        edgeOverrideW: pm.edgeOverrideW,
+        buildingId: pm.buildingId,
+        walkability: pm.walkability,
+        coverProfile: pm.coverProfile,
+        elevationStep: pm.elevationStep,
+        structureHeight: pm.structureHeight,
+        hpN: pm.hpN,
+        hpW: pm.hpW,
+        hpPoint: pm.hpPoint,
+        buildings: pm.buildings.map((b) => ({
+          id: b.id,
+          family: b.family,
+          floors: b.floors,
+          footprintTiles: b.footprintTiles.map((t) => ({ x: t.x, y: t.y })),
+          wallHpInitial: b.wallHpInitial,
+        })),
+        shadingBake: pm.shadingBake,
+        contours: pm.contours,
+      });
+      prebuiltMapMeta = {
+        dominantLine: null,
+        heroLandmark: null,
+      };
+      const stubMap: GameMap = {
+        schemaVersion: 2,
+        id: `gen:${pm.seed}`,
+        name: contract.name,
+        width: pm.width,
+        height: pm.height,
+        tileSizeMeters: pm.tileSizeMeters,
+        tiles: [],
+        buildings: [],
+        playerSpawns: [],
+        enemySpawns: [],
+        waypointRoutes: [],
+        generationSeed: pm.seed,
+        generationVersion: pm.generationVersion,
+        biome: pm.biome as GameMap['biome'],
+      };
+      map = stubMap;
+      objectiveZoneOverrides = bindObjectivesToAnchors(
+        contract,
+        pm.objectiveAnchors.map((a) => ({
+          kindHint: a.kindHint,
+          rect: { ...a.rect },
+          qualityScore: a.qualityScore,
+        })),
+      );
+    } else {
+      const deployments = buildDeployments(req);
+      // Mix the playthrough seed into the map seed so every Deploy
+      // produces a fresh map for the same contract. Without this the
+      // seed was `contract.id`, making every run of yard-assault play on
+      // the identical map.
+      const genReq = mapGenRequestFromContract(contract, 1.5, 1, seed);
+      const enemyCount = contract.enemies.archetypes.reduce((sum, a) => sum + a.count, 0);
+      const gen = buildGeneratedMap(genReq, contract.name, `gen:${genReq.seed}`, {
+        team0: Math.max(1, deployments.length),
+        team1: Math.max(1, enemyCount),
+      });
+      map = gen.map;
+      prebuiltWorld = gen.world;
+      prebuiltMapMeta = {
+        dominantLine: gen.result.dominantLine,
+        heroLandmark: gen.result.heroLandmark,
+      };
+      objectiveZoneOverrides = bindObjectivesToAnchors(contract, gen.result.objectiveAnchors);
+    }
   } else {
     const authored = bundle.maps.get(req.mapId);
     if (!authored) {
@@ -146,6 +220,8 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
     templates: bundle.templates,
     deployments: buildDeployments(req),
     objectiveZoneOverrides,
+    prebuiltWorld,
+    prebuiltMapMeta,
   });
 
   // Scenario-start breadcrumb: team sizes, squad counts, objective summary,

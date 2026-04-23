@@ -121,6 +121,11 @@ function runGeneratedScenario(ticks: number): UnitTraceRow[] {
     templates,
     deployments,
     objectiveZoneOverrides: overrides,
+    prebuiltWorld: gen.world,
+    prebuiltMapMeta: {
+      dominantLine: gen.result.dominantLine,
+      heroLandmark: gen.result.heroLandmark,
+    },
   });
 
   const sim = new RecordingSim(initial, 42);

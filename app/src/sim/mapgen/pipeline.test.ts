@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { baseToByte, WALK_FOOT, WALK_WHEELED } from '../world';
-import { runPipeline } from './pipeline';
-import type { MapGenRequest } from './types';
+import { baseToByte, pointToByte, WALK_FOOT, WALK_WHEELED } from '../world';
+import { runPipeline, sanityCheckMap } from './pipeline';
+import type { MapGenRequest, MapGenResult } from './types';
 
 function req(overrides: Partial<MapGenRequest> = {}): MapGenRequest {
   return {
@@ -38,6 +38,38 @@ describe('mapgen pipeline', () => {
     const a = runPipeline(req({ ...shared, biome: 'urban_sparse' }));
     const b = runPipeline(req({ ...shared, biome: 'rural_open' }));
     expect(a.hash).not.toBe(b.hash);
+  });
+
+  // P2.6 — every biome must have a registered density profile that
+  // produces hotspots. Catches regressions where a biome falls through
+  // to an uninstalled default and maps spawn barren.
+  const BIOMES_FOR_HOTSPOT_TEST: MapGenRequest['biome'][] = [
+    'urban_dense',
+    'urban_sparse',
+    'rural_village',
+    'rural_open',
+    'forest',
+    'industrial',
+    'mixed',
+    'arid',
+  ];
+  for (const biome of BIOMES_FOR_HOTSPOT_TEST) {
+    it(`${biome} extracts ≥3 hotspots at 256²`, () => {
+      const r = runPipeline(req({ seed: `hotspot-${biome}`, biome, size: 256 }));
+      expect(r.hotspots.length).toBeGreaterThanOrEqual(3);
+    });
+  }
+
+  // P2.8 — rural_open used to be hit hard by the rear-thirds pre-mask
+  // that killed 67% of hotspot capacity (see P2.7). Assert the current
+  // counter-to-mask hotspot count exceeds what the old heuristic would
+  // have allowed — the old mask zeroed the top + bottom thirds so only
+  // a ~middle-third band could host hotspots. At 256² the middle third
+  // is 256*85 = ~21760 cells, giving ~2-4 hotspots. The unmasked pipeline
+  // should produce ≥6 (roughly 3×).
+  it('rural_open 256² produces ≥6 hotspots after rear-third mask removal (P2.8)', () => {
+    const r = runPipeline(req({ seed: 'mask-removal-check', biome: 'rural_open', size: 256 }));
+    expect(r.hotspots.length).toBeGreaterThanOrEqual(6);
   });
 
   it('clears deploy zones of water and buildings so units can spawn', () => {
@@ -119,6 +151,44 @@ describe('mapgen pipeline', () => {
     const r = runPipeline(req({ seed: 'hotspot-seed', size: 128 }));
     expect(r.hotspots.length).toBeGreaterThan(0);
     expect(r.diagnostics.hotspotsFound).toBe(r.hotspots.length);
+  });
+
+  it('exposes a minimum-spanning-tree over hotspots (COA-1 #39)', () => {
+    // Hotspot count >=2 ⇒ V-1 MST edges. Edge endpoints must be valid
+    // hotspot indices, and distances must be non-negative.
+    const r = runPipeline(req({ seed: 'mst-seed', size: 128 }));
+    if (r.hotspots.length < 2) {
+      expect(r.hotspotAdjacency.length).toBe(0);
+      return;
+    }
+    expect(r.hotspotAdjacency.length).toBe(r.hotspots.length - 1);
+    for (const e of r.hotspotAdjacency) {
+      expect(e.from).toBeGreaterThanOrEqual(0);
+      expect(e.from).toBeLessThan(r.hotspots.length);
+      expect(e.to).toBeGreaterThanOrEqual(0);
+      expect(e.to).toBeLessThan(r.hotspots.length);
+      expect(e.dist).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('urban_sparse biome scatters debris point-objects around hotspots (COA-1 #40)', () => {
+    // scatterDensityDrivenDebris should stamp debris kinds themed to the
+    // urban biome (barrels, tyres, rubble piles, empty carts). Verifies
+    // the density-driven scatter is wired in and not dormant. Uses
+    // urban_sparse because only biomes in DENSITY_PROFILES produce
+    // hotspots that debris scatter can anchor to.
+    const r = runPipeline(req({ seed: 'urban-debris', biome: 'urban_sparse', size: 192 }));
+    const urbanDebrisKinds = new Set<number>([
+      pointToByte('barrel'),
+      pointToByte('tyres'),
+      pointToByte('rubble_pile'),
+      pointToByte('cart_empty'),
+    ]);
+    let debrisCount = 0;
+    for (let i = 0; i < r.point.length; i++) {
+      if (urbanDebrisKinds.has(r.point[i])) debrisCount++;
+    }
+    expect(debrisCount).toBeGreaterThan(0);
   });
 
   it('hotspots never land inside deploy zones', () => {
@@ -220,5 +290,68 @@ describe('mapgen pipeline', () => {
         expect(reached, `seed=${seed} biome=${biome} unreachable`).toBe(true);
       }
     }
+  });
+
+  // P2.11 — sanity-check the barren-map guard. Construct an artificial
+  // MapGenResult with zero point objects + zero buildings and confirm
+  // sanityCheckMap flags it.
+  it('sanityCheckMap rejects maps with <0.5% point-object density', () => {
+    const size = 64;
+    const n = size * size;
+    const empty: MapGenResult = {
+      request: req({ biome: 'mixed', size }),
+      width: size,
+      height: size,
+      base: new Uint8Array(n), // all open
+      point: new Uint8Array(n), // zero points
+      edgeN: new Uint8Array(n),
+      edgeW: new Uint8Array(n),
+      edgeOverrideN: new Uint8Array(n),
+      edgeOverrideW: new Uint8Array(n),
+      buildingId: new Uint16Array(n),
+      walkability: new Uint16Array(n),
+      coverProfile: new Uint8Array(n),
+      elevationStep: new Uint8Array(n),
+      structureHeight: new Uint8Array(n),
+      hpN: new Uint16Array(n),
+      hpW: new Uint16Array(n),
+      hpPoint: new Uint16Array(n),
+      buildings: [],
+      elevation: new Float32Array(n),
+      coverDensity: new Float32Array(n),
+      hotspots: [],
+      clusterMembership: new Int16Array(n).fill(-1),
+      hotspotAdjacency: [],
+      dominantLine: null,
+      capillaries: [],
+      heroLandmark: null,
+      deployZones: {
+        team0: { x: 0, y: 0, w: 8, h: 8 },
+        team1: { x: size - 8, y: size - 8, w: 8, h: 8 },
+      },
+      objectiveAnchors: [
+        { kindHint: 'extract', rect: { x: 30, y: 30, w: 4, h: 4 }, qualityScore: 1 },
+        { kindHint: 'defend', rect: { x: 20, y: 20, w: 4, h: 4 }, qualityScore: 1 },
+        { kindHint: 'secure', rect: { x: 40, y: 40, w: 4, h: 4 }, qualityScore: 1 },
+      ],
+      diagnostics: {
+        retryCount: 0,
+        hotspotsFound: 0,
+        hotspotsDropped: 0,
+        carvedCells: 0,
+        prunedClusters: 0,
+        densityScatterChildren: 0,
+        densityScatterRejected: 0,
+      },
+      hash: 0,
+      shadingBake: (() => {
+        const a = new Uint8ClampedArray(n);
+        a.fill(128);
+        return a;
+      })(),
+      contours: new Uint8Array(n),
+    };
+    const problems = sanityCheckMap(empty);
+    expect(problems.some((p) => p.includes('point-object density'))).toBe(true);
   });
 });

@@ -107,4 +107,43 @@ describe('snapshotWorld', () => {
     snap.base[0] = 99;
     expect(world.base[0]).not.toBe(99);
   });
+
+  it('populates every non-base buffer with a Uint*Array copy', () => {
+    const world = makeWorld(8, 8, 1);
+    // Write one non-zero byte into each buffer so byte-equality is
+    // observable post-snapshot.
+    world.point[0] = 22;
+    world.buildingId[1] = 7;
+    world.edgeN[2] = 1;
+    world.edgeW[3] = 3;
+    world.elevationStep[4] = 5;
+    world.structureHeight[5] = 2;
+    const snap = snapshotWorld(world);
+    expect(snap.point[0]).toBe(22);
+    expect(snap.buildingId[1]).toBe(7);
+    expect(snap.edgeN[2]).toBe(1);
+    expect(snap.edgeW[3]).toBe(3);
+    expect(snap.elevationStep[4]).toBe(5);
+    expect(snap.structureHeight[5]).toBe(2);
+    // shadingBake defaults to 128 (neutral) until P3.3 populates it.
+    expect(snap.shadingBake[0]).toBe(128);
+    expect(snap.contours.every((v) => v === 0)).toBe(true);
+    // Copy semantics: snapshot mutation must not reach the World.
+    snap.point[0] = 99;
+    expect(world.point[0]).toBe(22);
+  });
+
+  it('survives structuredClone without reference leaks', () => {
+    const world = makeWorld(4, 4, 1);
+    world.base[0] = 3;
+    world.point[0] = 22;
+    world.elevationStep[0] = 7;
+    const snap = snapshotWorld(world);
+    const cloned = structuredClone(snap);
+    expect(cloned.base[0]).toBe(3);
+    expect(cloned.point[0]).toBe(22);
+    expect(cloned.elevationStep[0]).toBe(7);
+    expect(cloned.base).not.toBe(snap.base);
+    expect(cloned.buildings).not.toBe(snap.buildings);
+  });
 });

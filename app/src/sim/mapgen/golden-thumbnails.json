@@ -1,0 +1,29 @@
+{
+  "urban_sparse:golden-urban-briefing-1:128:96:briefing": {
+    "seed": "golden-urban-briefing-1",
+    "biome": "urban_sparse",
+    "size": 128,
+    "targetSize": 96,
+    "tier": "briefing",
+    "hash": "50fec83bc762109e",
+    "pixelCount": 36864
+  },
+  "rural_open:golden-rural-briefing-1:128:96:briefing": {
+    "seed": "golden-rural-briefing-1",
+    "biome": "rural_open",
+    "size": 128,
+    "targetSize": 96,
+    "tier": "briefing",
+    "hash": "445b61c99d6694c0",
+    "pixelCount": 36864
+  },
+  "mixed:golden-mixed-strategic-1:128:96:strategic": {
+    "seed": "golden-mixed-strategic-1",
+    "biome": "mixed",
+    "size": 128,
+    "targetSize": 96,
+    "tier": "strategic",
+    "hash": "599d2e0408399dc1",
+    "pixelCount": 36864
+  }
+}

@@ -22,7 +22,16 @@ import { generateLandmarkName } from './landmark-names';
 import { hashStringToSeed, makeRng } from './noise';
 import { runPipeline } from './pipeline';
 import { baseKindForLine, buildDominantLine, stampLine } from './route-line';
-import { baseToByte, makeWorld, setBase } from '../world';
+import {
+  BARRIER_AXES,
+  WALK_FOOT,
+  WALK_SLOW,
+  WALK_WHEELED,
+  baseToByte,
+  makeWorld,
+  setBarrier,
+  setBase,
+} from '../world';
 
 function mkRng(seed = 'coa4-test'): () => number {
   return makeRng(hashStringToSeed(seed));
@@ -174,6 +183,35 @@ describe('COA-4 barriers + capillaries', () => {
     const caps = pickCapillaries(line, mkRng('caps'), 64, 64);
     expect(caps.length).toBeGreaterThanOrEqual(0);
     expect(caps.length).toBeLessThanOrEqual(3);
+  });
+
+  it('setBarrier bakes WALK_SLOW onto the hedge tile (COA-4 #88/#89)', () => {
+    // Regression guard for the pre-bake barrier gap: placing a hedge on
+    // tile (5,5)'s N edge must leave the tile walkable for foot but mark
+    // WALK_SLOW so A* pays a movement cost crossing a hedgerow spine.
+    const world = makeWorld(16, 16, 1.5);
+    for (let y = 0; y < 16; y++) {
+      for (let x = 0; x < 16; x++) setBase(world, x, y, 'open');
+    }
+    setBarrier(world, 5, 5, 'N', 'hedge', false);
+    const idx = 5 * 16 + 5;
+    expect(world.walkability[idx] & WALK_FOOT).not.toBe(0);
+    expect(world.walkability[idx] & WALK_SLOW).not.toBe(0);
+    // hedge axes must be authoritative — cross-check the table.
+    expect(BARRIER_AXES.hedge.move).toBe('walkable-slow');
+  });
+
+  it('setBarrier with stone_wall_low blocks wheeled chassis on the tile', () => {
+    // stone_wall_low.move is 'blocked-foot' which passes only mech + PA,
+    // so WALK_WHEELED must be stripped from the tile whose N edge carries
+    // the wall. Regression guard on the bake's layer-intersection rule.
+    const world = makeWorld(16, 16, 1.5);
+    for (let y = 0; y < 16; y++) {
+      for (let x = 0; x < 16; x++) setBase(world, x, y, 'open');
+    }
+    setBarrier(world, 8, 8, 'W', 'stone_wall_low', false);
+    const idx = 8 * 16 + 8;
+    expect(world.walkability[idx] & WALK_WHEELED).toBe(0);
   });
 
   it('stampCapillary writes to grid and counts correctly', () => {

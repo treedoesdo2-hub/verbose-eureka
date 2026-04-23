@@ -5,7 +5,7 @@ import type { LoadoutTemplate } from '@schema/template';
 import { asUnitId, type UnitId } from '@shared/ids';
 import type { ContentLookup, Loadout } from './loadout';
 import { deriveCombatProfile, loadoutFromTemplate } from './loadout';
-import { runPipeline } from './mapgen/pipeline';
+import { runPipelineWithRetry } from './mapgen/pipeline';
 import type { MapGenRequest, MapGenResult, RosterSpec, SpawnRegime } from './mapgen/types';
 import { makeSquadRuntime, pickLeader, type SquadRuntimeState } from './squad';
 import { EMPTY_MAP_META, type MapMeta, type ObjectiveRect, type ObjectiveRuntimeState, type SimState } from './state';
@@ -51,6 +51,13 @@ export type BuildScenarioInput = {
   readonly spawnRegime?: SpawnRegime;
   readonly rosterTeam0?: RosterSpec;
   readonly rosterTeam1?: RosterSpec;
+  // P1.6 — pre-built world passthrough. When buildGeneratedMap's caller
+  // (worker / tests / briefing preview) constructs the World up front,
+  // pass it here so buildScenario reuses it instead of re-running
+  // runPipeline via the now-deleted empty-tiles branch. The mapMeta
+  // (dominantLine / heroLandmark) is supplied alongside for minimap use.
+  readonly prebuiltWorld?: World;
+  readonly prebuiltMapMeta?: MapMeta;
 };
 
 function buildWorld(map: GameMap): World {
@@ -169,7 +176,7 @@ export function buildGeneratedMap(
   id: string,
   spawnCount: { team0: number; team1: number },
 ): { map: GameMap; world: World; result: MapGenResult } {
-  const result = runPipeline(request);
+  const result = runPipelineWithRetry(request);
   const world = makeWorldFromBuffers({
     width: result.width,
     height: result.height,
@@ -189,6 +196,8 @@ export function buildGeneratedMap(
     hpW: result.hpW,
     hpPoint: result.hpPoint,
     buildings: result.buildings,
+    shadingBake: result.shadingBake,
+    contours: result.contours,
   });
   const team0Spawns = sampleSpawns(result.deployZones.team0, spawnCount.team0);
   const team1Spawns = sampleSpawns(result.deployZones.team1, spawnCount.team1);
@@ -299,46 +308,23 @@ export function buildScenario(input: BuildScenarioInput): SimState {
   // fixture maps (training-yard, test fixtures).
   let world: World;
   let mapMeta: MapMeta = EMPTY_MAP_META;
-  if (input.map.generationSeed !== undefined && input.map.tiles.length === 0) {
-    // Tile buffer was produced at buildGeneratedMap; the authored path
-    // calls buildWorld. If a caller hands us a seed-tagged map with no
-    // upfront world, regenerate on the fly so the two paths stay
-    // interchangeable — and carry the walkability grid with it so the
-    // pathfinder has something to query.
-    const regen = runPipeline({
-      seed: input.map.generationSeed,
-      biome: input.map.biome ?? 'mixed',
-      size: input.map.width,
-      tileSizeMeters: input.map.tileSizeMeters,
-      generationVersion: input.map.generationVersion ?? 1,
-      spawnRegime: input.spawnRegime,
-      rosterTeam0: input.rosterTeam0,
-      rosterTeam1: input.rosterTeam1,
-    });
-    world = makeWorldFromBuffers({
-      width: input.map.width,
-      height: input.map.height,
-      tileSizeMeters: input.map.tileSizeMeters,
-      base: regen.base,
-      point: regen.point,
-      edgeN: regen.edgeN,
-      edgeW: regen.edgeW,
-      edgeOverrideN: regen.edgeOverrideN,
-      edgeOverrideW: regen.edgeOverrideW,
-      buildingId: regen.buildingId,
-      walkability: regen.walkability,
-      coverProfile: regen.coverProfile,
-      elevationStep: regen.elevationStep,
-      structureHeight: regen.structureHeight,
-      hpN: regen.hpN,
-      hpW: regen.hpW,
-      hpPoint: regen.hpPoint,
-      buildings: regen.buildings,
-    });
-    mapMeta = {
-      dominantLine: regen.dominantLine,
-      heroLandmark: regen.heroLandmark,
-    };
+  if (input.prebuiltWorld) {
+    // P1.6 — pipeline ran exactly once at buildGeneratedMap time. Reuse
+    // that World instead of the former silent re-run of runPipeline in
+    // this function. Callers without a prebuiltWorld (authored fixtures)
+    // still hit buildWorld below.
+    world = input.prebuiltWorld;
+    if (input.prebuiltMapMeta) mapMeta = input.prebuiltMapMeta;
+  } else if (input.map.generationSeed !== undefined && input.map.tiles.length === 0) {
+    // Historically this path re-ran runPipeline — one of the three
+    // structural bugs the rework addresses. Callers MUST supply a
+    // prebuiltWorld now; the empty-tiles-with-seed shape is a contract
+    // violation. Fail loud rather than silently regenerating a diverged
+    // map.
+    throw new Error(
+      'buildScenario received a map with generationSeed + empty tiles but no prebuiltWorld. ' +
+        'Construct the World via buildGeneratedMap and pass it as prebuiltWorld.',
+    );
   } else {
     world = buildWorld(input.map);
   }

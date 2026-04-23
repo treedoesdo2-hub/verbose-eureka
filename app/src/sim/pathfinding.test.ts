@@ -308,6 +308,11 @@ describe('pathfinding — end-to-end sim integration', () => {
       templates,
       deployments,
       objectiveZoneOverrides: overrides,
+      prebuiltWorld: gen.world,
+      prebuiltMapMeta: {
+        dominantLine: gen.result.dominantLine,
+        heroLandmark: gen.result.heroLandmark,
+      },
     });
     const sim = new RecordingSim(initial, 42);
     const trace: UnitTraceRow[] = [];

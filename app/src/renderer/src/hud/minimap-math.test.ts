@@ -8,7 +8,24 @@ import {
 } from './minimap-math';
 
 function mkWorld(w: number, h: number, tileSize = 1): WorldSnapshot {
-  return { width: w, height: h, tileSizeMeters: tileSize, base: new Uint8Array(w * h) };
+  const n = w * h;
+  const shading = new Uint8ClampedArray(n);
+  shading.fill(128);
+  return {
+    width: w,
+    height: h,
+    tileSizeMeters: tileSize,
+    base: new Uint8Array(n),
+    point: new Uint8Array(n),
+    buildingId: new Uint16Array(n),
+    edgeN: new Uint8Array(n),
+    edgeW: new Uint8Array(n),
+    elevationStep: new Uint8Array(n),
+    structureHeight: new Uint8Array(n),
+    buildings: [],
+    shadingBake: shading,
+    contours: new Uint8Array(n),
+  };
 }
 
 describe('computeMinimapProjection', () => {

@@ -1,4 +1,17 @@
 import type { BodyZone } from '@schema/common';
+import type { BuildingFamily } from '@schema/map';
+
+// Mirror of the World's BuildingRecord (sim/world.ts). Kept inline in the
+// shared module to avoid dragging sim/ types into the renderer's type
+// graph. The schema/map.ts BuildingRecord (with doorEdges/windowEdges) is
+// a separate authoring shape.
+export type SnapshotBuildingRecord = {
+  readonly id: number;
+  readonly family: BuildingFamily;
+  readonly floors: number;
+  readonly footprintTiles: readonly { readonly x: number; readonly y: number }[];
+  readonly wallHpInitial: number;
+};
 
 export type SnapshotStance = 'standing' | 'crouched' | 'prone';
 export type SnapshotAiState = 'advance' | 'hold' | 'retreat' | 'flank' | 'recover' | 'panic';
@@ -111,11 +124,24 @@ export type SerializedWorld = {
   readonly width: number;
   readonly height: number;
   readonly tileSizeMeters: number;
-  // Per-tile base surface byte (maps to world.ts BASE_KINDS index). For
-  // renderer/snapshot purposes the base layer is the primary visual; point
-  // objects + edges + buildings add detail but for now we snapshot the
-  // base only. Expanded in future schema bumps as the renderer matures.
+  // Per-tile base surface byte (maps to world.ts BASE_KINDS index).
   readonly base: Uint8Array;
+  // P1.1 — non-base buffers. Authoritative for what the renderer draws;
+  // snapshotted once at simStarted (not per frame) because mapgen output
+  // is immutable for the battle's duration.
+  readonly point: Uint8Array;
+  readonly buildingId: Uint16Array;
+  readonly edgeN: Uint8Array;
+  readonly edgeW: Uint8Array;
+  readonly elevationStep: Uint8Array;
+  readonly structureHeight: Uint8Array;
+  readonly buildings: readonly SnapshotBuildingRecord[];
+  // Baked shading (Sobel gradient → per-tile luminance multiplier, 0..255
+  // where 128 = neutral). Populated by P3.3; empty / all-128 until then.
+  readonly shadingBake: Uint8ClampedArray;
+  // Contour overlay (per-tile 0/1, set when a tile sits on an elevation
+  // step boundary). Populated by P3.5b; empty / all-zero until then.
+  readonly contours: Uint8Array;
 };
 
 export type WorldSnapshot = SerializedWorld;

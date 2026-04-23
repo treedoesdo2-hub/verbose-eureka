@@ -143,5 +143,20 @@ export function snapshotWorld(world: World): WorldSnapshot {
     height: world.height,
     tileSizeMeters: world.tileSizeMeters,
     base: new Uint8Array(world.base),
+    point: new Uint8Array(world.point),
+    buildingId: new Uint16Array(world.buildingId),
+    edgeN: new Uint8Array(world.edgeN),
+    edgeW: new Uint8Array(world.edgeW),
+    elevationStep: new Uint8Array(world.elevationStep),
+    structureHeight: new Uint8Array(world.structureHeight),
+    buildings: world.buildings.map((b) => ({
+      id: b.id,
+      family: b.family,
+      floors: b.floors,
+      footprintTiles: b.footprintTiles.map((t) => ({ x: t.x, y: t.y })),
+      wallHpInitial: b.wallHpInitial,
+    })),
+    shadingBake: new Uint8ClampedArray(world.shadingBake),
+    contours: new Uint8Array(world.contours),
   };
 }

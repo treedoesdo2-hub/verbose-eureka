@@ -25,6 +25,21 @@ export type DensityProfile = {
   // After field generation, multiply by this constant to tune the number of
   // extracted hotspots without rescaling the whole pipeline.
   readonly densityMultiplier: number;
+  // P3.1 — per-biome elevation generation parameters. Pipeline calls
+  // generateElevation(profile.elevationGen) BEFORE density+scatter. Nil
+  // profile means "use flat default" (0.02 stddev) — empirically too flat
+  // per Firefight panel (see elevation_stddev_normalized metric). New
+  // profiles:
+  //   amplitude: peak-to-trough height in normalized units [0, 1]
+  //   frequency: base fBm frequency
+  //   octaves: number of octave passes
+  //   smoothness: Gaussian blur radius in tiles (0 = no blur, 3 = heavy)
+  readonly elevationGen?: {
+    readonly amplitude: number;
+    readonly frequency: number;
+    readonly octaves: number;
+    readonly smoothness: number;
+  };
 };
 
 export const URBAN_SPARSE_DENSITY: DensityProfile = {
@@ -34,6 +49,7 @@ export const URBAN_SPARSE_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.0, hi: 0.55 },
   elevationBand: { lo: 0.1, hi: 0.9 },
   densityMultiplier: 1.0,
+  elevationGen: { amplitude: 0.30, frequency: 0.015, octaves: 4, smoothness: 2 },
 };
 
 export const RURAL_OPEN_DENSITY: DensityProfile = {
@@ -43,6 +59,7 @@ export const RURAL_OPEN_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.35, hi: 0.95 },
   elevationBand: { lo: 0.05, hi: 0.75 },
   densityMultiplier: 0.9,
+  elevationGen: { amplitude: 0.55, frequency: 0.018, octaves: 4, smoothness: 2 },
 };
 
 export const MIXED_DENSITY: DensityProfile = {
@@ -52,11 +69,86 @@ export const MIXED_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.2, hi: 0.85 },
   elevationBand: { lo: 0.05, hi: 0.9 },
   densityMultiplier: 1.0,
+  elevationGen: { amplitude: 0.60, frequency: 0.021, octaves: 5, smoothness: 1 },
+};
+
+// P2.1 — urban_dense: town centers. Higher frequency = more cluster
+// anchors per area. Fertility affinity biases toward low-fertility dry
+// tiles (buildings prefer flat ground). Elevation band broad to capture
+// cities on hills.
+export const URBAN_DENSE_DENSITY: DensityProfile = {
+  name: 'urban_dense',
+  baseFreq: 0.025,
+  octaves: 4,
+  fertilityAffinity: { lo: 0.0, hi: 0.45 },
+  elevationBand: { lo: 0.05, hi: 0.95 },
+  densityMultiplier: 1.4,
+  elevationGen: { amplitude: 0.15, frequency: 0.012, octaves: 3, smoothness: 3 },
+};
+
+// P2.2 — industrial: large footprints spaced further apart than urban_dense.
+// Lower frequency (broader clusters) + same low-fertility affinity. Tight
+// elevation band — factories don't climb hills.
+export const INDUSTRIAL_DENSITY: DensityProfile = {
+  name: 'industrial',
+  baseFreq: 0.015,
+  octaves: 3,
+  fertilityAffinity: { lo: 0.0, hi: 0.35 },
+  elevationBand: { lo: 0.1, hi: 0.7 },
+  densityMultiplier: 1.1,
+  elevationGen: { amplitude: 0.25, frequency: 0.014, octaves: 3, smoothness: 2 },
+};
+
+// P2.3 — forest: densest scatter we produce. Tree clusters dominate
+// mid-fertility tiles. Wide elevation band.
+export const FOREST_DENSITY: DensityProfile = {
+  name: 'forest',
+  baseFreq: 0.022,
+  octaves: 5,
+  fertilityAffinity: { lo: 0.3, hi: 0.95 },
+  elevationBand: { lo: 0.05, hi: 0.85 },
+  densityMultiplier: 1.6,
+  elevationGen: { amplitude: 0.85, frequency: 0.022, octaves: 6, smoothness: 0 },
+};
+
+// P2.4 — rural_village: one village cluster + scattered rural structures.
+// Similar to rural_open's fertility shape but with a stronger fBm octave
+// pattern for distinct village clumps vs open countryside.
+export const RURAL_VILLAGE_DENSITY: DensityProfile = {
+  name: 'rural_village',
+  baseFreq: 0.017,
+  octaves: 5,
+  fertilityAffinity: { lo: 0.25, hi: 0.85 },
+  elevationBand: { lo: 0.05, hi: 0.8 },
+  densityMultiplier: 1.15,
+  elevationGen: { amplitude: 0.45, frequency: 0.017, octaves: 4, smoothness: 2 },
+};
+
+// P2.5 — arid: mostly empty desert with sparse anchors. Extremely low
+// multiplier keeps the map legible as "emptiness with punctuation". Wide
+// fertility band because arid fertility noise is itself subdued.
+export const ARID_DENSITY: DensityProfile = {
+  name: 'arid',
+  baseFreq: 0.012,
+  octaves: 3,
+  fertilityAffinity: { lo: 0.0, hi: 0.7 },
+  elevationBand: { lo: 0.05, hi: 0.9 },
+  // Still low (arid is meant to read barren) but enough to satisfy the
+  // ≥3-hotspot minimum so scatter anchors survive.
+  densityMultiplier: 0.85,
+  // Arid maps often have big dune systems — moderate amplitude with very
+  // low frequency for sweeping broad hills, not ridgey chop.
+  elevationGen: { amplitude: 0.40, frequency: 0.008, octaves: 3, smoothness: 3 },
 };
 
 export const DENSITY_PROFILES: Record<string, DensityProfile> = {
   urban_sparse: URBAN_SPARSE_DENSITY,
+  urban_dense: URBAN_DENSE_DENSITY,
+  industrial: INDUSTRIAL_DENSITY,
+  forest: FOREST_DENSITY,
+  rural_village: RURAL_VILLAGE_DENSITY,
   rural_open: RURAL_OPEN_DENSITY,
+  arid: ARID_DENSITY,
   mixed: MIXED_DENSITY,
 };
 

@@ -2,6 +2,7 @@ import type { Vec2 } from './unit';
 import {
   type CoverAxes,
   BASE_AXES,
+  ELEVATION_STEP_METERS,
   elevationMeters,
   inBounds,
   terrainAxesDirectional,
@@ -119,6 +120,11 @@ export function castRayAxes(
   let result: LosResult = 'visible';
   let thinAccum = 0;
   let strongest: CoverAxes | null = null;
+  // P3.11 — ridge rule: track the highest ground-level reached in the
+  // INTERIOR of the ray (not the endpoints themselves). A shooter
+  // standing on a hill shouldn't count the hill they're standing on as
+  // a ridge between them and the target.
+  let maxRidgeGround = Number.NEGATIVE_INFINITY;
 
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
@@ -130,6 +136,15 @@ export function castRayAxes(
 
     const idx = iy * world.width + ix;
     const cellGround = elevationMeters(world.elevationStep[idx]);
+    // P3.11 — only track interior-cell heights for the ridge rule. A
+    // sampler near the endpoints occasionally lands on the shooter/
+    // target tile; counting those as "ridge" makes elevated shooters
+    // block their own shots.
+    const atFromCell = ix === fx && iy === fy;
+    const atToCell = ix === tx && iy === ty;
+    if (!atFromCell && !atToCell && cellGround > maxRidgeGround) {
+      maxRidgeGround = cellGround;
+    }
     const cellStructure = world.structureHeight[idx]; // meters
     const axes = terrainAxesDirectional(world, ix, iy, incomingBearing);
     const zRay = zFrom + (zTo - zFrom) * t;
@@ -165,6 +180,25 @@ export function castRayAxes(
         if (result === 'visible') result = 'concealed';
       }
     }
+  }
+
+  // P3.11 — ridge rule. If a ridge along the ray rises ≥ 2 elevation
+  // steps above the lower endpoint, the line of sight is blocked
+  // entirely. 1-step rises soften LOS to 'concealed'. This matches
+  // Firefight's geometric, non-stat-table approach to elevation cover.
+  // Skip when no interior samples were observed (very short rays).
+  if (maxRidgeGround === Number.NEGATIVE_INFINITY) {
+    return { result, strongest };
+  }
+  const minEndpointGround = Math.min(fromGround, toGround);
+  const ridgeDelta = maxRidgeGround - minEndpointGround;
+  const RIDGE_BLOCK_METERS = 2 * ELEVATION_STEP_METERS;
+  const RIDGE_CONCEAL_METERS = ELEVATION_STEP_METERS;
+  if (ridgeDelta >= RIDGE_BLOCK_METERS) {
+    return { result: 'blocked', strongest };
+  }
+  if (ridgeDelta >= RIDGE_CONCEAL_METERS && result === 'visible') {
+    result = 'concealed';
   }
 
   return { result, strongest };

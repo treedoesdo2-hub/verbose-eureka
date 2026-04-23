@@ -46,6 +46,39 @@ export function modalDownsample(
   return out;
 }
 
+// P3.7 — continuous downsample for Uint8ClampedArray (shadingBake).
+// Averages source block pixels rather than picking the modal byte —
+// shading is a continuous luminance signal, not a categorical kind.
+export function downsampleClamped(
+  src: Uint8ClampedArray,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(dstW * dstH);
+  const scaleX = srcW / dstW;
+  const scaleY = srcH / dstH;
+  for (let dy = 0; dy < dstH; dy++) {
+    const sy0 = Math.floor(dy * scaleY);
+    const sy1 = Math.max(sy0 + 1, Math.floor((dy + 1) * scaleY));
+    for (let dx = 0; dx < dstW; dx++) {
+      const sx0 = Math.floor(dx * scaleX);
+      const sx1 = Math.max(sx0 + 1, Math.floor((dx + 1) * scaleX));
+      let sum = 0;
+      let count = 0;
+      for (let y = sy0; y < sy1 && y < srcH; y++) {
+        for (let x = sx0; x < sx1 && x < srcW; x++) {
+          sum += src[y * srcW + x];
+          count += 1;
+        }
+      }
+      out[dy * dstW + dx] = count > 0 ? Math.round(sum / count) : 128;
+    }
+  }
+  return out;
+}
+
 // ---- Cluster gate pass ----------------------------------------------------
 // Scans the downsampled byte grid for single-cell islands of a given
 // kind; if smaller than minClusterSize, the cell is reverted to the

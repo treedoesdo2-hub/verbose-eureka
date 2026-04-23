@@ -1,5 +1,49 @@
 import type { BodyZone } from '@schema/common';
-import type { MatchStats, SimSnapshot, WorldSnapshot } from './snapshot';
+import type { MatchStats, SimSnapshot, SnapshotBuildingRecord, WorldSnapshot } from './snapshot';
+
+// P1.7 — full pipeline output in a worker-transferable shape.
+//
+// Rendered-once-then-simulated maps are generated on the briefing screen
+// (so the thumbnail shows the true terrain the player is about to fight
+// on), cached in renderer state, and handed to the worker on Deploy.
+// Fields mirror MapGenResult minus the transient diagnostics/pipeline
+// internals that the worker doesn't need.
+export type MapGenResultTransfer = {
+  readonly seed: string;
+  readonly biome: string;
+  readonly size: number;
+  readonly tileSizeMeters: number;
+  readonly generationVersion: number;
+  readonly width: number;
+  readonly height: number;
+  readonly base: Uint8Array;
+  readonly point: Uint8Array;
+  readonly edgeN: Uint8Array;
+  readonly edgeW: Uint8Array;
+  readonly edgeOverrideN: Uint8Array;
+  readonly edgeOverrideW: Uint8Array;
+  readonly buildingId: Uint16Array;
+  readonly walkability: Uint16Array;
+  readonly coverProfile: Uint8Array;
+  readonly elevationStep: Uint8Array;
+  readonly structureHeight: Uint8Array;
+  readonly hpN: Uint16Array;
+  readonly hpW: Uint16Array;
+  readonly hpPoint: Uint16Array;
+  readonly buildings: readonly SnapshotBuildingRecord[];
+  readonly shadingBake: Uint8ClampedArray;
+  readonly contours: Uint8Array;
+  // Lightweight metadata — full mapgen diagnostics are renderer-side only.
+  readonly deployZones: {
+    readonly team0: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+    readonly team1: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+  };
+  readonly objectiveAnchors: readonly {
+    readonly kindHint: 'extract' | 'defend' | 'secure';
+    readonly rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+    readonly qualityScore: number;
+  }[];
+};
 
 export type StartSimPayload = {
   readonly seed: number;
@@ -29,6 +73,11 @@ export type ScenarioRequest = {
   // the operator deploys loose (no squad). Usually every player operator
   // belongs to exactly one squad.
   readonly operatorSquadIds?: Record<string, string>;
+  // P1.7 — optional cache-and-deliver payload. When present, the worker
+  // uses this map buffer instead of re-running runPipeline. The renderer
+  // builds it once on the briefing screen so the thumbnail and the
+  // battle render the same terrain.
+  readonly prebuiltMap?: MapGenResultTransfer;
 };
 
 export type RendererToWorker =

@@ -19,12 +19,21 @@ import {
 
 const MAX_NODES_EXPANDED = 4000;
 
-// Slope cost (COA-8). Each step of elevation change adds +0.5 to base cost
-// (uphill or downhill — downhill punished for controlled-descent reasons).
+// Slope cost (COA-8). P3.12 — no charge for 1-step; each additional step
+// adds +0.5 to base cost. This lets minor undulations pass-through freely
+// while steeper slopes still bias pathing.
 const SLOPE_COST_PER_STEP = 0.5;
-// Cliff guard — a foot unit cannot cross a single-step elevation delta
-// greater than this (units ≈ 1.5m per step, so 2 = 3m vertical drop/climb).
-const MAX_STEP_ELEV_DELTA = 2;
+// Cliff guard — per movement mode. P3.12: wheeled vehicles can't cross a
+// single-step elevation delta > 1 (steep for a car). Tracked vehicles
+// tolerate up to 3 (tanks climb). Infantry / mechs / PA: 2 (standard).
+const MAX_STEP_ELEV_BY_MODE: Record<MovementMode, number> = {
+  foot: 2,
+  prone: 2,
+  mech: 2,
+  power_armor: 2,
+  wheeled: 1,
+  tracked: 3,
+};
 
 function heuristic(ax: number, ay: number, bx: number, by: number): number {
   const dx = Math.abs(ax - bx);
@@ -76,15 +85,13 @@ function canStep(
 ): boolean {
   if (!isPassableForUnit(world, tx, ty, mode)) return false;
 
-  // Cliff guard — foot-style infantry can't ascend or descend more than N
-  // elevation steps in a single tile step. Wheeled / tracked use the same
-  // cap; mechs and PA (taller, stronger) also obey it at MVP — could be
-  // relaxed per-mode later.
+  // Cliff guard — per-mode. P3.12 replaces the old scalar MAX with
+  // MAX_STEP_ELEV_BY_MODE so tracked vehicles climb further than wheeled.
   if (inBounds(world, fx, fy)) {
     const dElev = Math.abs(
       world.elevationStep[ty * world.width + tx] - world.elevationStep[fy * world.width + fx],
     );
-    if (dElev > MAX_STEP_ELEV_DELTA) return false;
+    if (dElev > MAX_STEP_ELEV_BY_MODE[mode]) return false;
   }
 
   const isDiagonal = fx !== tx && fy !== ty;
@@ -219,11 +226,12 @@ export function findPathTiles(
         if (closed[nIdx]) continue;
         // Base step cost: 1 for cardinal, sqrt(2) for diagonal.
         let stepCost = dx !== 0 && dy !== 0 ? 1.41421356 : 1;
-        // Slope cost (COA-8).
+        // Slope cost (COA-8 / P3.12). 1-step delta is free; each
+        // additional step adds +0.5 multiplier.
         const dElev = Math.abs(
           world.elevationStep[nIdx] - world.elevationStep[currentIdx],
         );
-        stepCost *= 1 + dElev * SLOPE_COST_PER_STEP;
+        stepCost *= 1 + Math.max(0, dElev - 1) * SLOPE_COST_PER_STEP;
         // Terrain speed modifier — slow tiles cost more to traverse.
         const speedMult = tileMoveSpeedMult(world, nx, ny);
         if (speedMult > 0 && speedMult < 1) stepCost *= 1 / speedMult;

@@ -47,7 +47,11 @@ export function extractHotspots(
   width: number,
   height: number,
   radius = 3,
-  minStrength = 0.35,
+  // P4.1 — lowered from 0.35 to 0.20. With the rear-thirds mask removed
+  // (P2.7), hotspots have more room to land; relaxing the strength floor
+  // lets biomes like rural_open and arid (low density multiplier)
+  // surface enough anchors to populate the map.
+  minStrength = 0.20,
   minSeparation = 6,
 ): Hotspot[] {
   const candidates: Hotspot[] = [];

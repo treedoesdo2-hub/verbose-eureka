@@ -15,6 +15,7 @@
 import { OVERLAY_PALETTE, FEATURE_VISIBILITY, type PaletteTier, pointColor, terrainColor } from './palette';
 import {
   clusterGate,
+  downsampleClamped,
   medianFilter3x3,
   modalDownsample,
 } from './thumbnail-passes';
@@ -68,6 +69,16 @@ export function generateThumbnail(
   const elevationD = visibility.elevationContours
     ? modalDownsample(result.elevationStep, result.width, result.height, tW, tH)
     : new Uint8Array(tW * tH);
+  // P3.7 / P3.7b — downsampled shadingBake + contours for per-tile visual
+  // fidelity in the thumbnail. Tier's shadedRelief flag gates whether
+  // shading actually applies; contours tier flag gates drawing strokes
+  // (the downsampled buffer is cheap to produce regardless).
+  const shadingD = visibility.shadedRelief
+    ? downsampleClamped(result.shadingBake, result.width, result.height, tW, tH)
+    : null;
+  const contoursD = visibility.contours
+    ? modalDownsample(result.contours, result.width, result.height, tW, tH)
+    : null;
 
   // ---- Pass 2: cluster gate + median smoothing on base ----
   const minCluster = opts.clusterMinSize ?? 3;
@@ -85,14 +96,27 @@ export function generateThumbnail(
       const p = pointColor(pointD[i]);
       if (p) color = p;
     }
-    pixels[o] = color[0];
-    pixels[o + 1] = color[1];
-    pixels[o + 2] = color[2];
+    // P3.7 — apply shading multiplier before committing.
+    const shade = shadingD ? shadingD[i] / 128 : 1;
+    pixels[o] = Math.min(255, Math.max(0, color[0] * shade));
+    pixels[o + 1] = Math.min(255, Math.max(0, color[1] * shade));
+    pixels[o + 2] = Math.min(255, Math.max(0, color[2] * shade));
     pixels[o + 3] = 255;
+    // P3.7b — contour stroke. Dark-stipple per-tile wherever the
+    // downsampled contours flag is 1. Drawn on top of the shaded base
+    // so the stroke contrasts cleanly.
+    if (contoursD && contoursD[i]) {
+      pixels[o] = Math.round(pixels[o] * 0.6);
+      pixels[o + 1] = Math.round(pixels[o + 1] * 0.6);
+      pixels[o + 2] = Math.round(pixels[o + 2] * 0.6);
+    }
   }
 
-  // ---- Pass 4: density heatmap + hotspot pips (dev-only) ----
-  if (opts.showDensityHeatmap) {
+  // ---- Pass 4: density heatmap + hotspot pips ----
+  // Driven by the tier's FeatureVisibility flag (planning tier enables
+  // it); opts.showDensityHeatmap kept as an explicit per-call override
+  // for tests. COA-1 #46.
+  if (opts.showDensityHeatmap ?? visibility.densityHeatmap) {
     overlayDensityHeatmap(pixels, tW, tH, result);
     overlayHotspotPips(pixels, tW, tH, result);
   }

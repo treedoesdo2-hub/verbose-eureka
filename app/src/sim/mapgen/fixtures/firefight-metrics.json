@@ -1,0 +1,520 @@
+{
+  "schema_version": 1,
+  "maps_root": "C:/Users/User/Downloads/Firefight.v9.0.2/Firefight.v9.0.2/Maps",
+  "per_biome": {
+    "urban_dense": {
+      "biome": "urban_dense",
+      "panel": [
+        "DGCC",
+        "VBOC"
+      ],
+      "targets": {
+        "forest_pct": 11.841498480902779,
+        "building_pct": 9.488593207465279,
+        "hedge_pct": 26.607259114583336,
+        "road_pct": 11.571926540798612,
+        "water_pct": 0,
+        "open_pct": 40.49072265625,
+        "contour_lines_per_1000_tiles": 3.6678314208984375,
+        "elevation_stddev_normalized": 0.07335662841796875
+      },
+      "stddev": {
+        "forest_pct": 0.5459255642361107,
+        "building_pct": 1.927693684895833,
+        "hedge_pct": 8.860948350694445,
+        "road_pct": 8.855183919270836,
+        "water_pct": 0,
+        "open_pct": 15.242513020833334,
+        "contour_lines_per_1000_tiles": 1.3675689697265625,
+        "elevation_stddev_normalized": 0.02735137939453125
+      },
+      "sampleCount": 2,
+      "toleranceMultiplier": 1
+    },
+    "urban_sparse": {
+      "biome": "urban_sparse",
+      "panel": [
+        "BLNU",
+        "NSPN",
+        "ROIM",
+        "VJCT"
+      ],
+      "targets": {
+        "forest_pct": 24.38269721137153,
+        "building_pct": 5.310228135850695,
+        "hedge_pct": 30.11966281467014,
+        "road_pct": 3.647698296440972,
+        "water_pct": 0,
+        "open_pct": 36.53971354166667,
+        "contour_lines_per_1000_tiles": 16.626358032226562,
+        "elevation_stddev_normalized": 0.33252716064453125
+      },
+      "stddev": {
+        "forest_pct": 15.019394570412986,
+        "building_pct": 7.565925498099943,
+        "hedge_pct": 8.051060277432775,
+        "road_pct": 1.1163205405637449,
+        "water_pct": 0,
+        "open_pct": 14.259649853804843,
+        "contour_lines_per_1000_tiles": 4.431305307892235,
+        "elevation_stddev_normalized": 0.0886261061578447
+      },
+      "sampleCount": 4,
+      "toleranceMultiplier": 1
+    },
+    "rural_village": {
+      "biome": "rural_village",
+      "panel": [
+        "H112",
+        "JWVG",
+        "MRCH",
+        "NSVL",
+        "TRCH",
+        "ZCRD"
+      ],
+      "targets": {
+        "forest_pct": 37.02641239872684,
+        "building_pct": 3.6795156973379632,
+        "hedge_pct": 23.312830041956015,
+        "road_pct": 5.550695348668981,
+        "water_pct": 0,
+        "open_pct": 30.430546513310187,
+        "contour_lines_per_1000_tiles": 11.835575103759766,
+        "elevation_stddev_normalized": 0.2367115020751953
+      },
+      "stddev": {
+        "forest_pct": 14.80110513755929,
+        "building_pct": 3.5846770144787317,
+        "hedge_pct": 8.714846023443632,
+        "road_pct": 6.010656282094921,
+        "water_pct": 0,
+        "open_pct": 12.7755955490527,
+        "contour_lines_per_1000_tiles": 11.652321531026828,
+        "elevation_stddev_normalized": 0.23304643062053657
+      },
+      "sampleCount": 6,
+      "toleranceMultiplier": 1
+    },
+    "rural_open": {
+      "biome": "rural_open",
+      "panel": [
+        "BFRM",
+        "KRDG",
+        "MCVL",
+        "STPA"
+      ],
+      "targets": {
+        "forest_pct": 29.379442003038193,
+        "building_pct": 1.2303670247395833,
+        "hedge_pct": 43.15965440538194,
+        "road_pct": 1.629977756076389,
+        "water_pct": 0,
+        "open_pct": 24.60055881076389,
+        "contour_lines_per_1000_tiles": 21.26598358154297,
+        "elevation_stddev_normalized": 0.4253196716308594
+      },
+      "stddev": {
+        "forest_pct": 10.549568931704844,
+        "building_pct": 0.8301694531643102,
+        "hedge_pct": 9.889919174529917,
+        "road_pct": 0.5385576282354586,
+        "water_pct": 0,
+        "open_pct": 8.844925877561074,
+        "contour_lines_per_1000_tiles": 2.2975078184419098,
+        "elevation_stddev_normalized": 0.045950156368838195
+      },
+      "sampleCount": 4,
+      "toleranceMultiplier": 1
+    },
+    "forest": {
+      "biome": "forest",
+      "panel": [
+        "BGHL",
+        "JLRD",
+        "KMPV",
+        "LAUN",
+        "LBCH",
+        "RMLY"
+      ],
+      "targets": {
+        "forest_pct": 23.948499891493054,
+        "building_pct": 1.8278899016203702,
+        "hedge_pct": 35.150146484375,
+        "road_pct": 2.072482638888889,
+        "water_pct": 0,
+        "open_pct": 37.00098108362269,
+        "contour_lines_per_1000_tiles": 24.028301239013672,
+        "elevation_stddev_normalized": 0.47340965270996094
+      },
+      "stddev": {
+        "forest_pct": 26.60082017722972,
+        "building_pct": 3.5026190161585373,
+        "hedge_pct": 13.950846295108049,
+        "road_pct": 1.0056858613415072,
+        "water_pct": 0,
+        "open_pct": 16.47416282180551,
+        "contour_lines_per_1000_tiles": 13.622803990472232,
+        "elevation_stddev_normalized": 0.25775820881477574
+      },
+      "sampleCount": 6,
+      "toleranceMultiplier": 1
+    },
+    "industrial": {
+      "biome": "industrial",
+      "panel": [
+        "FLAU",
+        "SRVR",
+        "TFAC"
+      ],
+      "targets": {
+        "forest_pct": 18.372486255787035,
+        "building_pct": 14.802155671296296,
+        "hedge_pct": 29.50213396990741,
+        "road_pct": 7.433855975115741,
+        "water_pct": 0,
+        "open_pct": 29.88936812789352,
+        "contour_lines_per_1000_tiles": 11.996905008951822,
+        "elevation_stddev_normalized": 0.23993810017903647
+      },
+      "stddev": {
+        "forest_pct": 5.996867329083531,
+        "building_pct": 10.854353695079604,
+        "hedge_pct": 16.613375910734078,
+        "road_pct": 7.826275598064426,
+        "water_pct": 0,
+        "open_pct": 3.566077999043995,
+        "contour_lines_per_1000_tiles": 5.213195982068405,
+        "elevation_stddev_normalized": 0.10426391964136811
+      },
+      "sampleCount": 3,
+      "toleranceMultiplier": 1
+    },
+    "mixed": {
+      "biome": "mixed",
+      "panel": [
+        "ASTM",
+        "MLKS"
+      ],
+      "targets": {
+        "forest_pct": 45.916408962673614,
+        "building_pct": 3.3610026041666665,
+        "hedge_pct": 25.74700249565972,
+        "road_pct": 1.5872531467013888,
+        "water_pct": 0,
+        "open_pct": 23.388332790798614,
+        "contour_lines_per_1000_tiles": 38.539886474609375,
+        "elevation_stddev_normalized": 0.7707977294921875
+      },
+      "stddev": {
+        "forest_pct": 9.007771809895832,
+        "building_pct": 2.297634548611111,
+        "hedge_pct": 8.1512451171875,
+        "road_pct": 0.5265977647569443,
+        "water_pct": 0,
+        "open_pct": 14.33478461371528,
+        "contour_lines_per_1000_tiles": 10.958671569824219,
+        "elevation_stddev_normalized": 0.21917343139648438
+      },
+      "sampleCount": 2,
+      "toleranceMultiplier": 1
+    },
+    "arid": {
+      "biome": "arid",
+      "panel": [],
+      "targets": {
+        "forest_pct": 0.5,
+        "building_pct": 2,
+        "hedge_pct": 0.2,
+        "road_pct": 1.5,
+        "water_pct": 0.3,
+        "open_pct": 95.5,
+        "contour_lines_per_1000_tiles": 5,
+        "elevation_stddev_normalized": 0.15
+      },
+      "stddev": {
+        "forest_pct": 0,
+        "building_pct": 0,
+        "hedge_pct": 0,
+        "road_pct": 0,
+        "water_pct": 0,
+        "open_pct": 0,
+        "contour_lines_per_1000_tiles": 0,
+        "elevation_stddev_normalized": 0
+      },
+      "sampleCount": 0,
+      "toleranceMultiplier": 3
+    }
+  },
+  "per_map": {
+    "ASTM": {
+      "forest_pct": 36.90863715277778,
+      "building_pct": 5.658637152777778,
+      "hedge_pct": 17.59575737847222,
+      "road_pct": 2.113850911458333,
+      "water_pct": 0,
+      "open_pct": 37.72311740451389,
+      "contour_lines_per_1000_tiles": 49.498558044433594,
+      "elevation_stddev_normalized": 0.9899711608886719
+    },
+    "BFRM": {
+      "forest_pct": 34.57370334201389,
+      "building_pct": 1.7869737413194444,
+      "hedge_pct": 44.07687717013889,
+      "road_pct": 2.213541666666667,
+      "water_pct": 0,
+      "open_pct": 17.34890407986111,
+      "contour_lines_per_1000_tiles": 21.984100341796875,
+      "elevation_stddev_normalized": 0.4396820068359375
+    },
+    "BGHL": {
+      "forest_pct": 14.692518446180555,
+      "building_pct": 0.016954210069444444,
+      "hedge_pct": 51.69677734375,
+      "road_pct": 1.6757541232638888,
+      "water_pct": 0,
+      "open_pct": 31.91799587673611,
+      "contour_lines_per_1000_tiles": 19.647598266601562,
+      "elevation_stddev_normalized": 0.39295196533203125
+    },
+    "BLNU": {
+      "forest_pct": 32.02107747395833,
+      "building_pct": 18.267822265625,
+      "hedge_pct": 17.03762478298611,
+      "road_pct": 5.375162760416666,
+      "water_pct": 0,
+      "open_pct": 27.29831271701389,
+      "contour_lines_per_1000_tiles": 17.591476440429688,
+      "elevation_stddev_normalized": 0.35182952880859375
+    },
+    "DGCC": {
+      "forest_pct": 11.295572916666668,
+      "building_pct": 7.560899522569445,
+      "hedge_pct": 35.46820746527778,
+      "road_pct": 20.427110460069446,
+      "water_pct": 0,
+      "open_pct": 25.248209635416668,
+      "contour_lines_per_1000_tiles": 2.300262451171875,
+      "elevation_stddev_normalized": 0.0460052490234375
+    },
+    "FLAU": {
+      "forest_pct": 25.03594292534722,
+      "building_pct": 26.62082248263889,
+      "hedge_pct": 19.227430555555554,
+      "road_pct": 2.511935763888889,
+      "water_pct": 0,
+      "open_pct": 26.603868272569443,
+      "contour_lines_per_1000_tiles": 5.833625793457031,
+      "elevation_stddev_normalized": 0.11667251586914062
+    },
+    "H112": {
+      "forest_pct": 52.276611328125,
+      "building_pct": 0.9785970052083334,
+      "hedge_pct": 12.738715277777779,
+      "road_pct": 1.81884765625,
+      "water_pct": 0,
+      "open_pct": 32.18722873263889,
+      "contour_lines_per_1000_tiles": 33.682823181152344,
+      "elevation_stddev_normalized": 0.6736564636230469
+    },
+    "JLRD": {
+      "forest_pct": 3.375244140625,
+      "building_pct": 0.03797743055555556,
+      "hedge_pct": 32.40695529513889,
+      "road_pct": 2.855088975694444,
+      "water_pct": 0,
+      "open_pct": 61.324734157986114,
+      "contour_lines_per_1000_tiles": 12.722969055175781,
+      "elevation_stddev_normalized": 0.2544593811035156
+    },
+    "JWVG": {
+      "forest_pct": 6.585015190972222,
+      "building_pct": 0.5228678385416667,
+      "hedge_pct": 34.13221571180556,
+      "road_pct": 5.109998914930555,
+      "water_pct": 0,
+      "open_pct": 53.64990234375,
+      "contour_lines_per_1000_tiles": 0,
+      "elevation_stddev_normalized": 0
+    },
+    "KMPV": {
+      "forest_pct": 7.524956597222222,
+      "building_pct": 0.01220703125,
+      "hedge_pct": 42.92805989583333,
+      "road_pct": 2.705213758680556,
+      "water_pct": 0,
+      "open_pct": 46.82956271701389,
+      "contour_lines_per_1000_tiles": 24.026870727539062,
+      "elevation_stddev_normalized": 0.48053741455078125
+    },
+    "KRDG": {
+      "forest_pct": 32.63617621527778,
+      "building_pct": 0.9487575954861112,
+      "hedge_pct": 50.406901041666664,
+      "road_pct": 1.2498643663194444,
+      "water_pct": 0,
+      "open_pct": 14.75830078125,
+      "contour_lines_per_1000_tiles": 17.797470092773438,
+      "elevation_stddev_normalized": 0.35594940185546875
+    },
+    "LAUN": {
+      "forest_pct": 79.840087890625,
+      "building_pct": 1.2939453125,
+      "hedge_pct": 9.155951605902777,
+      "road_pct": 0.07663302951388888,
+      "water_pct": 0,
+      "open_pct": 9.633382161458332,
+      "contour_lines_per_1000_tiles": 52.14691162109375,
+      "elevation_stddev_normalized": 1
+    },
+    "LBCH": {
+      "forest_pct": 6.950547960069445,
+      "building_pct": 0.015597873263888888,
+      "hedge_pct": 45.73838975694444,
+      "road_pct": 2.093505859375,
+      "water_pct": 0,
+      "open_pct": 45.20195855034722,
+      "contour_lines_per_1000_tiles": 10.792732238769531,
+      "elevation_stddev_normalized": 0.21585464477539062
+    },
+    "MCVL": {
+      "forest_pct": 11.518012152777777,
+      "building_pct": 0.013563368055555556,
+      "hedge_pct": 51.41737196180556,
+      "road_pct": 0.9562174479166666,
+      "water_pct": 0,
+      "open_pct": 36.09483506944444,
+      "contour_lines_per_1000_tiles": 24.18804168701172,
+      "elevation_stddev_normalized": 0.4837608337402344
+    },
+    "MLKS": {
+      "forest_pct": 54.92418077256944,
+      "building_pct": 1.0633680555555556,
+      "hedge_pct": 33.89824761284722,
+      "road_pct": 1.0606553819444444,
+      "water_pct": 0,
+      "open_pct": 9.053548177083332,
+      "contour_lines_per_1000_tiles": 27.581214904785156,
+      "elevation_stddev_normalized": 0.5516242980957031
+    },
+    "MRCH": {
+      "forest_pct": 35.08504231770833,
+      "building_pct": 11.124674479166668,
+      "hedge_pct": 14.825439453125,
+      "road_pct": 0.37638346354166663,
+      "water_pct": 0,
+      "open_pct": 38.58846028645833,
+      "contour_lines_per_1000_tiles": 10.040283203125,
+      "elevation_stddev_normalized": 0.2008056640625
+    },
+    "NSPN": {
+      "forest_pct": 15.24658203125,
+      "building_pct": 0.048149956597222224,
+      "hedge_pct": 37.51288519965278,
+      "road_pct": 2.291531032986111,
+      "water_pct": 0,
+      "open_pct": 44.90085177951389,
+      "contour_lines_per_1000_tiles": 17.615318298339844,
+      "elevation_stddev_normalized": 0.3523063659667969
+    },
+    "NSVL": {
+      "forest_pct": 48.63484700520833,
+      "building_pct": 2.8374565972222223,
+      "hedge_pct": 26.618787977430557,
+      "road_pct": 3.421359592013889,
+      "water_pct": 0,
+      "open_pct": 18.487548828125,
+      "contour_lines_per_1000_tiles": 0,
+      "elevation_stddev_normalized": 0
+    },
+    "RMLY": {
+      "forest_pct": 31.30764431423611,
+      "building_pct": 9.590657552083332,
+      "hedge_pct": 28.974745008680557,
+      "road_pct": 3.028700086805556,
+      "water_pct": 0,
+      "open_pct": 27.098253038194443,
+      "contour_lines_per_1000_tiles": 24.832725524902344,
+      "elevation_stddev_normalized": 0.4966545104980469
+    },
+    "ROIM": {
+      "forest_pct": 5.645751953125,
+      "building_pct": 0.08884006076388888,
+      "hedge_pct": 35.90494791666667,
+      "road_pct": 3.2470703125,
+      "water_pct": 0,
+      "open_pct": 55.11338975694444,
+      "contour_lines_per_1000_tiles": 9.5367431640625,
+      "elevation_stddev_normalized": 0.19073486328125
+    },
+    "SRVR": {
+      "forest_pct": 10.497368706597223,
+      "building_pct": 0.4096137152777778,
+      "hedge_pct": 52.937825520833336,
+      "road_pct": 1.3095431857638888,
+      "water_pct": 0,
+      "open_pct": 34.84564887152778,
+      "contour_lines_per_1000_tiles": 18.58234405517578,
+      "elevation_stddev_normalized": 0.3716468811035156
+    },
+    "STPA": {
+      "forest_pct": 38.78987630208333,
+      "building_pct": 2.1721733940972223,
+      "hedge_pct": 26.737467447916668,
+      "road_pct": 2.1002875434027777,
+      "water_pct": 0,
+      "open_pct": 30.2001953125,
+      "contour_lines_per_1000_tiles": 21.094322204589844,
+      "elevation_stddev_normalized": 0.4218864440917969
+    },
+    "TFAC": {
+      "forest_pct": 19.584147135416664,
+      "building_pct": 17.37603081597222,
+      "hedge_pct": 16.341145833333336,
+      "road_pct": 18.480088975694446,
+      "water_pct": 0,
+      "open_pct": 28.218587239583332,
+      "contour_lines_per_1000_tiles": 11.574745178222656,
+      "elevation_stddev_normalized": 0.23149490356445312
+    },
+    "TRCH": {
+      "forest_pct": 40.62703450520833,
+      "building_pct": 4.614935980902778,
+      "hedge_pct": 17.66696506076389,
+      "road_pct": 18.55129665798611,
+      "water_pct": 0,
+      "open_pct": 18.53976779513889,
+      "contour_lines_per_1000_tiles": 8.775711059570312,
+      "elevation_stddev_normalized": 0.17551422119140625
+    },
+    "VBOC": {
+      "forest_pct": 12.38742404513889,
+      "building_pct": 11.41628689236111,
+      "hedge_pct": 17.74631076388889,
+      "road_pct": 2.7167426215277777,
+      "water_pct": 0,
+      "open_pct": 55.733235677083336,
+      "contour_lines_per_1000_tiles": 5.035400390625,
+      "elevation_stddev_normalized": 0.1007080078125
+    },
+    "VJCT": {
+      "forest_pct": 44.61737738715278,
+      "building_pct": 2.836100260416667,
+      "hedge_pct": 30.023193359375,
+      "road_pct": 3.677029079861111,
+      "water_pct": 0,
+      "open_pct": 18.846299913194446,
+      "contour_lines_per_1000_tiles": 21.76189422607422,
+      "elevation_stddev_normalized": 0.4352378845214844
+    },
+    "ZCRD": {
+      "forest_pct": 38.94992404513889,
+      "building_pct": 1.9985622829861112,
+      "hedge_pct": 33.89485677083333,
+      "road_pct": 4.026285807291666,
+      "water_pct": 0,
+      "open_pct": 21.13037109375,
+      "contour_lines_per_1000_tiles": 18.514633178710938,
+      "elevation_stddev_normalized": 0.37029266357421875
+    }
+  }
+}

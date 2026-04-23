@@ -1,8 +1,11 @@
 import type { BiomeId, PointObjectKind, TerrainBase } from '@schema/map';
 import {
   BARRIER_AXES,
+  BARRIER_KINDS,
   BASE_AXES,
   type BuildingRecord,
+  type CoverAxes,
+  DAMAGED_AXES,
   ELEVATION_STEPS,
   POINT_AXES,
   WALK_FOOT,
@@ -14,15 +17,25 @@ import {
   WALK_TRACKED,
   WALK_WHEELED,
   baseToByte,
+  barrierIsDamaged,
   byteToBase,
   byteToPoint,
+  coverByteFromAxes,
   pointToByte,
   quantizeElevationNorm,
+  stronger,
 } from '../world';
 import { pickCapillaries, stampCapillary } from './capillary';
+import { paintForBiome } from './base-paint';
+import { bakeShading, bakeContours } from './elevation-shade';
 import { makeDebugSink } from './debug-sink';
 import { DENSITY_PROFILES, generateCoverDensity } from './density-field';
-import { extractHotspots, type Hotspot } from './density-scatter';
+import {
+  extractHotspots,
+  routeAdjacencyMST,
+  scatterClustersDensityDriven,
+  type Hotspot,
+} from './density-scatter';
 import type { DominantCapillary, DominantLine } from './dominant-line';
 import { pickLineKind } from './dominant-line';
 import { logPlacerRun } from './debug/spawn-placer-log';
@@ -199,7 +212,9 @@ export function runPipelineWithRetry(req: MapGenRequest): MapGenResult {
 // Sanity checks — return a list of problem strings. Empty list = map is
 // good to ship. Keep the checks cheap; the pipeline already does heavy
 // validation internally.
-function sanityCheckMap(r: MapGenResult): string[] {
+// Exported for tests (P2.11) that want to verify the barren-map guard
+// triggers on hand-constructed empty results.
+export function sanityCheckMap(r: MapGenResult): string[] {
   const problems: string[] = [];
   if (r.objectiveAnchors.length < 3) {
     problems.push(`only ${r.objectiveAnchors.length} objective anchors`);
@@ -213,6 +228,16 @@ function sanityCheckMap(r: MapGenResult): string[] {
   const maxCarve = Math.max(64, Math.floor((r.width * r.height) * 0.02));
   if (r.diagnostics.carvedCells > maxCarve) {
     problems.push(`carveCorridor touched ${r.diagnostics.carvedCells} cells (budget ${maxCarve})`);
+  }
+  // P2.10 — barren-map guard. If scatter dropped fewer than 0.5% of
+  // tiles as point objects, the map reads as visually empty (one of the
+  // structural bugs this rework targets). Force a retry.
+  const total = r.width * r.height;
+  let pointTiles = 0;
+  for (let i = 0; i < total; i++) if (r.point[i] > 0) pointTiles++;
+  const pointPct = total === 0 ? 0 : pointTiles / total;
+  if (pointPct < 0.005) {
+    problems.push(`point-object density ${(pointPct * 100).toFixed(2)}% below 0.5% floor`);
   }
   return problems;
 }
@@ -249,6 +274,15 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   const buildings: BuildingRecord[] = [];
 
   const biomeDef = BIOMES[req.biome];
+  // P3.1/P3.2 — per-biome elevation profile. Fall back to a modest
+  // default if a biome hasn't declared one yet.
+  const biomeDensityProfile = DENSITY_PROFILES[req.biome];
+  const elevationGen = biomeDensityProfile?.elevationGen ?? {
+    amplitude: 0.5,
+    frequency: 0.021,
+    octaves: 5,
+    smoothness: 1,
+  };
 
   // ---- Step: elevation fBm (continuous), quantized to step (COA-8) ----
   {
@@ -258,18 +292,54 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     let max = Number.NEGATIVE_INFINITY;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        const v = fbm2D(x, y, 0.021, 5, s, W);
+        const v = fbm2D(x, y, elevationGen.frequency, elevationGen.octaves, s, W);
         elevation[y * W + x] = v;
         if (v < min) min = v;
         if (v > max) max = v;
       }
     }
     const range = max - min || 1;
+    // Normalize → scale by amplitude → re-center so flat maps stay mid-
+    // range and hilly maps swing widely around 0.5.
+    const halfAmp = elevationGen.amplitude / 2;
     for (let i = 0; i < N; i++) {
-      const norm = (elevation[i] - min) / range;
-      elevation[i] = norm;
-      elevationStep[i] = quantizeElevationNorm(norm);
+      const norm = (elevation[i] - min) / range; // [0, 1]
+      const centered = norm - 0.5; // [-0.5, 0.5]
+      const scaled = 0.5 + centered * elevationGen.amplitude * 2; // widen or squash around 0.5
+      elevation[i] = Math.max(0, Math.min(1, scaled));
     }
+    // Smoothness pass — box-blur the elevation with a kernel of half-width
+    // `smoothness`. Applied on the continuous field before quantization so
+    // the stepped output inherits the blur.
+    const smoothness = Math.max(0, Math.floor(elevationGen.smoothness));
+    if (smoothness > 0) {
+      const blurred = new Float32Array(N);
+      const k = smoothness;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          let sum = 0;
+          let count = 0;
+          for (let dy = -k; dy <= k; dy++) {
+            const yy = y + dy;
+            if (yy < 0 || yy >= H) continue;
+            for (let dx = -k; dx <= k; dx++) {
+              const xx = x + dx;
+              if (xx < 0 || xx >= W) continue;
+              sum += elevation[yy * W + xx];
+              count += 1;
+            }
+          }
+          blurred[y * W + x] = sum / count;
+        }
+      }
+      elevation.set(blurred);
+    }
+    for (let i = 0; i < N; i++) {
+      elevationStep[i] = quantizeElevationNorm(elevation[i]);
+    }
+    // Suppress unused-var warning for halfAmp (kept for readability of
+    // the scaling math above).
+    void halfAmp;
   }
 
   // ---- Step: fertility fBm (continuous, paint-driver) ----
@@ -291,11 +361,15 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
 
   // ---- Step: biome paint → base surface ----
   {
+    // P5.1 — per-biome paint function extracted to base-paint.ts. The
+    // BiomeDef.paint shim stays for authored-map compatibility but
+    // the pipeline prefers the richer paint functions.
+    const paintFn = paintForBiome(req.biome);
     const paintRng = subRng(seedBase, 'biome-paint');
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const i = y * W + x;
-        const kind = biomeDef.paint(elevation[i], fertility[i], paintRng());
+        const kind = paintFn(elevation[i], fertility[i], paintRng());
         base[i] = baseToByte(kind);
       }
     }
@@ -312,10 +386,11 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   );
 
   // ---- Step: density field + hotspots (moved early — these drive the
-  // ---- cluster-anchored scatter below). Deploy zones aren't known yet;
-  // ---- we mask out a heuristic rear-third top + bottom of the map and
-  // ---- the central objective patch so hotspots cluster in the meaningful
-  // ---- middle-third combat axis.
+  // ---- cluster-anchored scatter below). P2.7 — formerly this pre-masked
+  // ---- the top + bottom thirds, which killed 67% of hotspot capacity.
+  // ---- The post-extraction filter (applied later once actual deploy
+  // ---- zones are known) already excludes hotspots inside zones; no need
+  // ---- to pre-kill candidates heuristically.
   const densityProfile = DENSITY_PROFILES[req.biome];
   const hotspots: Hotspot[] = [];
   let hotspotsDropped = 0;
@@ -328,9 +403,6 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
       fertility,
       seedBase,
     );
-    const rearThird = Math.floor(H / 3);
-    maskZoneInDensity(generated, W, { x: 0, y: 0, w: W, h: rearThird }, 0);
-    maskZoneInDensity(generated, W, { x: 0, y: H - rearThird, w: W, h: rearThird }, 0);
     coverDensity.set(generated);
     for (const h of extractHotspots(coverDensity, W, H)) hotspots.push(h);
   }
@@ -414,20 +486,31 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     seed: seedBase,
   });
 
+  // ---- Step: density-driven debris scatter (COA-1 #40) ----
+  // Urban/industrial biomes get point-object clusters (barrels, oil
+  // drums, tyres, rubble piles) scattered around hotspots using the
+  // density field. Other biomes get village-ish debris (cart, haystack,
+  // well) at lower intensity. Uses scatterClustersDensityDriven for the
+  // Gaussian-around-hotspot + rejection-against-density sampling.
+  scatterDensityDrivenDebris(
+    req.biome,
+    hotspots,
+    coverDensity,
+    base,
+    point,
+    buildingId,
+    hpPoint,
+    W,
+    H,
+    seedBase,
+  );
+
   // ---- Step: low-density baseline uniform scatter ----
   // Kept at reduced counts so the map still has solo features (single
   // trees, isolated sheds) outside the hotspot clusters.
-  scatterBuildingClusters(
-    base,
-    structureHeight,
-    buildingId,
-    buildings,
-    W,
-    H,
-    Math.max(1, Math.round(biomeDef.buildingClusters * 0.3)),
-    biomeDef.buildingClusterSize,
-    seedBase,
-  );
+  // P6.3 — forest before buildings. Buildings can then carve into
+  // tree clusters (destroying individual trees) rather than the reverse,
+  // which used to prune forest tiles as "overlap remnants".
   scatterForestClusters(
     base,
     point,
@@ -435,7 +518,21 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     fertility,
     W,
     H,
-    Math.max(1, Math.round(biomeDef.forestClusters * 0.5)),
+    // P6.1 — drop 0.5× multiplier.
+    biomeDef.forestClusters,
+    seedBase,
+  );
+  scatterBuildingClusters(
+    base,
+    structureHeight,
+    buildingId,
+    buildings,
+    W,
+    H,
+    // P6.1 — drop the 0.3× multiplier. biomeDef.buildingClusters is now
+    // the literal target count for the ambient/non-hotspot pass.
+    biomeDef.buildingClusters,
+    biomeDef.buildingClusterSize,
     seedBase,
   );
 
@@ -470,7 +567,16 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   }
 
   // ---- Step: walkability + cover bake ----
-  bakeWalkabilityAndCover(base, point, buildingId, walkability, coverProfile, N);
+  bakeWalkabilityAndCover(
+    base,
+    point,
+    buildingId,
+    edgeN,
+    edgeW,
+    walkability,
+    coverProfile,
+    N,
+  );
 
   // ---- Step: COA-5 spawn placer ----
   // Build provisional objective anchors from map center + quadrant seeds.
@@ -610,6 +716,17 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
 
   const hash = hashBuffers(base, point, edgeN, edgeW, walkability);
 
+  // Adjacency MST over hotspots — downstream consumers (secondary lanes,
+  // debug overlay, future scatter passes that want neighbor anchors) use
+  // this to stay spatially coherent with the hotspot set (COA-1 #39).
+  const hotspotAdjacency = routeAdjacencyMST(hotspots);
+
+  // P3.3 / P3.5b — baked shading + contour overlay. Computed after all
+  // stamp passes so hills near destroyed buildings still shade
+  // correctly.
+  const shadingBake = bakeShading(elevationStep, W, H);
+  const contours = bakeContours(elevationStep, W, H);
+
   return {
     request: req,
     width: W,
@@ -633,6 +750,7 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     coverDensity,
     hotspots,
     clusterMembership,
+    hotspotAdjacency,
     dominantLine,
     capillaries,
     heroLandmark,
@@ -640,6 +758,8 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     objectiveAnchors,
     diagnostics,
     hash,
+    shadingBake,
+    contours,
   };
 }
 
@@ -798,6 +918,8 @@ function bakeWalkabilityAndCover(
   base: Uint8Array,
   point: Uint8Array,
   buildingId: Uint16Array,
+  edgeN: Uint8Array,
+  edgeW: Uint8Array,
   walkability: Uint16Array,
   coverProfile: Uint8Array,
   N: number,
@@ -809,24 +931,58 @@ function bakeWalkabilityAndCover(
     const pointAxes = pointKind ? POINT_AXES[pointKind] : null;
     const isBuilding = buildingId[i] !== 0;
 
-    // Movement mask — intersection across layers. Base first.
+    // Edge barrier axes owned by this tile (N + W). S + E belong to the
+    // south/east neighbor's own (y+1).N / (x+1).W respectively. Reading
+    // only N+W here mirrors terrainAxesAt in world.ts so pre-bake matches
+    // runtime cover lookup exactly (COA-4 #88/#89).
+    const edgeNAxes = barrierAxesFromByte(edgeN[i]);
+    const edgeWAxes = barrierAxesFromByte(edgeW[i]);
+
+    // Movement mask — intersection across layers. Base first. Edge
+    // barriers that restrict movement across the N or W boundary also
+    // narrow what can stand on this tile (a bocage-ringed tile can't be
+    // entered by wheeled chassis, so WALK_WHEELED is stripped).
     let mask = walkMaskFromMove(baseAxes.move);
     if (pointAxes) mask &= walkMaskFromMove(pointAxes.move);
+    if (edgeNAxes) mask &= walkMaskFromMove(edgeNAxes.move);
+    if (edgeWAxes) mask &= walkMaskFromMove(edgeWAxes.move);
     if (isBuilding) {
       // Building interior: infantry-only, no vehicles.
       mask &= WALK_INFANTRY_MASK;
     }
-    if ((pointAxes?.moveSpeedMult ?? baseAxes.moveSpeedMult) < 1.0) mask |= WALK_SLOW;
+    const slowestMult = Math.min(
+      pointAxes?.moveSpeedMult ?? baseAxes.moveSpeedMult,
+      edgeNAxes?.moveSpeedMult ?? 1.0,
+      edgeWAxes?.moveSpeedMult ?? 1.0,
+    );
+    if (slowestMult < 1.0) mask |= WALK_SLOW;
     walkability[i] = mask;
 
     // Cover profile — rough pre-bake byte for fast hit.ts lookup.
     // Bits: los 0-1, cover 2-3, heightProfile 4-6, dirty 7.
-    const los = pointAxes?.los ?? baseAxes.los;
-    const cover = pointAxes?.cover ?? baseAxes.cover;
-    const profile = pointAxes?.heightProfile ?? baseAxes.heightProfile;
-    coverProfile[i] =
-      losBits(los) | (coverBits(cover) << 2) | (heightBits(profile) << 4);
+    // Take the strongest contributor across base + point + N/W edge
+    // barriers. This matches terrainAxesAt(world, x, y) semantics.
+    let strongestAxes: CoverAxes = baseAxes;
+    if (pointAxes) strongestAxes = stronger(strongestAxes, pointAxes);
+    if (edgeNAxes) strongestAxes = stronger(strongestAxes, edgeNAxes);
+    if (edgeWAxes) strongestAxes = stronger(strongestAxes, edgeWAxes);
+    coverProfile[i] = coverByteFromAxes(strongestAxes);
   }
+}
+
+// Decode a barrier byte into CoverAxes (or null if no barrier). Damaged
+// bit is honoured where a DAMAGED_AXES override exists. Kept file-local
+// since the pipeline bake is the only non-World consumer.
+function barrierAxesFromByte(edgeByte: number): CoverAxes | null {
+  const kindIdx = edgeByte & 0x0f;
+  if (kindIdx === 0) return null;
+  const kind = BARRIER_KINDS[kindIdx - 1];
+  if (!kind) return null;
+  if (barrierIsDamaged(edgeByte)) {
+    const d = DAMAGED_AXES[kind];
+    if (d) return d;
+  }
+  return BARRIER_AXES[kind];
 }
 
 function walkMaskFromMove(
@@ -862,16 +1018,6 @@ function walkMaskFromMove(
     case 'blocked-all':
       return 0;
   }
-}
-
-function losBits(l: 'none' | 'thin' | 'full'): number {
-  return l === 'full' ? 2 : l === 'thin' ? 1 : 0;
-}
-function coverBits(c: 'none' | 'light' | 'heavy' | 'full'): number {
-  return c === 'full' ? 3 : c === 'heavy' ? 2 : c === 'light' ? 1 : 0;
-}
-function heightBits(h: 'flat' | 'low' | 'chest' | 'tall' | 'full'): number {
-  return h === 'full' ? 4 : h === 'tall' ? 3 : h === 'chest' ? 2 : h === 'low' ? 1 : 0;
 }
 
 function maskZoneInDensity(
@@ -1170,7 +1316,88 @@ function stampHedgerowEdges(
   }
 }
 
+// COA-1 #40 — density-driven debris scatter. Given a biome + hotspot set +
+// density field, scatter point objects themed to the biome around each
+// hotspot using scatterClustersDensityDriven. Uses its own sub-rng (XOR
+// with a unique salt) so adding this pass doesn't perturb earlier
+// determinism — each pass should own its RNG branch.
+function scatterDensityDrivenDebris(
+  biome: BiomeId,
+  hotspots: readonly Hotspot[],
+  density: Float32Array,
+  base: Uint8Array,
+  point: Uint8Array,
+  buildingId: Uint16Array,
+  hpPoint: Uint16Array,
+  W: number,
+  H: number,
+  seedBase: number,
+): void {
+  if (hotspots.length === 0) return;
+  // Biome-specific debris themes. Each entry maps to a POINT_AXES kind
+  // plus a default per-item HP.
+  type DebrisKind = 'barrel' | 'oil_drums' | 'tyres' | 'rubble_pile'
+    | 'cart_empty' | 'cart_full' | 'haystack' | 'well' | 'trough';
+  const themes: Record<BiomeId, readonly DebrisKind[]> = {
+    urban_sparse: ['barrel', 'tyres', 'rubble_pile', 'cart_empty'],
+    urban_dense: ['barrel', 'oil_drums', 'tyres', 'rubble_pile'],
+    industrial: ['oil_drums', 'barrel', 'tyres', 'rubble_pile'],
+    rural_open: ['cart_empty', 'haystack', 'well', 'trough'],
+    rural_village: ['cart_empty', 'cart_full', 'haystack', 'well', 'trough'],
+    mixed: ['cart_empty', 'haystack', 'barrel', 'tyres'],
+    forest: ['rubble_pile', 'cart_empty'],
+    arid: ['barrel', 'tyres', 'rubble_pile'],
+  };
+  const HP: Record<DebrisKind, number> = {
+    barrel: 20,
+    oil_drums: 25,
+    tyres: 15,
+    rubble_pile: 40,
+    cart_empty: 15,
+    cart_full: 30,
+    haystack: 10,
+    well: 60,
+    trough: 20,
+  };
+  const theme = themes[biome];
+  // Industrial biomes get denser debris; rural biomes sparser.
+  const intensity =
+    biome === 'industrial' || biome === 'urban_dense' ? 8
+    : biome === 'urban_sparse' ? 5
+    : biome === 'rural_village' ? 4
+    : 3;
+  const rng = makeRng(seedBase ^ 0xdeb115ed);
+  const children = scatterClustersDensityDriven(
+    hotspots,
+    density,
+    W,
+    H,
+    {
+      childrenPerHotspot: intensity,
+      // P4.2 — relax debris gates. Larger sigma spreads debris further
+      // around each hotspot (more coverage), lower density threshold
+      // accepts tiles the pipeline formerly rejected as too quiet, and
+      // more attempts give scatter more chances to place on cluttered
+      // maps.
+      sigmaTiles: 7,
+      maxAttemptsPerChild: 16,
+      minDensityForChild: 0.15,
+    },
+    rng,
+  );
+  for (const c of children) {
+    const idx = c.y * W + c.x;
+    // Skip occupied tiles (walls would spawn inside buildings / trees).
+    if (base[idx] !== B.open) continue;
+    if (point[idx] !== 0) continue;
+    if (buildingId[idx] !== 0) continue;
+    // Pick a theme item per child via sub-rng draw — consistent per seed.
+    const pick = theme[Math.floor(rng() * theme.length)];
+    point[idx] = pointToByte(pick);
+    hpPoint[idx] = HP[pick];
+  }
+}
+
 // Silence unused ELEVATION_STEPS import — kept as a module-level reference
 // so future scatter stages can read it without re-importing.
 void ELEVATION_STEPS;
-void BARRIER_AXES;

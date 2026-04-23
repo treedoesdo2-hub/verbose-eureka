@@ -9,6 +9,21 @@
 // Validators are pure predicates (world + candidate → true/false). The
 // registry makes validator composition dead simple — you assemble a
 // validator chain per pass without plumbing state.
+//
+// Status (COA-3 #59 retrospective): the framework currently only fits
+// point-object scatter where the picker returns a single tile. Pipeline's
+// real scatter paths are hotspot-anchored (ring scatter with probability
+// falloff from a center) and multi-tile building placement with
+// footprints; neither maps cleanly onto the single-tile picker/onAccept
+// shape. Migrating them mechanically would either (a) perturb the RNG
+// call sequence and break byte-identical determinism asserts, or (b)
+// require a "bulk accept" variant of runScatterPass that accepts a
+// multi-tile region. Before migrating real callsites, the framework
+// needs: (1) a BulkScatterPass that accepts a region (bounding box or
+// tile list) per onAccept call; (2) a RNG call-count contract so
+// migrations are known to be determinism-neutral. Until then, pipeline
+// scatter lives inline — this file covers COA-1 #44 task scaffolding
+// for future use.
 
 import type { DebugSink } from './debug-sink';
 import type { Rng } from './noise';

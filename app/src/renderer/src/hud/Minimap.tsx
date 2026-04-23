@@ -1,15 +1,11 @@
 import type { SnapshotUnit, WorldSnapshot } from '@shared/snapshot';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { computeMinimapProjection, projectUnit, unprojectPoint } from './minimap-math';
+import { terrainColor } from '@sim/mapgen/palette';
 
-const TERRAIN_COLORS: Record<number, string> = {
-  0: '#1a2b1a',
-  1: '#3a342b',
-  2: '#4a3e2f',
-  3: '#1b3a1f',
-  4: '#193352',
-  5: '#342c26',
-};
+function rgbToCss(rgb: readonly [number, number, number]): string {
+  return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+}
 
 const TEAM_COLORS: Record<number, string> = {
   0: '#55aaff',
@@ -50,7 +46,7 @@ function MinimapImpl({
       for (let tx = 0; tx < world.width; tx++) {
         const idx = ty * world.width + tx;
         const t = world.base[idx] ?? 0;
-        ctx.fillStyle = TERRAIN_COLORS[t] ?? '#1a2b1a';
+        ctx.fillStyle = rgbToCss(terrainColor(t, 'strategic'));
         ctx.fillRect(
           proj.offsetX + tx * world.tileSizeMeters * proj.scale,
           proj.offsetY + ty * world.tileSizeMeters * proj.scale,

@@ -94,6 +94,12 @@ export type MapGenResult = {
   readonly buildings: readonly BuildingRecord[];
   // Continuous elevation kept as a debug/render aid (minimap contours).
   readonly elevation: Float32Array;
+  // P3.3 — baked shading (Sobel gradient → per-tile luminance). Neutral
+  // value is 128; multiplied by the base color at render bake time.
+  readonly shadingBake: Uint8ClampedArray;
+  // P3.5b — per-tile contour flag (0 = no contour, 1 = on elevation
+  // boundary). Renderer draws strokes at zoom-out; thumbnail always.
+  readonly contours: Uint8Array;
   // Continuous cover-density field driving cluster scatter (COA-1).
   readonly coverDensity: Float32Array;
   // COA-1 hotspot + cluster outputs. Non-COA-1 pipelines leave these empty /
@@ -101,6 +107,12 @@ export type MapGenResult = {
   // cluster, 0..n-1 = assigned to hotspots[i].
   readonly hotspots: readonly Hotspot[];
   readonly clusterMembership: Int16Array;
+  // Minimum-spanning-tree edges over the hotspot set. Downstream consumers
+  // (scatter around adjacent hotspots, secondary lane/lane routing, debug
+  // overlays) use this to preserve spatial adjacency between cluster
+  // anchors. Empty when hotspots has fewer than 2 entries — see
+  // routeAdjacencyMST in density-scatter.ts (COA-1 #39).
+  readonly hotspotAdjacency: readonly { from: number; to: number; dist: number }[];
   // COA-4 spatial identity. Dominant line + capillaries + single hero
   // landmark carry the map's visual character through to briefings. Empty
   // arrays / null for pre-COA-4 pipelines.

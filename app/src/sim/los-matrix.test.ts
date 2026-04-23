@@ -87,7 +87,7 @@ describe('LOS matrix — stance × occluder height', () => {
     expect(r).toBe('blocked');
   });
 
-  it('elevation cliff — target on 7m-high step above shooter still visible if line clears', () => {
+  it('elevation cliff — target on 7m-high plateau above shooter is blocked by the plateau wall (P3.11 ridge rule)', () => {
     const w = makeWorld(32, 16, 1);
     // Build a 5-step elevation plateau around the target (7.5m high).
     for (let x = 20; x < 32; x++) {
@@ -96,10 +96,13 @@ describe('LOS matrix — stance × occluder height', () => {
       }
     }
     const r = castRayStance(w, { x: 5, y: 8 }, 'standing', { x: 25, y: 8 }, 'standing');
-    // Target is 5 × 1.5m = 7.5m above shooter. A standing unit at 7.5m is
-    // clearly above any flat-ground ray from shooter. Ray still has straight
-    // shot — visible.
-    expect(r).toBe('visible');
+    // Per P3.11 (Firefight-derived ridge rule): a ridge rising ≥2 steps
+    // above the lower endpoint blocks LOS entirely. The old test
+    // asserted 'visible' on the premise that the ray "still has a
+    // straight shot", but geometrically a ground-level shooter can't
+    // see a target on top of a 7.5m plateau because the plateau's wall
+    // occludes. The ridge rule makes this explicit.
+    expect(r).toBe('blocked');
   });
 
   it('zero-length ray returns visible', () => {

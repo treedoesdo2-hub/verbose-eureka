@@ -465,6 +465,13 @@ export type World = {
   readonly hpW: Uint16Array;
   readonly hpPoint: Uint16Array;
   readonly buildings: readonly BuildingRecord[];
+  // P3.3 — baked hill-shading (Uint8ClampedArray, 128 = neutral).
+  // Populated at mapgen time; authored-map fixtures default to an
+  // all-128 buffer.
+  readonly shadingBake: Uint8ClampedArray;
+  // P3.5b — per-tile contour flag (1 where tile sits on an elevation
+  // step boundary).
+  readonly contours: Uint8Array;
 };
 
 export type WorldInit = {
@@ -486,6 +493,8 @@ export type WorldInit = {
   readonly hpW?: Uint16Array;
   readonly hpPoint?: Uint16Array;
   readonly buildings?: readonly BuildingRecord[];
+  readonly shadingBake?: Uint8ClampedArray;
+  readonly contours?: Uint8Array;
 };
 
 export function makeWorld(
@@ -503,6 +512,8 @@ export function makeWorld(
   const fillCover = coverByteFromAxes(BASE_AXES[fill]);
   walkability.fill(fillMask);
   coverProfile.fill(fillCover);
+  const shadingBake = new Uint8ClampedArray(N);
+  shadingBake.fill(128);
   return {
     width,
     height,
@@ -522,6 +533,8 @@ export function makeWorld(
     hpW: new Uint16Array(N),
     hpPoint: new Uint16Array(N),
     buildings: [],
+    shadingBake,
+    contours: new Uint8Array(N),
   };
 }
 
@@ -546,6 +559,14 @@ export function makeWorldFromBuffers(init: WorldInit): World {
     hpW: init.hpW ?? new Uint16Array(N),
     hpPoint: init.hpPoint ?? new Uint16Array(N),
     buildings: init.buildings ?? [],
+    shadingBake:
+      init.shadingBake ??
+      (() => {
+        const a = new Uint8ClampedArray(N);
+        a.fill(128);
+        return a;
+      })(),
+    contours: init.contours ?? new Uint8Array(N),
   };
 }
 
@@ -598,7 +619,7 @@ export function pointAxesAt(world: World, x: number, y: number): CoverAxes | nul
 // Picks the strongest axis contributor at a tile, considering base + point +
 // crossed edge (if a bearing is specified). For MVP cover scoring we take the
 // "worst for the shooter" (most LOS-blocking, most cover).
-function stronger(a: CoverAxes, b: CoverAxes | null): CoverAxes {
+export function stronger(a: CoverAxes, b: CoverAxes | null): CoverAxes {
   if (!b) return a;
   const rankLos = (x: LosBlock): number => (x === 'full' ? 2 : x === 'thin' ? 1 : 0);
   const rankCover = (x: CoverLevel): number =>
@@ -901,23 +922,36 @@ export function pointStateAt(world: World, x: number, y: number): DestructibleSt
 // mutation paths so tests and authored-map loaders don't have to call a
 // separate bake sweep. Pipeline callers also rebake at the end, but this
 // keeps incremental edits consistent.
+//
+// Reads base + point + N/W edge barriers (mirrors terrainAxesAt) so a
+// tile's coverProfile and walkability stay consistent with directional
+// cover lookups at runtime — COA-4 #88/#89.
 function rebakeTile(world: World, x: number, y: number): void {
   if (!inBounds(world, x, y)) return;
   const idx = tileIndex(world, x, y);
   const baseAxes = BASE_AXES[byteToBase(world.base[idx])];
   const pAxes = pointAxesAt(world, x, y);
+  const eNAxes = edgeBarrierAxesFor(world, x, y, 'N');
+  const eWAxes = edgeBarrierAxesFor(world, x, y, 'W');
   const isBuilding = world.buildingId[idx] !== 0;
 
   let mask = walkMaskFromMove(baseAxes.move);
   if (pAxes) mask &= walkMaskFromMove(pAxes.move);
+  if (eNAxes) mask &= walkMaskFromMove(eNAxes.move);
+  if (eWAxes) mask &= walkMaskFromMove(eWAxes.move);
   if (isBuilding) mask &= WALK_INFANTRY_MASK;
-  const effMult = pAxes?.moveSpeedMult ?? baseAxes.moveSpeedMult;
+  const effMult = Math.min(
+    pAxes?.moveSpeedMult ?? baseAxes.moveSpeedMult,
+    eNAxes?.moveSpeedMult ?? 1.0,
+    eWAxes?.moveSpeedMult ?? 1.0,
+  );
   if (effMult < 1.0) mask |= WALK_SLOW;
   world.walkability[idx] = mask;
 
-  const strongest = pAxes
-    ? (stronger(baseAxes, pAxes) as CoverAxes)
-    : baseAxes;
+  let strongest: CoverAxes = baseAxes;
+  if (pAxes) strongest = stronger(strongest, pAxes);
+  if (eNAxes) strongest = stronger(strongest, eNAxes);
+  if (eWAxes) strongest = stronger(strongest, eWAxes);
   world.coverProfile[idx] = coverByteFromAxes(strongest);
 }
 

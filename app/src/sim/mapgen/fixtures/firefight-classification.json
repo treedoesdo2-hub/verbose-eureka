@@ -1,0 +1,66 @@
+{
+  "_comment": "Firefight v9.0.2 map classifications. 27 maps total, hand-classified by visual inspection of 384x384 briefing thumbnails (-map.jpg). See AUDIT_INTEGRATION.md for context. Source: C:/Users/User/Downloads/Firefight.v9.0.2/Firefight.v9.0.2/Maps/. NOTE: D7 extrapolation formula in AUDIT_INTEGRATION.md is superseded — we have 4 real urban_sparse exemplars, no need to extrapolate.",
+  "schema_version": 1,
+  "authored": "2026-04-22",
+  "maps_root": "C:/Users/User/Downloads/Firefight.v9.0.2/Firefight.v9.0.2/Maps",
+  "maps": {
+    "ASTM": { "biome": "mixed", "notes": "balanced urban sprawl + forested areas" },
+    "BFRM": { "biome": "rural_open", "notes": "pure hedgerow/bocage agricultural landscape" },
+    "BGHL": { "biome": "forest", "notes": "dense tree canopy with scattered clearings" },
+    "BLNU": { "biome": "urban_sparse", "notes": "scattered residential buildings in rural setting" },
+    "DGCC": { "biome": "urban_dense", "notes": "grid street layout with big industrial/commercial buildings" },
+    "FLAU": { "biome": "industrial", "notes": "massive parking lots + warehouses, minimal green space" },
+    "H112": { "biome": "rural_village", "notes": "small village cluster with surrounding fields and trees" },
+    "JLRD": { "biome": "forest", "notes": "dense dark green canopy, river valley" },
+    "JWVG": { "biome": "rural_village", "notes": "scattered residential plots in forested area, village feel" },
+    "KMPV": { "biome": "forest", "notes": "very dense dark tree coverage, minimal clearing" },
+    "KRDG": { "biome": "rural_open", "notes": "open fields with scattered tree clusters, hedgerows" },
+    "LAUN": { "biome": "forest", "notes": "dense canopy with river/water feature" },
+    "LBCH": { "biome": "forest", "notes": "dense tree coverage with winding water channel" },
+    "MCVL": { "biome": "rural_open", "notes": "predominantly open fields with scattered small tree clusters" },
+    "MLKS": { "biome": "mixed", "notes": "balanced mix of fields, forest patches, water" },
+    "MRCH": { "biome": "rural_village", "notes": "village/farm cluster surrounded by forest" },
+    "NSPN": { "biome": "urban_sparse", "notes": "scattered buildings in heavily forested suburban area" },
+    "NSVL": { "biome": "rural_village", "notes": "distinct village with surrounding countryside" },
+    "RMLY": { "biome": "forest", "notes": "dense forest with winding river, minimal development" },
+    "ROIM": { "biome": "urban_sparse", "notes": "scattered suburban buildings in forested landscape" },
+    "SRVR": { "biome": "industrial", "notes": "large solar farm array dominates, geometric pattern" },
+    "STPA": { "biome": "rural_open", "notes": "agricultural fields with scattered trees, hedgerows" },
+    "TFAC": { "biome": "industrial", "notes": "large warehouse/factory structures with parking" },
+    "TRCH": { "biome": "rural_village", "notes": "village settlement in mixed rural/forested terrain" },
+    "VBOC": { "biome": "urban_dense", "notes": "dense street grid with multiple building blocks" },
+    "VJCT": { "biome": "urban_sparse", "notes": "scattered buildings amid forest, junction cluster" },
+    "ZCRD": { "biome": "rural_village", "notes": "village with distinct settlement pattern in forested area" }
+  },
+  "biome_panels": {
+    "urban_dense": ["DGCC", "VBOC"],
+    "urban_sparse": ["BLNU", "NSPN", "ROIM", "VJCT"],
+    "rural_village": ["H112", "JWVG", "MRCH", "NSVL", "TRCH", "ZCRD"],
+    "rural_open": ["BFRM", "KRDG", "MCVL", "STPA"],
+    "forest": ["BGHL", "JLRD", "KMPV", "LAUN", "LBCH", "RMLY"],
+    "industrial": ["FLAU", "SRVR", "TFAC"],
+    "mixed": ["ASTM", "MLKS"],
+    "arid": []
+  },
+  "panel_counts": {
+    "urban_dense": 2,
+    "urban_sparse": 4,
+    "rural_village": 6,
+    "rural_open": 4,
+    "forest": 6,
+    "industrial": 3,
+    "mixed": 2,
+    "arid": 0
+  },
+  "arid_strategy": {
+    "_comment": "No Firefight arid exemplar exists (WW2 settings are European/Pacific). Arid panel targets authored manually against real-world analogues and left at 3.0x tolerance. Parked as a second-tier biome per user: 'Fuck arid i dont have a good example of it for you. We'll want it later.'",
+    "strategy": "manual_targets",
+    "tolerance_multiplier": 3.0,
+    "justification": "No Firefight ground truth. Allow coarse parity until we source an arid reference (e.g., from Spec Ops: The Line or a Sahara-theater game) post-MVP."
+  },
+  "urban_sparse_strategy": {
+    "_comment": "D7 of AUDIT_INTEGRATION.md proposed extrapolation (urban_dense*0.4 + rural_village*0.6). That was based on the incorrect assumption that no urban_sparse exemplars existed. Superseded: we have 4 direct exemplars (BLNU, NSPN, ROIM, VJCT), no extrapolation needed.",
+    "strategy": "direct_measurement",
+    "tolerance_multiplier": 1.0
+  }
+}
