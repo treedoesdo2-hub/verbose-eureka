@@ -114,7 +114,10 @@ export type FeatureVisibility = {
   readonly dominantLines: boolean;
   readonly capillaries: boolean;
   readonly elevationContours: boolean;
-  readonly deployZones: boolean;
+  // ADR 014 — replaces the former `deployZones` full-rect overlay with
+  // per-slot pip markers driven by result.unitSlots. Battle tier off
+  // (units render themselves); commander tiers on.
+  readonly spawnMarkers: boolean;
   readonly objectiveGlyphs: boolean;
   readonly landmarkOutline: boolean;
   readonly grid: boolean;
@@ -143,7 +146,7 @@ export const FEATURE_VISIBILITY: Record<PaletteTier, FeatureVisibility> = {
     dominantLines: false,
     capillaries: false,
     elevationContours: false,
-    deployZones: false,
+    spawnMarkers: false,
     objectiveGlyphs: false,
     landmarkOutline: false,
     grid: false,
@@ -161,7 +164,7 @@ export const FEATURE_VISIBILITY: Record<PaletteTier, FeatureVisibility> = {
     dominantLines: true,
     capillaries: false,
     elevationContours: false,
-    deployZones: true,
+    spawnMarkers: true,
     objectiveGlyphs: true,
     landmarkOutline: false,
     grid: false,
@@ -179,7 +182,7 @@ export const FEATURE_VISIBILITY: Record<PaletteTier, FeatureVisibility> = {
     dominantLines: true,
     capillaries: true,
     elevationContours: true,
-    deployZones: true,
+    spawnMarkers: true,
     objectiveGlyphs: true,
     landmarkOutline: true,
     grid: false,
@@ -197,7 +200,7 @@ export const FEATURE_VISIBILITY: Record<PaletteTier, FeatureVisibility> = {
     dominantLines: true,
     capillaries: true,
     elevationContours: true,
-    deployZones: true,
+    spawnMarkers: true,
     objectiveGlyphs: true,
     landmarkOutline: true,
     grid: true,

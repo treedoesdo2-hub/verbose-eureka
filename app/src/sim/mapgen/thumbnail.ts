@@ -21,7 +21,6 @@ import {
 } from './thumbnail-passes';
 import {
   drawCapillaries,
-  drawDeployZone,
   drawDominantLine,
   drawElevationContours,
   drawFrameBorder,
@@ -29,6 +28,7 @@ import {
   drawHeroLandmark,
   drawLegendChip,
   drawObjectiveGlyph,
+  drawSpawnMarkers,
   makeBufferDrawTarget,
 } from './thumbnail-overlays';
 import { placeLabels, type LabelRequest } from './thumbnail-labels';
@@ -135,9 +135,8 @@ export function generateThumbnail(
     // thumbnail resolution, not source resolution.
     drawElevationContours(target, elevationD, tW, tH);
   }
-  if (visibility.deployZones) {
-    drawDeployZone(target, result.deployZones.team0, 0);
-    drawDeployZone(target, result.deployZones.team1, 1);
+  if (visibility.spawnMarkers) {
+    drawSpawnMarkers(target, result.unitSlots);
   }
   if (visibility.objectiveGlyphs) {
     for (const a of result.objectiveAnchors) drawObjectiveGlyph(target, a);

@@ -6,7 +6,7 @@
 import type { DominantCapillary, DominantLine, LineKind } from './dominant-line';
 import type { HeroLandmark } from './hero-landmark';
 import { lineStroke, OVERLAY_PALETTE, type RGBA } from './palette';
-import type { DeployZone, ObjectiveAnchor } from './types';
+import type { DeployZone, ObjectiveAnchor, UnitSlots } from './types';
 
 export type DrawTarget = {
   readonly width: number;
@@ -188,57 +188,48 @@ function tileScaleY(target: DrawTarget, tileH: number): number {
   return target.height / tileH;
 }
 
-// ---- Deploy zone perimeters + facing arrows (task #129) -------------------
+// ---- Spawn markers (ADR 014) ---------------------------------------------
+// Replaces the former full-rect deploy-zone stripes with compact per-slot
+// pips sized to cover the actual spawn tiles. Team 0 is marching order
+// along a road-connected edge; team 1 is an objective ring.
 
-export function drawDeployZone(
-  target: DrawTarget,
-  zone: DeployZone,
-  team: 0 | 1,
-): void {
-  const tint = team === 0 ? OVERLAY_PALETTE.team0 : OVERLAY_PALETTE.team1;
-  const dashColor: RGBA = [tint[0], tint[1], tint[2], 220];
-  const fillColor: RGBA = [tint[0], tint[1], tint[2], 90];
-  const topLeft = target.tilesToPx(zone.x, zone.y);
-  const bottomRight = target.tilesToPx(zone.x + zone.w, zone.y + zone.h);
-  const wPx = Math.max(1, Math.round(bottomRight.x - topLeft.x));
-  const hPx = Math.max(1, Math.round(bottomRight.y - topLeft.y));
-  target.fillRect(Math.round(topLeft.x), Math.round(topLeft.y), wPx, hPx, fillColor);
-  // Dashed perimeter: emit 3-on, 2-off pattern.
-  drawDashedRect(target, Math.round(topLeft.x), Math.round(topLeft.y), wPx, hPx, dashColor);
-  // Facing arrow: draw a short stroke from zone center in the facing
-  // direction.
-  if (typeof zone.facing === 'number') {
-    const cx = (topLeft.x + bottomRight.x) / 2;
-    const cy = (topLeft.y + bottomRight.y) / 2;
-    const len = Math.max(4, Math.min(wPx, hPx) / 3);
-    const ex = cx + Math.cos(zone.facing) * len;
-    const ey = cy + Math.sin(zone.facing) * len;
-    target.drawLine(cx, cy, ex, ey, dashColor);
-  }
+export function drawSpawnMarkers(target: DrawTarget, slots: UnitSlots): void {
+  const team0Core: RGBA = [
+    OVERLAY_PALETTE.team0[0],
+    OVERLAY_PALETTE.team0[1],
+    OVERLAY_PALETTE.team0[2],
+    220,
+  ];
+  const team1Core: RGBA = [
+    OVERLAY_PALETTE.team1[0],
+    OVERLAY_PALETTE.team1[1],
+    OVERLAY_PALETTE.team1[2],
+    220,
+  ];
+  for (const s of slots.team0) drawSpawnPip(target, s, team0Core);
+  for (const s of slots.team1) drawSpawnPip(target, s, team1Core);
 }
 
-function drawDashedRect(
+function drawSpawnPip(
   target: DrawTarget,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
+  slot: { x: number; y: number; facing: number },
   color: RGBA,
 ): void {
-  const dash = 3;
-  const gap = 2;
-  for (let i = 0; i < w; i++) {
-    if (i % (dash + gap) < dash) {
-      target.putPixel(x + i, y, color);
-      target.putPixel(x + i, y + h - 1, color);
-    }
-  }
-  for (let j = 0; j < h; j++) {
-    if (j % (dash + gap) < dash) {
-      target.putPixel(x, y + j, color);
-      target.putPixel(x + w - 1, y + j, color);
-    }
-  }
+  // One-tile pip: render as a small filled square at the slot tile, with
+  // a subtle 1-pixel halo for visibility on busy terrain.
+  const tl = target.tilesToPx(slot.x, slot.y);
+  const br = target.tilesToPx(slot.x + 1, slot.y + 1);
+  const wPx = Math.max(2, Math.round(br.x - tl.x));
+  const hPx = Math.max(2, Math.round(br.y - tl.y));
+  const halo: RGBA = [0, 0, 0, 140];
+  target.fillRect(
+    Math.round(tl.x) - 1,
+    Math.round(tl.y) - 1,
+    wPx + 2,
+    hPx + 2,
+    halo,
+  );
+  target.fillRect(Math.round(tl.x), Math.round(tl.y), wPx, hPx, color);
 }
 
 // ---- Objective glyphs (task #130) -----------------------------------------
