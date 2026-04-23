@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { getContent } from './content';
 import { useHotkeys } from './hooks/useHotkeys';
 import { Armory } from './screens/armory';
@@ -49,6 +49,25 @@ export default function App(): React.JSX.Element {
 
   useHotkeys([{ key: 't', shift: true, handler: () => toggleTheme() }]);
 
+  // Wheel-to-scroll translator on <main>. In this Electron build, default
+  // UA scroll on overflow:auto ancestors doesn't fire for wheel events
+  // the way keyboard / scrollbar-drag does — observed on the briefing
+  // page. Explicit listener ensures wheel always moves the scroll
+  // position.
+  const mainRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent): void => {
+      if (e.defaultPrevented) return;
+      const canScroll = el.scrollHeight > el.clientHeight;
+      if (!canScroll) return;
+      el.scrollTop += e.deltaY;
+    };
+    el.addEventListener('wheel', onWheel, { passive: true });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   return (
     <div className="app-shell">
       <header>
@@ -75,7 +94,7 @@ export default function App(): React.JSX.Element {
           </button>
         </div>
       </header>
-      <main>
+      <main ref={mainRef}>
         {screen === 'menu' && <MainMenu />}
         {screen === 'board' && <ContractBoard />}
         {screen === 'armory' && <Armory />}

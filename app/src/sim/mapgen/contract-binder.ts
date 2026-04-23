@@ -82,14 +82,24 @@ const LANDMARK_TOKENS: Record<string, (l: HeroLandmark) => string> = {
   '{landmark_short}': (l) => l.shortName,
 };
 
+// Generic fallbacks used when a landmark hasn't been rolled yet (e.g.,
+// the contract board shows all contracts at once with no per-card
+// pipeline run). Keeps the copy readable instead of leaking literal
+// `{landmark}` tokens to the player.
+const LANDMARK_FALLBACKS: Record<string, string> = {
+  '{landmark}': 'the target',
+  '{landmark_short}': 'the target',
+};
+
 export function interpolateBriefing(
   briefing: string,
   landmark: HeroLandmark | null,
 ): string {
-  if (!landmark) return briefing;
   let out = briefing;
   for (const [token, resolve] of Object.entries(LANDMARK_TOKENS)) {
-    if (out.includes(token)) out = out.split(token).join(resolve(landmark));
+    if (!out.includes(token)) continue;
+    const replacement = landmark ? resolve(landmark) : LANDMARK_FALLBACKS[token];
+    out = out.split(token).join(replacement);
   }
   return out;
 }

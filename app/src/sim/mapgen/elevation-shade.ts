@@ -1,25 +1,38 @@
 // P3.3 — Sobel shading bake.
 //
 // Converts an elevationStep grid into a per-tile luminance multiplier
-// (Uint8ClampedArray, 0..255 where 128 = neutral). The terrain renderer
-// multiplies each tile's base color by shadingBake[i] / 128 to produce
-// baked-in hill shading — matching Firefight's approach of baking hill
-// shading into the hero JPG rather than computing it at runtime.
+// (Uint8ClampedArray, 0..255 where 128 = neutral 1.0×). The terrain
+// renderer multiplies each tile's base color by shadingBake[i] / 128
+// to produce baked-in hill shading — matching Firefight's approach of
+// baking hill shading into the hero JPG rather than computing it at
+// runtime.
 //
-// Algorithm:
+// Contract: a FLAT tile (no gradient) must encode to 128 so its base
+// color is preserved. Earlier versions produced ~214 on flat ground
+// (~1.67×), which is what @desktop's 2026-04-23 palette audit caught
+// — urban_sparse open read as rgb(218,210,92) V=77% vs Firefight spec
+// V≈39%. The bug was the Lambert formula `0.55 + 0.45 * lambert`
+// encoded directly to brightness, so a flat tile with lambert = LZ
+// ≈ 0.64 got brightness ≈ 0.84 → encoded 214.
+//
+// Fixed algorithm (flat-neutral):
 //   1. Sobel gradient per tile (gx, gy) on the elevationStep field.
-//   2. Surface normal: n = normalize(-gx, -gy, k). k controls "height
-//      exaggeration" — larger k means flatter visual response.
-//   3. Light direction L pointing NW with 1.5 Z bias (Firefight's sun
-//      comes from upper-left per @desktop audit).
-//   4. Lambert = clamp(dot(n, L), 0, 1). Brightness = 0.55 + 0.45 *
-//      Lambert so even fully-shadowed tiles stay legible.
-//   5. Encode: shadingBake[i] = round(brightness * 255).
+//   2. Surface normal: n = normalize(-gx, -gy, K). K = height
+//      exaggeration. For a flat tile n = (0, 0, K) and lambert = LZ.
+//   3. Relative brightness: r = 1 + GAIN * (lambert - LZ) / LZ, so
+//      a flat tile yields r = 1.0 exactly. Upslopes toward the light
+//      brighten, downslopes darken.
+//   4. Clamp r to [MIN_SHADE, MAX_SHADE] so no tile goes pitch-black
+//      or blown out.
+//   5. Encode: shadingBake[i] = round(r * 128).
 //
 // Edge tiles copy their nearest in-bounds neighbor so no 1-pixel dark
 // rim.
 
 const K = 4; // height exaggeration — smaller k = stronger shading
+const SHADING_GAIN = 0.35; // ± swing around neutral for full-tilt slopes
+const MIN_SHADE = 0.6; // heaviest shadow multiplier
+const MAX_SHADE = 1.25; // strongest highlight multiplier
 const LIGHT_X = -1;
 const LIGHT_Y = -1;
 const LIGHT_Z = 1.5;
@@ -56,8 +69,12 @@ export function bakeShading(
       const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
       const dot = (nx * LX + ny * LY + nz * LZ) / len;
       const lambert = dot < 0 ? 0 : dot > 1 ? 1 : dot;
-      const brightness = 0.55 + 0.45 * lambert;
-      out[idx(x, y)] = Math.round(brightness * 255);
+      // Flat-neutral: lambert == LZ → shade = 1.0 exactly.
+      const rel = (lambert - LZ) / LZ;
+      let shade = 1 + SHADING_GAIN * rel;
+      if (shade < MIN_SHADE) shade = MIN_SHADE;
+      else if (shade > MAX_SHADE) shade = MAX_SHADE;
+      out[idx(x, y)] = Math.round(shade * 128);
     }
   }
 

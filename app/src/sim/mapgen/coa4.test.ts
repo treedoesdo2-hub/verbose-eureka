@@ -137,9 +137,13 @@ describe('COA-4 briefing interpolation', () => {
     expect(b).toBe('Secure Refinery Bravo. Fall back to Bravo on signal.');
   });
 
-  it('interpolateBriefing is a no-op when landmark is null', () => {
+  it('interpolateBriefing uses generic fallbacks when landmark is null', () => {
+    // Landmark is rolled at briefing-preview time; the contract-board card
+    // and any other pre-roll render must not leak `{landmark}` literals.
     const b = interpolateBriefing('Secure {landmark}.', null);
-    expect(b).toBe('Secure {landmark}.');
+    expect(b).toBe('Secure the target.');
+    const s = interpolateBriefing('Fall back to {landmark_short}.', null);
+    expect(s).toBe('Fall back to the target.');
   });
 
   it('briefingReferencesLandmark detects landmark tokens', () => {

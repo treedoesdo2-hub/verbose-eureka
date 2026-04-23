@@ -1,3 +1,4 @@
+import { interpolateBriefing } from '@sim/mapgen/contract-binder';
 import { getContent } from '../content';
 import { useAppState } from '../stores/app-state';
 
@@ -22,7 +23,7 @@ export function ContractBoard(): React.JSX.Element {
               <span className="title">{c.name}</span>
               <span className="pay mono">{c.payout.cash.toLocaleString()} cr</span>
             </header>
-            <p className="briefing">{c.briefing}</p>
+            <p className="briefing">{interpolateBriefing(c.briefing, null)}</p>
             <dl>
               <dt>map</dt>
               <dd>{bundle.maps.get(c.mapId)?.name ?? c.mapId}</dd>
