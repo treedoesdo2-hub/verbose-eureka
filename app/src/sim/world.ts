@@ -590,6 +590,135 @@ export function isFootPassable(world: World, x: number, y: number): boolean {
   return axes.move !== 'blocked-all' && axes.move !== 'blocked-foot';
 }
 
+// Edge-barrier movement gate (#276).
+//
+// A tile-by-tile walkability mask captures *what's standing on this tile*,
+// but not *what's standing between this tile and its neighbor*. Hedgerows,
+// stone walls, fences, and bocage are all per-edge data — a unit on an
+// open tile next to an open tile is still blocked from stepping if a
+// stone wall sits on the shared edge. Without this check, infantry walk
+// through walls.
+//
+// Returns true when the move from (fromX, fromY) to (toX, toY) is blocked
+// by an edge barrier (or by an EDGE_OVERRIDE that gates passage — closed
+// door, intact window). Diagonal moves clear if EITHER L-shaped path
+// clears (matches the standard A* corner rule). Cardinal moves are exact.
+//
+// The MovementMode argument lets vehicles vs. infantry get different
+// blocking — bocage walks-slow for tracked but blocks-foot for infantry.
+//
+// Damaged barriers and damaged points use DAMAGED_AXES; the move axis
+// there is more permissive (most degrade to walkable-slow).
+export function edgeBlocksMovement(
+  world: World,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  mode: MovementMode,
+): boolean {
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  if (dx === 0 && dy === 0) return false;
+  if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+    // Multi-tile leap — caller should be stepping one tile at a time.
+    // Be safe and treat as blocked.
+    return true;
+  }
+  // Cardinal: read the one shared edge.
+  if (dx === 0 || dy === 0) {
+    return cardinalEdgeBlocks(world, fromX, fromY, toX, toY, mode);
+  }
+  // Diagonal: must be able to take at least one of the two L-shaped
+  // paths. Path A: (fromX,fromY) → (toX,fromY) → (toX,toY). Path B:
+  // (fromX,fromY) → (fromX,toY) → (toX,toY).
+  const pathA =
+    !cardinalEdgeBlocks(world, fromX, fromY, toX, fromY, mode) &&
+    !cardinalEdgeBlocks(world, toX, fromY, toX, toY, mode);
+  const pathB =
+    !cardinalEdgeBlocks(world, fromX, fromY, fromX, toY, mode) &&
+    !cardinalEdgeBlocks(world, fromX, toY, toX, toY, mode);
+  return !(pathA || pathB);
+}
+
+function cardinalEdgeBlocks(
+  world: World,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  mode: MovementMode,
+): boolean {
+  // Pick which tile owns the shared edge:
+  //   moving east  (dx=+1):  edgeW of (toX, toY)
+  //   moving west  (dx=-1):  edgeW of (fromX, fromY)
+  //   moving south (dy=+1):  edgeN of (toX, toY)
+  //   moving north (dy=-1):  edgeN of (fromX, fromY)
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  let edgeByte: number;
+  let overrideByte: number;
+  if (dx === 1) {
+    const i = tileIndex(world, toX, toY);
+    edgeByte = world.edgeW[i];
+    overrideByte = world.edgeOverrideW[i];
+  } else if (dx === -1) {
+    const i = tileIndex(world, fromX, fromY);
+    edgeByte = world.edgeW[i];
+    overrideByte = world.edgeOverrideW[i];
+  } else if (dy === 1) {
+    const i = tileIndex(world, toX, toY);
+    edgeByte = world.edgeN[i];
+    overrideByte = world.edgeOverrideN[i];
+  } else if (dy === -1) {
+    const i = tileIndex(world, fromX, fromY);
+    edgeByte = world.edgeN[i];
+    overrideByte = world.edgeOverrideN[i];
+  } else {
+    return false;
+  }
+  // Override (door / window) takes priority over the underlying barrier.
+  // Open door + broken window: passable. Closed door + intact window:
+  // foot-blocked. Vehicles can't fit through a doorway either.
+  if (overrideByte === EDGE_OVERRIDE_DOOR_OPEN) return false;
+  if (overrideByte === EDGE_OVERRIDE_WINDOW_BROKEN) {
+    // Foot/prone can climb through; vehicles cannot.
+    return mode === 'wheeled' || mode === 'tracked';
+  }
+  if (overrideByte === EDGE_OVERRIDE_DOOR_CLOSED) {
+    return mode === 'wheeled' || mode === 'tracked' || mode === 'mech' || mode === 'power_armor';
+  }
+  if (overrideByte === EDGE_OVERRIDE_WINDOW_INTACT) return true;
+  // No override — read the barrier kind. Empty edge: passable.
+  const kindIdx = edgeByte & 0x0f;
+  if (kindIdx === 0) return false;
+  const kind = BARRIER_KINDS[kindIdx - 1];
+  if (!kind) return false;
+  // Damaged barriers fall back to DAMAGED_AXES if defined; otherwise
+  // intact axes apply.
+  let axesEntry: CoverAxes;
+  if (barrierIsDamaged(edgeByte)) {
+    const damaged = DAMAGED_AXES[kind];
+    axesEntry = damaged ?? BARRIER_AXES[kind];
+  } else {
+    axesEntry = BARRIER_AXES[kind];
+  }
+  switch (axesEntry.move) {
+    case 'walkable-free':
+    case 'walkable-slow':
+      return false;
+    case 'blocked-all':
+      return true;
+    case 'blocked-foot':
+      // Mechs and power armor can step over chest-height walls / fences;
+      // wheeled and tracked are blocked too unless they break it.
+      return mode !== 'mech' && mode !== 'power_armor';
+    case 'blocked-vehicle':
+      // Tank traps / dragon's teeth — infantry pass freely.
+      return mode === 'wheeled' || mode === 'tracked';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Axis lookup — resolves what (if any) cover a tile provides.
 //

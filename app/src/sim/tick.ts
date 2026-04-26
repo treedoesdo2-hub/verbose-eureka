@@ -36,7 +36,7 @@ import {
   SUPPRESSION_PER_SHOT,
   totalBleedRate,
 } from './unit';
-import { isFootPassable } from './world';
+import { edgeBlocksMovement, isFootPassable } from './world';
 
 const MAX_SPEED_MPS = 4.5;
 
@@ -111,8 +111,12 @@ function executeMovement(
     x: unit.position.x + velocity.x * SIM_DT,
     y: unit.position.y + velocity.y * SIM_DT,
   };
+  const fromTile = tileOf(world, unit.position);
   const tile = tileOf(world, candidate);
-  if (isFootPassable(world, tile.x, tile.y)) {
+  if (
+    isFootPassable(world, tile.x, tile.y) &&
+    !edgeBlocksMovement(world, fromTile.x, fromTile.y, tile.x, tile.y, 'foot')
+  ) {
     return {
       position: clampToWorld(candidate, world),
       velocity,
@@ -144,6 +148,7 @@ function executeMovement(
   for (const c of candidates) {
     const t = tileOf(world, c);
     if (!isFootPassable(world, t.x, t.y)) continue;
+    if (edgeBlocksMovement(world, fromTile.x, fromTile.y, t.x, t.y, 'foot')) continue;
     return {
       position: clampToWorld(c, world),
       velocity: { x: c.x - unit.position.x, y: c.y - unit.position.y },

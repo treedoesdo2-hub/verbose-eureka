@@ -2,6 +2,7 @@ import type { Vec2 } from './unit';
 import {
   type MovementMode,
   WALK_FOOT,
+  edgeBlocksMovement,
   elevationMeters,
   inBounds,
   terrainAxesAt,
@@ -93,6 +94,10 @@ function canStep(
     );
     if (dElev > MAX_STEP_ELEV_BY_MODE[mode]) return false;
   }
+
+  // Edge-barrier gate (#276) — walls / hedgerows / fences are per-edge,
+  // not per-tile. Without this check A* routes straight through bocage.
+  if (inBounds(world, fx, fy) && edgeBlocksMovement(world, fx, fy, tx, ty, mode)) return false;
 
   const isDiagonal = fx !== tx && fy !== ty;
   if (!isDiagonal) return true;
