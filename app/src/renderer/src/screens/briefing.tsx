@@ -1,3 +1,23 @@
+// S5 Briefing — NEON WIRE pre-mission planning (#291 / ADR 016).
+//
+// Three-column layout:
+//
+//   ┌────────────┬───────────────────────────────┬────────────┐
+//   │            │                               │            │
+//   │ HEADER     │  MAP / LANDMARK PREVIEW       │ SQUAD      │
+//   │ OBJECTIVES │                               │ ASSIGN     │
+//   │ COMMS      ├───────────────────────────────┤            │
+//   │            │  PHASE TIMELINE               │ ECONOMICS  │
+//   │            │                               │ DEPLOY     │
+//   └────────────┴───────────────────────────────┴────────────┘
+//
+// Replaces the legacy form-style "Deployment Order" surface but keeps
+// all the underlying behaviour: map preview generation via runPipeline-
+// WithRetry, deploy-cost / payout rollup, slot-based squad assignment,
+// hotkeys (Esc → board, A → armory, D → deploy), and the prebuiltMap
+// pipeline that hands the preview's MapGenResult straight to the worker
+// so the player runs the map they were just shown.
+
 import type { Operator } from '@schema/operator';
 import type { MapGenResultTransfer, ScenarioRequest, WireLoadout } from '@shared/messages';
 import { computeNetEconomics } from '@sim/contract-economics';
@@ -9,6 +29,17 @@ import { renderThumbnail } from '@sim/mapgen/thumbnail';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getContent } from '../content';
 import { useHotkeys } from '../hooks/useHotkeys';
+import {
+  HEX_CLIP_TL_BR,
+  NW,
+  NWBar,
+  NWChip,
+  NWCTA,
+  NWPanel,
+  NWStatusDot,
+  NWSystemBar,
+  type NWAccent,
+} from '../neonwire';
 import { getSimBridge } from '../sim-bridge';
 import { useAppState } from '../stores/app-state';
 import { useSquads } from '../stores/squads';
@@ -34,22 +65,21 @@ export function Briefing(): React.JSX.Element {
     [squadMap, order],
   );
 
-  // Every briefing mount (or contract switch) rolls a fresh playthrough
-  // seed. The preview thumbnail and the actual Deploy launch share this
-  // seed so what the player sees is what they get — otherwise the map
-  // rolled at briefing-preview time and the map rolled at sim-start time
-  // were decoupled and could differ.
+  // Re-roll the preview seed every time the contract switches so the map
+  // shown matches the map that will be sent to the worker on launch.
   const previewSeed = useMemo(() => Date.now() & 0xffff, [contract?.id]);
   const preview = useMapPreview(contract?.id ?? null, previewSeed);
 
   const initialSlotCount = contract
-    ? Math.min(4, contract.modifiers.extractionSeats ?? 4, contract.maxOperators ?? 4)
-    : 4;
+    ? Math.min(6, contract.modifiers.extractionSeats ?? 6, contract.maxOperators ?? 6)
+    : 6;
   const [slots, setSlots] = useState<Slot[]>(() =>
     Array.from({ length: Math.max(1, initialSlotCount) }, () => makeSlot()),
   );
+  const [loadoutLocked, setLoadoutLocked] = useState(false);
 
   function assign(slotKey: number, squadId: string): void {
+    if (loadoutLocked) return;
     setSlots((prev) =>
       prev.map((s) => {
         if (s.key === slotKey) return { ...s, id: squadId };
@@ -60,10 +90,12 @@ export function Briefing(): React.JSX.Element {
   }
 
   function addSlot(): void {
+    if (loadoutLocked) return;
     setSlots((prev) => [...prev, makeSlot()]);
   }
 
   function removeSlot(slotKey: number): void {
+    if (loadoutLocked) return;
     setSlots((prev) => prev.filter((s) => s.key !== slotKey));
   }
 
@@ -139,13 +171,11 @@ export function Briefing(): React.JSX.Element {
     }
 
     const bridge = getSimBridge();
-    // Use the previewSeed so the launched match plays the map the player
-    // just inspected in the preview. startSim's seed is both the sim RNG
-    // seed AND the map-gen runSeed via mapGenRequestFromContract.
+    // The previewSeed gates both the sim RNG and the mapgen runSeed
+    // (via mapGenRequestFromContract) so the played map exactly matches
+    // the previewed one. prebuiltMap fast-paths around the worker
+    // re-running the pipeline.
     const seed = previewSeed;
-    // P1.9 — hand the already-generated map over to the worker so it
-    // doesn't re-run runPipeline and diverge. Fallback to legacy path for
-    // authored-map contracts (biomeHint === null) where preview is null.
     const prebuiltMap = preview ? buildPrebuiltMap(preview) : undefined;
     bridge.send({
       type: 'startSim',
@@ -184,319 +214,878 @@ export function Briefing(): React.JSX.Element {
 
   if (!contract) {
     return (
-      <div className="screen">
-        <button type="button" className="btn btn-small" onClick={() => go('board')}>
-          ← board
-        </button>
-        <p>No contract selected.</p>
+      <div
+        style={{
+          height: '100%',
+          background: NW.bg0,
+          color: NW.fg0,
+          fontFamily: NW.body,
+          padding: 32,
+        }}
+      >
+        <NWChip onClick={() => go('board')}>← BOARD</NWChip>
+        <p style={{ marginTop: 16, fontFamily: NW.mono, color: NW.fg2 }}>
+          NO CONTRACT SELECTED.
+        </p>
       </div>
     );
   }
 
   const underCap = opCount < contract.minOperators;
   const overCap = effectiveMax !== Number.POSITIVE_INFINITY && opCount > effectiveMax;
+  const readiness: 'ready' | 'short' | 'over' | 'role' = underCap
+    ? 'short'
+    : overCap
+      ? 'over'
+      : !roleTagsSatisfied
+        ? 'role'
+        : 'ready';
 
   return (
-    <div className="screen deployment-order">
-      <div className="screen-header">
-        <button
-          type="button"
-          className="btn btn-small"
-          onClick={() => go('board')}
-          title="Back to board (Esc)"
+    <div
+      style={{
+        background: NW.bg0,
+        color: NW.fg0,
+        fontFamily: NW.body,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+      }}
+    >
+      <NWSystemBar
+        path={`BRIEFING · OP-${contract.id.toUpperCase()}`}
+        right={<NWStatusDot tone={readiness === 'ready' ? 'green' : 'amber'} pulse={readiness === 'ready'} />}
+        timestamp={`SEED ${previewSeed.toString(16).toUpperCase().padStart(4, '0')}`}
+      />
+
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'grid',
+          gridTemplateColumns: '400px 1fr 420px',
+          gap: 12,
+          padding: 12,
+        }}
+      >
+        {/* Left rail */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            minHeight: 0,
+            overflow: 'auto',
+          }}
         >
-          ← board
-        </button>
-        <h2>Deployment Order · {contract.name}</h2>
+          <BriefHeader
+            contract={contract}
+            landmark={preview?.landmark ?? null}
+            onBack={() => go('board')}
+          />
+          <BriefObjectives contract={contract} />
+          <BriefComms />
+        </div>
+
+        {/* Center rail */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            minHeight: 0,
+            overflow: 'auto',
+          }}
+        >
+          <BriefMap contract={contract} preview={preview} bundle={bundle} />
+          <BriefTimeline contract={contract} />
+        </div>
+
+        {/* Right rail */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            minHeight: 0,
+            overflow: 'auto',
+          }}
+        >
+          <BriefSquad
+            slots={slots}
+            squadMap={squadMap}
+            squads={squads}
+            assign={assign}
+            removeSlot={removeSlot}
+            addSlot={addSlot}
+            canAddSlot={canAddSlot}
+            bundle={bundle}
+            deployedOperatorIds={deployedOperatorIds}
+            locked={loadoutLocked}
+            onArmory={() => go('armory')}
+          />
+          {economics ? <BriefEconomics economics={economics} /> : null}
+          <BriefDeploy
+            opCount={opCount}
+            min={contract.minOperators}
+            max={effectiveMax}
+            readiness={readiness}
+            requiredRoleTags={contract.modifiers.requiredRoleTags}
+            canLaunch={canLaunch}
+            launch={launch}
+            locked={loadoutLocked}
+            setLocked={setLoadoutLocked}
+          />
+        </div>
       </div>
-
-      <section className="order-doc">
-        <header className="order-doc-header">
-          <span className="order-doc-seal mono">OP-{contract.id.toUpperCase()}</span>
-          <span className="order-doc-title">Commander's Deployment Order</span>
-        </header>
-
-        <dl className="order-fields">
-          <dt>contract</dt>
-          <dd>{contract.name}</dd>
-          <dt>briefing</dt>
-          <dd className="briefing-narrative">
-            {interpolateBriefing(contract.briefing, preview?.landmark ?? null)}
-          </dd>
-          <dt>map</dt>
-          <dd className="mono">
-            {contract.modifiers.biomeHint !== null
-              ? `procedural · ${contract.modifiers.biomeHint} · ${contract.modifiers.sizeHint}`
-              : (bundle.maps.get(contract.mapId)?.name ?? contract.mapId)}
-          </dd>
-          {contract.modifiers.biomeHint !== null ? (
-            <>
-              <dt>preview</dt>
-              <dd>
-                <MapThumbnailCanvas
-                  pixels={preview?.pixels ?? null}
-                  sourceSize={256}
-                  displaySize={384}
-                />
-              </dd>
-            </>
-          ) : null}
-          {preview?.landmark ? (
-            <>
-              <dt>landmark</dt>
-              <dd className="mono accent">
-                <span className="landmark-chip">
-                  {preview.landmark.name}
-                  <span className="dim"> · {preview.landmark.kind.replace(/_/g, ' ')}</span>
-                </span>
-              </dd>
-            </>
-          ) : null}
-          <dt>team size</dt>
-          <dd className="mono">
-            {contract.minOperators}–{contract.maxOperators ?? '∞'} operators
-            {extractionCap !== null ? ` · ${extractionCap} extraction seats` : ''}
-          </dd>
-          <dt>recommended</dt>
-          <dd className="mono dim">
-            {contract.recommendedOperators.veteran} veteran ·{' '}
-            {contract.recommendedOperators.regular} regular · {contract.recommendedOperators.green}{' '}
-            green
-          </dd>
-          <dt>difficulty</dt>
-          <dd className="mono">
-            {'●'.repeat(contract.difficultyRating)}
-            {'○'.repeat(5 - contract.difficultyRating)}
-          </dd>
-          <dt>objectives</dt>
-          <dd>
-            <ol className="order-objectives">
-              {contract.objectives.map((o) => (
-                <li key={o.description}>
-                  <span className="mono dim">{o.kind}</span> {o.description}
-                </li>
-              ))}
-            </ol>
-          </dd>
-          {contract.modifiers.requiredRoleTags.length > 0 ? (
-            <>
-              <dt>required roles</dt>
-              <dd className="mono">{contract.modifiers.requiredRoleTags.join(', ')}</dd>
-            </>
-          ) : null}
-        </dl>
-      </section>
-
-      {economics ? (
-        <section className="economic-readout">
-          <h3>Economic tradeoff</h3>
-          <div className="econ-grid">
-            <div className="econ-col">
-              <h4>Payout</h4>
-              <dl className="econ-dl">
-                <dt>cash on success</dt>
-                <dd className="mono accent">{economics.payout.cashFull.toLocaleString()} cr</dd>
-                {economics.payout.secondaryBonusCash > 0 ? (
-                  <>
-                    <dt>secondary bonus</dt>
-                    <dd className="mono">
-                      +{economics.payout.secondaryBonusCash.toLocaleString()} cr
-                    </dd>
-                  </>
-                ) : null}
-                {economics.payout.cashFloor > 0 ? (
-                  <>
-                    <dt>partial failure</dt>
-                    <dd className="mono dim">
-                      {economics.payout.cashFloor.toLocaleString()} cr (good faith)
-                    </dd>
-                  </>
-                ) : null}
-                {economics.payout.salvagePriorityPicks > 0 ? (
-                  <>
-                    <dt>salvage picks</dt>
-                    <dd className="mono">{economics.payout.salvagePriorityPicks}</dd>
-                  </>
-                ) : null}
-                {economics.payout.reputationDelta !== 0 ? (
-                  <>
-                    <dt>reputation</dt>
-                    <dd className="mono">
-                      {economics.payout.reputationDelta > 0 ? '+' : ''}
-                      {economics.payout.reputationDelta}
-                    </dd>
-                  </>
-                ) : null}
-              </dl>
-            </div>
-            <div className="econ-col">
-              <h4>Deploy cost</h4>
-              <dl className="econ-dl">
-                <dt>fixed</dt>
-                <dd className="mono">{economics.deployCost.fixed.toLocaleString()} cr</dd>
-                <dt>wages</dt>
-                <dd className="mono">
-                  {economics.deployCost.perOperatorWages.toLocaleString()} cr
-                </dd>
-                <dt>premiums</dt>
-                <dd className="mono">
-                  {economics.deployCost.perOperatorPremiums.toLocaleString()} cr
-                </dd>
-                <dt>total</dt>
-                <dd className="mono danger">{economics.deployCost.total.toLocaleString()} cr</dd>
-              </dl>
-            </div>
-            <div className="econ-col">
-              <h4>Net</h4>
-              <dl className="econ-dl">
-                <dt>if primary success</dt>
-                <dd className={`mono ${economics.netIfPrimarySuccess < 0 ? 'danger' : 'ok'}`}>
-                  {economics.netIfPrimarySuccess >= 0 ? '+' : ''}
-                  {economics.netIfPrimarySuccess.toLocaleString()} cr
-                </dd>
-                <dt>if primary fails</dt>
-                <dd className={`mono ${economics.netIfPrimaryFailGoodFaith < 0 ? 'danger' : 'ok'}`}>
-                  {economics.netIfPrimaryFailGoodFaith >= 0 ? '+' : ''}
-                  {economics.netIfPrimaryFailGoodFaith.toLocaleString()} cr
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      <section className="order-elements">
-        <h3>Element assignment</h3>
-        {squads.length === 0 ? (
-          <div className="briefing-no-squads">
-            <p>No squads exist yet. Head to the Armory to form a squad before deploying.</p>
-            <button type="button" className="btn" onClick={() => go('armory')}>
-              → Armory
-            </button>
-          </div>
-        ) : (
-          <>
-            <table className="order-slot-table">
-              <tbody>
-                {slots.map((slot, idx) => {
-                  const sq = slot.id ? squadMap.get(slot.id) : null;
-                  return (
-                    <tr key={slot.key}>
-                      <th scope="row">
-                        <span className="mono dim">{String(idx + 1).padStart(2, '0')}</span>
-                        <span className="order-slot-role">Element</span>
-                      </th>
-                      <td>
-                        <select
-                          className="order-slot-select"
-                          value={slot.id}
-                          onChange={(e) => assign(slot.key, e.target.value)}
-                        >
-                          <option value={EMPTY_SLOT}>— no element assigned —</option>
-                          {squads.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name} ({s.members.length} op
-                              {s.members.length === 1 ? '' : 's'})
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="mono dim order-slot-roster">
-                        {sq
-                          ? sq.members.length === 0
-                            ? '— empty —'
-                            : sq.members
-                                .map(
-                                  (m) =>
-                                    `"${bundle.operators.get(m.operatorId)?.callsign ?? m.operatorId}"`,
-                                )
-                                .join(' · ')
-                          : ''}
-                      </td>
-                      <td>
-                        {slots.length > 1 ? (
-                          <button
-                            type="button"
-                            className="btn btn-small"
-                            onClick={() => removeSlot(slot.key)}
-                            title="Remove slot"
-                          >
-                            −
-                          </button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={addSlot}
-              disabled={!canAddSlot}
-              title={canAddSlot ? 'Add an element slot' : `Already at max (${effectiveMax} seats)`}
-            >
-              + Add element slot
-            </button>
-          </>
-        )}
-      </section>
-
-      <section className="order-footer">
-        <div className="order-totals">
-          <span className="mono dim">total strength</span>{' '}
-          <span className="mono accent">{opCount}</span>{' '}
-          <span className="mono dim">
-            op{opCount === 1 ? '' : 's'} across {assignedSquads.length} element
-            {assignedSquads.length === 1 ? '' : 's'}
-          </span>{' '}
-          {underCap ? (
-            <span className="danger">need {contract.minOperators - opCount} more</span>
-          ) : overCap ? (
-            <span className="danger">over cap by {opCount - effectiveMax}</span>
-          ) : !roleTagsSatisfied ? (
-            <span className="danger">
-              required role missing: {contract.modifiers.requiredRoleTags.join(', ')}
-            </span>
-          ) : (
-            <span className="ok">ready</span>
-          )}
-        </div>
-        <div className="actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => go('armory')}
-            title="Edit Armory (A)"
-          >
-            Edit Armory <span className="hotkey-hint mono">A</span>
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!canLaunch}
-            onClick={launch}
-            title={canLaunch ? 'Deploy (D)' : 'Deployment requires the correct team size + roles'}
-          >
-            Deploy <span className="hotkey-hint mono">D</span>
-          </button>
-        </div>
-      </section>
     </div>
   );
 }
 
+// ── Left rail panels ──────────────────────────────────────────────────────
+function BriefHeader({
+  contract,
+  landmark,
+  onBack,
+}: {
+  contract: NonNullable<ReturnType<typeof getContent>['contracts'] extends ReadonlyMap<string, infer V> ? V : never>;
+  landmark: HeroLandmark | null;
+  onBack: () => void;
+}): React.JSX.Element {
+  return (
+    <NWPanel
+      title="BRIEFING · HEADER"
+      right={
+        <NWChip small onClick={onBack} kbd="Esc" title="Back to board">
+          ← BOARD
+        </NWChip>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <KvBlock k="OP CODE" v={`OP-${contract.id.toUpperCase()}`} mono />
+        <KvBlock k="TARGET" v={contract.name} display />
+        {landmark && (
+          <KvBlock
+            k="LANDMARK"
+            v={`${landmark.name} · ${landmark.kind.replace(/_/g, ' ')}`}
+            mono
+            tone="amber"
+          />
+        )}
+        <div>
+          <Label>INTENT</Label>
+          <div
+            style={{
+              fontFamily: NW.body,
+              fontSize: 12,
+              color: NW.fg1,
+              lineHeight: 1.6,
+              marginTop: 4,
+            }}
+          >
+            {interpolateBriefing(contract.briefing, landmark)}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <KvBlock
+            k="DIFFICULTY"
+            v={
+              '●'.repeat(contract.difficultyRating) +
+              '○'.repeat(5 - contract.difficultyRating)
+            }
+            mono
+          />
+          <KvBlock
+            k="TEAM SIZE"
+            v={`${contract.minOperators}–${contract.maxOperators ?? '∞'}`}
+            mono
+          />
+        </div>
+      </div>
+    </NWPanel>
+  );
+}
+
+function BriefObjectives({
+  contract,
+}: {
+  contract: NonNullable<ReturnType<typeof getContent>['contracts'] extends ReadonlyMap<string, infer V> ? V : never>;
+}): React.JSX.Element {
+  return (
+    <NWPanel title="OBJECTIVES" padding={0}>
+      <table
+        style={{
+          width: '100%',
+          borderCollapse: 'collapse',
+          fontFamily: NW.mono,
+          fontSize: 11,
+          color: NW.fg1,
+        }}
+      >
+        <tbody>
+          {contract.objectives.map((o, i) => (
+            <tr
+              key={`${o.kind}:${o.description}:${i}`}
+              style={{
+                borderBottom: i < contract.objectives.length - 1 ? `1px solid ${NW.line}` : 'none',
+              }}
+            >
+              <td
+                style={{
+                  padding: '8px 12px',
+                  width: 56,
+                  color: NW.cyan,
+                  letterSpacing: '0.16em',
+                  verticalAlign: 'top',
+                }}
+              >
+                {o.kind.toUpperCase()}
+              </td>
+              <td style={{ padding: '8px 12px 8px 0', verticalAlign: 'top' }}>
+                {o.description}
+              </td>
+            </tr>
+          ))}
+          {contract.objectives.length === 0 && (
+            <tr>
+              <td style={{ padding: 12, color: NW.fg2, fontStyle: 'italic' }}>
+                no objectives authored
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </NWPanel>
+  );
+}
+
+function BriefComms(): React.JSX.Element {
+  // Static channel chrome for MVP. The real comms tree (CMD / CAS /
+  // INT / OPS) wires up when the message bus surfaces frequency data.
+  const channels: { ch: string; label: string; tone: NWAccent; dot: 'live' | 'idle' }[] = [
+    { ch: 'CMD-1', label: 'Battalion command', tone: 'cyan', dot: 'live' },
+    { ch: 'CAS-2', label: 'Casualty / medevac', tone: 'magenta', dot: 'idle' },
+    { ch: 'INT-3', label: 'Intel & overwatch', tone: 'amber', dot: 'idle' },
+    { ch: 'OPS-4', label: 'Operations net', tone: 'green', dot: 'live' },
+  ];
+  return (
+    <NWPanel title="COMMS · CHANNELS" padding={0}>
+      <div style={{ padding: 8 }}>
+        {channels.map((c, i) => (
+          <div
+            key={c.ch}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 4px',
+              borderBottom: i < channels.length - 1 ? `1px solid ${NW.line}` : 'none',
+            }}
+          >
+            <NWStatusDot tone={c.tone} pulse={c.dot === 'live'} size={6} />
+            <span
+              style={{
+                fontFamily: NW.mono,
+                fontSize: 10,
+                color: NW.fg0,
+                letterSpacing: '0.14em',
+                width: 56,
+              }}
+            >
+              {c.ch}
+            </span>
+            <span style={{ fontFamily: NW.body, fontSize: 11, color: NW.fg1 }}>{c.label}</span>
+          </div>
+        ))}
+      </div>
+    </NWPanel>
+  );
+}
+
+// ── Center rail panels ────────────────────────────────────────────────────
+function BriefMap({
+  contract,
+  preview,
+  bundle,
+}: {
+  contract: NonNullable<ReturnType<typeof getContent>['contracts'] extends ReadonlyMap<string, infer V> ? V : never>;
+  preview: MapPreview | null;
+  bundle: ReturnType<typeof getContent>;
+}): React.JSX.Element {
+  const procedural = contract.modifiers.biomeHint !== null;
+  const mapName = procedural
+    ? `${contract.modifiers.biomeHint?.toUpperCase()} · ${contract.modifiers.sizeHint}`
+    : (bundle.maps.get(contract.mapId)?.name ?? contract.mapId).toUpperCase();
+  return (
+    <NWPanel title={`MAP · ${mapName}`}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        {procedural ? (
+          <MapThumbnailCanvas
+            pixels={preview?.pixels ?? null}
+            sourceSize={preview?.width ?? 256}
+            displaySize={384}
+          />
+        ) : (
+          <div
+            style={{
+              fontFamily: NW.mono,
+              fontSize: 11,
+              color: NW.fg2,
+              padding: 32,
+              fontStyle: 'italic',
+              border: `1px dashed ${NW.line}`,
+              width: 384,
+              textAlign: 'center',
+            }}
+          >
+            authored map · preview unavailable
+          </div>
+        )}
+
+        {/* INSERTION / ROUTE / LZ legend chips. */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            fontFamily: NW.mono,
+            fontSize: 9,
+            letterSpacing: '0.14em',
+            color: NW.fg2,
+          }}
+        >
+          <LegendChip color={NW.green} label="INSERT" />
+          <LegendChip color={NW.cyan} label="ROUTE" />
+          <LegendChip color={NW.amber} label="LZ" />
+          <LegendChip color={NW.magenta} label="PATROL" />
+        </div>
+      </div>
+    </NWPanel>
+  );
+}
+
+function LegendChip({ color, label }: { color: string; label: string }): React.JSX.Element {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span
+        style={{
+          width: 10,
+          height: 10,
+          background: color,
+          boxShadow: `0 0 6px ${color}80`,
+          clipPath: 'polygon(50% 0, 100% 50%, 50% 100%, 0 50%)',
+        }}
+      />
+      {label}
+    </span>
+  );
+}
+
+function BriefTimeline({
+  contract,
+}: {
+  contract: NonNullable<ReturnType<typeof getContent>['contracts'] extends ReadonlyMap<string, infer V> ? V : never>;
+}): React.JSX.Element {
+  // Static phase timeline. Phase durations are illustrative until the
+  // sim emits real phase markers (post-MVP).
+  const phases = [
+    { kind: 'INFIL', label: 'Insertion · approach', tone: 'green' as NWAccent, t: 'T-00:00 → T-04:00' },
+    { kind: 'CONTACT', label: 'Engagement window', tone: 'magenta' as NWAccent, t: 'T-04:00 → T-12:00' },
+    { kind: 'EXFIL', label: 'Withdrawal · LZ', tone: 'amber' as NWAccent, t: 'T-12:00 → end' },
+  ];
+  return (
+    <NWPanel title="PHASE TIMELINE">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {phases.map((p, i) => (
+          <div
+            key={p.kind}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '120px 1fr auto',
+              gap: 10,
+              alignItems: 'center',
+              padding: '6px 8px',
+              background: NW.bg2,
+              clipPath: HEX_CLIP_TL_BR,
+              WebkitClipPath: HEX_CLIP_TL_BR,
+              boxShadow: `inset 0 0 0 1px ${NW.line2}`,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <NWStatusDot tone={p.tone} pulse={i === 0} />
+              <span
+                style={{
+                  fontFamily: NW.display,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color:
+                    p.tone === 'green'
+                      ? NW.green
+                      : p.tone === 'magenta'
+                        ? NW.magenta
+                        : NW.amber,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                {p.kind}
+              </span>
+            </div>
+            <span style={{ fontFamily: NW.body, fontSize: 11, color: NW.fg1 }}>{p.label}</span>
+            <span
+              style={{
+                fontFamily: NW.mono,
+                fontSize: 10,
+                color: NW.fg2,
+                letterSpacing: '0.1em',
+              }}
+            >
+              {p.t}
+            </span>
+          </div>
+        ))}
+        <div
+          style={{
+            marginTop: 4,
+            fontFamily: NW.mono,
+            fontSize: 9,
+            color: NW.fg2,
+            letterSpacing: '0.16em',
+          }}
+        >
+          ◆ DIFFICULTY · {'●'.repeat(contract.difficultyRating)}
+          {'○'.repeat(5 - contract.difficultyRating)}
+        </div>
+      </div>
+    </NWPanel>
+  );
+}
+
+// ── Right rail panels ─────────────────────────────────────────────────────
+function BriefSquad({
+  slots,
+  squadMap,
+  squads,
+  assign,
+  removeSlot,
+  addSlot,
+  canAddSlot,
+  bundle,
+  deployedOperatorIds,
+  locked,
+  onArmory,
+}: {
+  slots: Slot[];
+  squadMap: Map<string, ReturnType<typeof useSquads.getState>['squads'] extends Map<string, infer V> ? V : never>;
+  squads: Array<ReturnType<typeof useSquads.getState>['squads'] extends Map<string, infer V> ? V : never>;
+  assign: (slotKey: number, squadId: string) => void;
+  removeSlot: (slotKey: number) => void;
+  addSlot: () => void;
+  canAddSlot: boolean;
+  bundle: ReturnType<typeof getContent>;
+  deployedOperatorIds: ReadonlySet<string>;
+  locked: boolean;
+  onArmory: () => void;
+}): React.JSX.Element {
+  return (
+    <NWPanel
+      title="SQUAD ASSIGN"
+      right={
+        <NWChip small onClick={onArmory} kbd="A" title="Edit loadouts in armory">
+          ARMORY
+        </NWChip>
+      }
+    >
+      {squads.length === 0 ? (
+        <div style={{ fontFamily: NW.mono, fontSize: 11, color: NW.fg2, lineHeight: 1.6 }}>
+          NO SQUADS AUTHORED.
+          <div style={{ marginTop: 8 }}>
+            <NWChip small primary onClick={onArmory}>
+              → AUTHOR IN ARMORY
+            </NWChip>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {slots.map((slot, idx) => {
+              const sq = slot.id ? squadMap.get(slot.id) : null;
+              return (
+                <div
+                  key={slot.key}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '24px 1fr auto',
+                    gap: 6,
+                    alignItems: 'center',
+                    padding: '4px 6px',
+                    background: NW.bg2,
+                    boxShadow: `inset 0 0 0 1px ${NW.line2}`,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: NW.mono,
+                      fontSize: 9,
+                      color: NW.fg2,
+                      letterSpacing: '0.1em',
+                    }}
+                  >
+                    {String(idx + 1).padStart(2, '0')}
+                  </span>
+                  <select
+                    value={slot.id}
+                    onChange={(e) => assign(slot.key, e.target.value)}
+                    disabled={locked}
+                    style={{
+                      width: '100%',
+                      padding: '4px 6px',
+                      background: NW.bg1,
+                      color: NW.fg0,
+                      border: `1px solid ${NW.line}`,
+                      fontFamily: NW.mono,
+                      fontSize: 10,
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    <option value={EMPTY_SLOT}>— empty —</option>
+                    {squads.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.members.length} op{s.members.length === 1 ? '' : 's'})
+                      </option>
+                    ))}
+                  </select>
+                  {slots.length > 1 && !locked ? (
+                    <NWChip
+                      small
+                      onClick={() => removeSlot(slot.key)}
+                      title="Remove element slot"
+                    >
+                      −
+                    </NWChip>
+                  ) : (
+                    <span />
+                  )}
+                  {sq && sq.members.length > 0 && (
+                    <div
+                      style={{
+                        gridColumn: '2 / 4',
+                        fontFamily: NW.mono,
+                        fontSize: 9,
+                        color: NW.fg2,
+                        letterSpacing: '0.04em',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {sq.members
+                        .map(
+                          (m) =>
+                            `"${bundle.operators.get(m.operatorId)?.callsign ?? m.operatorId}"`,
+                        )
+                        .join(' · ')}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+            <NWChip
+              small
+              onClick={addSlot}
+              title={canAddSlot ? 'Add element slot' : 'At seat capacity'}
+            >
+              + SLOT
+            </NWChip>
+            <span
+              style={{
+                fontFamily: NW.mono,
+                fontSize: 9,
+                color: NW.fg2,
+                letterSpacing: '0.14em',
+                alignSelf: 'center',
+              }}
+            >
+              · {deployedOperatorIds.size} OPERATORS DEPLOYED
+            </span>
+          </div>
+        </>
+      )}
+    </NWPanel>
+  );
+}
+
+function BriefEconomics({
+  economics,
+}: {
+  economics: NonNullable<ReturnType<typeof computeNetEconomics>>;
+}): React.JSX.Element {
+  return (
+    <NWPanel title="ECONOMIC TRADEOFF" padding={0}>
+      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <EconStat label="PAYOUT" value={`¥${economics.payout.cashFull.toLocaleString()}`} tone="cyan" />
+          <EconStat
+            label="DEPLOY COST"
+            value={`¥${economics.deployCost.total.toLocaleString()}`}
+            tone="magenta"
+          />
+          <EconStat
+            label="NET · WIN"
+            value={`${economics.netIfPrimarySuccess >= 0 ? '+' : ''}¥${economics.netIfPrimarySuccess.toLocaleString()}`}
+            tone={economics.netIfPrimarySuccess >= 0 ? 'green' : 'magenta'}
+          />
+          <EconStat
+            label="NET · FAIL"
+            value={`${economics.netIfPrimaryFailGoodFaith >= 0 ? '+' : ''}¥${economics.netIfPrimaryFailGoodFaith.toLocaleString()}`}
+            tone={economics.netIfPrimaryFailGoodFaith >= 0 ? 'green' : 'magenta'}
+          />
+        </div>
+        {economics.payout.secondaryBonusCash > 0 && (
+          <div style={{ fontFamily: NW.mono, fontSize: 10, color: NW.fg2, letterSpacing: '0.1em' }}>
+            ◆ SECONDARY · +¥{economics.payout.secondaryBonusCash.toLocaleString()}
+          </div>
+        )}
+        {economics.payout.reputationDelta !== 0 && (
+          <div style={{ fontFamily: NW.mono, fontSize: 10, color: NW.fg2, letterSpacing: '0.1em' }}>
+            ◆ REP · {economics.payout.reputationDelta > 0 ? '+' : ''}
+            {economics.payout.reputationDelta}
+          </div>
+        )}
+      </div>
+    </NWPanel>
+  );
+}
+
+function EconStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: NWAccent;
+}): React.JSX.Element {
+  const c =
+    tone === 'cyan'
+      ? NW.cyan
+      : tone === 'green'
+        ? NW.green
+        : tone === 'amber'
+          ? NW.amber
+          : NW.magenta;
+  return (
+    <div>
+      <div
+        style={{
+          fontFamily: NW.mono,
+          fontSize: 9,
+          color: NW.fg2,
+          letterSpacing: '0.18em',
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: NW.display,
+          fontSize: 18,
+          fontWeight: 700,
+          color: c,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function BriefDeploy({
+  opCount,
+  min,
+  max,
+  readiness,
+  requiredRoleTags,
+  canLaunch,
+  launch,
+  locked,
+  setLocked,
+}: {
+  opCount: number;
+  min: number;
+  max: number;
+  readiness: 'ready' | 'short' | 'over' | 'role';
+  requiredRoleTags: readonly string[];
+  canLaunch: boolean;
+  launch: () => void;
+  locked: boolean;
+  setLocked: (b: boolean) => void;
+}): React.JSX.Element {
+  const fill = max === Number.POSITIVE_INFINITY ? Math.min(1, opCount / Math.max(1, min)) : opCount / max;
+  return (
+    <NWPanel title="DEPLOY · CONTROL" padding={0} accent={readiness === 'ready' ? 'cyan' : 'amber'}>
+      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div>
+          <Label>STRENGTH</Label>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 8,
+              marginTop: 2,
+              fontFamily: NW.display,
+              fontSize: 24,
+              fontWeight: 700,
+              color: NW.fg0,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {opCount}
+            <span style={{ fontSize: 12, color: NW.fg2 }}>
+              / {max === Number.POSITIVE_INFINITY ? '∞' : max} (min {min})
+            </span>
+          </div>
+          <div style={{ marginTop: 6 }}>
+            <NWBar
+              value={Math.min(1, fill)}
+              tone={readiness === 'ready' ? 'cyan' : readiness === 'role' ? 'amber' : 'magenta'}
+            />
+          </div>
+        </div>
+
+        <div
+          style={{
+            fontFamily: NW.mono,
+            fontSize: 10,
+            color:
+              readiness === 'ready'
+                ? NW.green
+                : readiness === 'short' || readiness === 'over'
+                  ? NW.magenta
+                  : NW.amber,
+            letterSpacing: '0.16em',
+          }}
+        >
+          {readiness === 'ready' && '◆ READY · LAUNCH AUTHORIZED'}
+          {readiness === 'short' && `◆ SHORT · need ${min - opCount} more`}
+          {readiness === 'over' && `◆ OVER · cap by ${opCount - max}`}
+          {readiness === 'role' &&
+            `◆ MISSING ROLE · ${requiredRoleTags.join(', ')}`}
+        </div>
+
+        <div style={{ display: 'flex', gap: 6 }}>
+          <NWChip small active={locked} onClick={() => setLocked(!locked)} title="Lock loadout edits">
+            {locked ? 'LOCKED' : 'LOCK LOADOUT'}
+          </NWChip>
+          <span style={{ flex: 1 }} />
+          <NWChip small danger onClick={() => window.history.back()} title="Abort briefing">
+            ABORT
+          </NWChip>
+        </div>
+
+        <NWCTA
+          primary
+          onClick={() => {
+            if (canLaunch) launch();
+          }}
+          title={canLaunch ? 'Deploy (D)' : 'Deployment requires correct strength + roles'}
+          right={
+            <span
+              style={{
+                fontFamily: NW.mono,
+                fontSize: 9,
+                color: NW.fg2,
+                border: `1px solid ${NW.line2}`,
+                padding: '0 6px',
+                letterSpacing: '0.16em',
+              }}
+            >
+              D
+            </span>
+          }
+          style={{ opacity: canLaunch ? 1 : 0.5, pointerEvents: canLaunch ? 'auto' : 'none' }}
+        >
+          ▶ DEPLOY
+        </NWCTA>
+      </div>
+    </NWPanel>
+  );
+}
+
+// ── shared bits ───────────────────────────────────────────────────────────
+function Label({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div
+      style={{
+        fontFamily: NW.mono,
+        fontSize: 9,
+        letterSpacing: '0.18em',
+        color: NW.fg2,
+        textTransform: 'uppercase',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function KvBlock({
+  k,
+  v,
+  mono,
+  display,
+  tone,
+}: {
+  k: string;
+  v: React.ReactNode;
+  mono?: boolean;
+  display?: boolean;
+  tone?: NWAccent;
+}): React.JSX.Element {
+  const c =
+    tone === 'amber'
+      ? NW.amber
+      : tone === 'cyan'
+        ? NW.cyan
+        : tone === 'green'
+          ? NW.green
+          : tone === 'magenta'
+            ? NW.magenta
+            : NW.fg0;
+  return (
+    <div>
+      <Label>{k}</Label>
+      <div
+        style={{
+          fontFamily: display ? NW.display : mono ? NW.mono : NW.body,
+          fontSize: display ? 18 : mono ? 12 : 12,
+          color: c,
+          letterSpacing: display ? '0.04em' : mono ? '0.08em' : 'normal',
+          marginTop: 2,
+          fontWeight: display ? 700 : 400,
+        }}
+      >
+        {v}
+      </div>
+    </div>
+  );
+}
+
+// ── map preview (unchanged from legacy briefing) ──────────────────────────
 type MapPreview = {
   readonly landmark: HeroLandmark | null;
   readonly pixels: Uint8ClampedArray;
   readonly width: number;
   readonly height: number;
-  // P1.8 — the full MapGenResult and its originating request are cached
-  // alongside the preview so Deploy can send the exact same map buffer
-  // to the worker instead of re-running runPipeline. Kept with the
-  // preview so the cache lifetime matches the UI lifetime (single
-  // contract-board → briefing → deploy traversal).
   readonly result: MapGenResult;
   readonly request: {
     readonly seed: string;
@@ -520,14 +1109,8 @@ function useMapPreview(contractId: string | null, runSeed: number): MapPreview |
       setPreview(null);
       return;
     }
-    // Run the pipeline at the *full* contract size so the thumbnail is
-    // a faithful downsample of the actual map the scenario will load —
-    // not a small map at the same seed, which the pipeline's RNG-per-
-    // tile loops would make visually unrelated.
     const req = mapGenRequestFromContract(contract, 1.5, 1, runSeed);
     const result = runPipelineWithRetry(req);
-    // P7.4 — render at 256 source resolution; display scales to 384 in
-    // MapThumbnailCanvas. Larger source → more legible landmarks.
     const thumb = renderThumbnail(result, 256, { tier: 'briefing' });
     setPreview({
       landmark: result.heroLandmark,
@@ -547,12 +1130,7 @@ function useMapPreview(contractId: string | null, runSeed: number): MapPreview |
   return preview;
 }
 
-// Extract the worker-transferable subset from a briefing-side MapGenResult.
-// Clones typed-array views so the worker owns the payload after postMessage
-// without disturbing the renderer cache.
-function buildPrebuiltMap(
-  preview: MapPreview,
-): MapGenResultTransfer {
+function buildPrebuiltMap(preview: MapPreview): MapGenResultTransfer {
   const r = preview.result;
   return {
     seed: preview.request.seed,
@@ -586,8 +1164,8 @@ function buildPrebuiltMap(
     shadingBake: new Uint8ClampedArray(r.shadingBake),
     contours: new Uint8Array(r.contours),
     deployZones: {
-      team0: { ...r.deployZones.team0, x: r.deployZones.team0.x, y: r.deployZones.team0.y, w: r.deployZones.team0.w, h: r.deployZones.team0.h },
-      team1: { ...r.deployZones.team1, x: r.deployZones.team1.x, y: r.deployZones.team1.y, w: r.deployZones.team1.w, h: r.deployZones.team1.h },
+      team0: { ...r.deployZones.team0 },
+      team1: { ...r.deployZones.team1 },
     },
     unitSlots: {
       team0: r.unitSlots.team0.map((s) => ({ x: s.x, y: s.y, facing: s.facing })),
@@ -603,7 +1181,7 @@ function buildPrebuiltMap(
 
 function MapThumbnailCanvas({
   pixels,
-  sourceSize = 96,
+  sourceSize = 256,
   displaySize = 384,
 }: {
   pixels: Uint8ClampedArray | null;
@@ -625,13 +1203,15 @@ function MapThumbnailCanvas({
   return (
     <canvas
       ref={canvasRef}
-      className="map-thumbnail"
       width={sourceSize}
       height={sourceSize}
-      // P7.4 — display at 384×384 (was 192×192). Landmark visibility
-      // was the driver per @desktop's audit: Firefight uses ~190×190
-      // at 1920×1080 (≈10% of screen height); we scale 2× for legibility.
-      style={{ imageRendering: 'pixelated', width: displaySize, height: displaySize }}
+      style={{
+        imageRendering: 'pixelated',
+        width: displaySize,
+        height: displaySize,
+        border: `1px solid ${NW.line2}`,
+        background: NW.bg0,
+      }}
     />
   );
 }
