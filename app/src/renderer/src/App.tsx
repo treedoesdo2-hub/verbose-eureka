@@ -7,6 +7,7 @@ import { ContractBoard } from './screens/contract-board';
 import { Debrief } from './screens/debrief';
 import { Deploy } from './screens/deploy';
 import { MainMenu } from './screens/main-menu';
+import { Orbat } from './screens/orbat';
 import { getSimBridge } from './sim-bridge';
 import { useAppState } from './stores/app-state';
 import { useStockpile } from './stores/stockpile';
@@ -101,6 +102,7 @@ export default function App(): React.JSX.Element {
         {screen === 'briefing' && <Briefing />}
         {screen === 'deploy' && <Deploy />}
         {screen === 'debrief' && <Debrief />}
+        {screen === 'orbat' && <Orbat />}
       </main>
     </div>
   );

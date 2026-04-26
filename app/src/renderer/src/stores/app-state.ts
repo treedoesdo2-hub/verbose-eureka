@@ -2,7 +2,7 @@ import type { MatchStats } from '@shared/snapshot';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 
-export type Screen = 'menu' | 'board' | 'armory' | 'briefing' | 'deploy' | 'debrief';
+export type Screen = 'menu' | 'board' | 'armory' | 'briefing' | 'deploy' | 'debrief' | 'orbat';
 
 export type DebriefSummary = {
   winner: number | null;
