@@ -17,8 +17,58 @@ import {
 // Determinism: no RNG. Given identical (world.walkability, world.base, from,
 // to), identical path out. Tie-break uses the deterministic insertion order
 // of the binary heap (stable for equal f-scores via insertion ordinal).
+//
+// Memory: scratch state (gScore / cameFrom / closed) is sized to the full
+// W×H. On 4096² that's ~144 MB per call if we naively allocate + .fill()
+// each invocation, and the resulting GC churn was the real reason 4096²
+// contracts were unplayable. We pool the buffers at module scope and use
+// a `visitedGen` tag-array so a "reset" is just bumping a counter — turns
+// per-call O(N) clear into O(1).
 
 const MAX_NODES_EXPANDED = 4000;
+
+// Pooled scratch for findPathTiles. Sized to the largest N seen so far.
+// Entries are valid only when `visitedGen[i] === currentGen`; that lets us
+// skip the per-call .fill() that was otherwise scanning all 16M tiles on
+// 4096² maps. 32-bit gen wrap-around is handled below.
+let pooledN = 0;
+let gScorePool: Float32Array | null = null;
+let cameFromPool: Int32Array | null = null;
+let closedPool: Uint8Array | null = null;
+let visitedGenPool: Uint32Array | null = null;
+let currentGen = 0;
+
+function acquirePathScratch(N: number): {
+  gScore: Float32Array;
+  cameFrom: Int32Array;
+  closed: Uint8Array;
+  visitedGen: Uint32Array;
+  gen: number;
+} {
+  if (N > pooledN) {
+    pooledN = N;
+    gScorePool = new Float32Array(N);
+    cameFromPool = new Int32Array(N);
+    closedPool = new Uint8Array(N);
+    visitedGenPool = new Uint32Array(N);
+    currentGen = 0;
+  }
+  currentGen++;
+  if (currentGen === 0) {
+    // 32-bit wrap — every old tag now collides with the new gen. Force a
+    // hard reset so stale entries don't read as live. Happens after ~4B
+    // path requests, so this branch is essentially cold.
+    visitedGenPool?.fill(0);
+    currentGen = 1;
+  }
+  return {
+    gScore: gScorePool!,
+    cameFrom: cameFromPool!,
+    closed: closedPool!,
+    visitedGen: visitedGenPool!,
+    gen: currentGen,
+  };
+}
 
 // Slope cost (COA-8). P3.12 — no charge for 1-step; each additional step
 // adds +0.5 to base cost. This lets minor undulations pass-through freely
@@ -67,10 +117,6 @@ export function isPassableForUnit(
 export function tileMoveSpeedMult(world: World, x: number, y: number): number {
   if (!inBounds(world, x, y)) return 1.0;
   return terrainAxesAt(world, x, y).moveSpeedMult || 1.0;
-}
-
-function isPassableTile(world: World, x: number, y: number): boolean {
-  return isPassableForUnit(world, x, y, 'foot');
 }
 
 // Diagonal movement is disallowed when it would cut the corner of an
@@ -185,15 +231,13 @@ export function findPathTiles(
   const W = world.width;
   const H = world.height;
   const N = W * H;
-  const gScore = new Float32Array(N);
-  const cameFrom = new Int32Array(N);
-  const closed = new Uint8Array(N);
-  gScore.fill(Number.POSITIVE_INFINITY);
-  cameFrom.fill(-1);
+  const { gScore, cameFrom, closed, visitedGen, gen } = acquirePathScratch(N);
 
   const startIdx = startY * W + startX;
   const goalIdx = goalY * W + goalX;
   gScore[startIdx] = 0;
+  closed[startIdx] = 0;
+  visitedGen[startIdx] = gen;
 
   const open = new MinHeap();
   open.push(startIdx, heuristic(startX, startY, goalX, goalY));
@@ -205,8 +249,9 @@ export function findPathTiles(
   while (open.size > 0 && expanded < maxNodes) {
     const currentIdx = open.pop();
     if (currentIdx === null) break;
-    if (closed[currentIdx]) continue;
+    if (visitedGen[currentIdx] === gen && closed[currentIdx]) continue;
     closed[currentIdx] = 1;
+    visitedGen[currentIdx] = gen;
     expanded++;
 
     if (currentIdx === goalIdx) {
@@ -228,9 +273,9 @@ export function findPathTiles(
         const ny = cy + dy;
         if (!canStep(world, cx, cy, nx, ny, mode)) continue;
         const nIdx = ny * W + nx;
-        if (closed[nIdx]) continue;
+        if (visitedGen[nIdx] === gen && closed[nIdx]) continue;
         // Base step cost: 1 for cardinal, sqrt(2) for diagonal.
-        let stepCost = dx !== 0 && dy !== 0 ? 1.41421356 : 1;
+        let stepCost = dx !== 0 && dy !== 0 ? Math.SQRT2 : 1;
         // Slope cost (COA-8 / P3.12). 1-step delta is free; each
         // additional step adds +0.5 multiplier.
         const dElev = Math.abs(
@@ -241,9 +286,13 @@ export function findPathTiles(
         const speedMult = tileMoveSpeedMult(world, nx, ny);
         if (speedMult > 0 && speedMult < 1) stepCost *= 1 / speedMult;
         const tentativeG = gScore[currentIdx] + stepCost;
-        if (tentativeG >= gScore[nIdx]) continue;
+        const existingG =
+          visitedGen[nIdx] === gen ? gScore[nIdx] : Number.POSITIVE_INFINITY;
+        if (tentativeG >= existingG) continue;
         gScore[nIdx] = tentativeG;
         cameFrom[nIdx] = currentIdx;
+        closed[nIdx] = 0;
+        visitedGen[nIdx] = gen;
         const f = tentativeG + heuristic(nx, ny, goalX, goalY);
         open.push(nIdx, f);
       }
@@ -291,10 +340,23 @@ export function findPathMeters(
 }
 
 // Bresenham-style walkability raycast. Returns true when every tile between
-// (and including) the two meter-space points is passable. Cheap enough to
-// use per-unit per-tick as a "do I need to pathfind?" precheck — followers
-// in open terrain skip the A* call and just steer straight at the leader.
-export function hasLineOfWalk(world: World, from: Vec2, to: Vec2): boolean {
+// (and including) the two meter-space points is passable AND every edge
+// crossed along the way is clear in the given mode. Cheap enough to use
+// per-unit per-tick as a "do I need to pathfind?" precheck — followers in
+// open terrain skip the A* call and just steer straight at the leader.
+//
+// Per-tile passability alone is insufficient: hedgerows, walls, and
+// closed doors are stored as per-edge data. Two open tiles separated by
+// a stone wall both pass `isPassableTile` individually, so without the
+// edge-blockage check the raycast routes infantry through bocage. Diagonal
+// steps decompose into the same L-shaped path the A* corner rule uses
+// (handled inside edgeBlocksMovement).
+export function hasLineOfWalk(
+  world: World,
+  from: Vec2,
+  to: Vec2,
+  mode: MovementMode = 'foot',
+): boolean {
   const ts = world.tileSizeMeters;
   let x0 = Math.floor(from.x / ts);
   let y0 = Math.floor(from.y / ts);
@@ -308,9 +370,11 @@ export function hasLineOfWalk(world: World, from: Vec2, to: Vec2): boolean {
   const maxSteps = dx + dy + 1;
   let steps = 0;
   while (steps++ < maxSteps) {
-    if (!isPassableTile(world, x0, y0)) return false;
+    if (!isPassableForUnit(world, x0, y0, mode)) return false;
     if (x0 === x1 && y0 === y1) return true;
     const e2 = 2 * err;
+    const prevX = x0;
+    const prevY = y0;
     if (e2 > -dy) {
       err -= dy;
       x0 += sx;
@@ -319,6 +383,7 @@ export function hasLineOfWalk(world: World, from: Vec2, to: Vec2): boolean {
       err += dx;
       y0 += sy;
     }
+    if (edgeBlocksMovement(world, prevX, prevY, x0, y0, mode)) return false;
   }
   return true;
 }

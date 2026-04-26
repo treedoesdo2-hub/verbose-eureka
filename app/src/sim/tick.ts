@@ -10,6 +10,7 @@ import {
   regenerateEnemyWaypoints,
   regeneratePlayerWaypoints,
 } from './objectives';
+import { isPassableForUnit } from './pathfinding';
 import { Rng } from './rng';
 import { promoteLeaders, type SquadRuntimeState } from './squad';
 import { EMPTY_MAP_META, type MapMeta, type ObjectiveRuntimeState, SIM_DT, SIM_HZ, type SimEvent, type SimState } from './state';
@@ -36,7 +37,15 @@ import {
   SUPPRESSION_PER_SHOT,
   totalBleedRate,
 } from './unit';
-import { breakWindowEdge, edgeBlocksMovement, edgeIsClimbable, isFootPassable } from './world';
+import { breakWindowEdge, edgeBlocksMovement, edgeIsClimbable, type MovementMode } from './world';
+
+// Map a unit's posture onto a pathfinding/edge-cost MovementMode.
+// Forward-compatible if/when the schema gains chassis-bearing units —
+// vehicle types should branch here instead of upstream callers picking
+// 'foot' implicitly.
+function unitMovementMode(unit: Unit): MovementMode {
+  return unit.stance === 'prone' ? 'prone' : 'foot';
+}
 
 const MAX_SPEED_MPS = 4.5;
 
@@ -81,6 +90,7 @@ function executeMovement(
   target: Vec2,
   world: SimState['world'],
   mobilityPenalty: number,
+  mode: MovementMode,
 ): {
   position: Vec2;
   velocity: Vec2;
@@ -114,8 +124,8 @@ function executeMovement(
   const fromTile = tileOf(world, unit.position);
   const tile = tileOf(world, candidate);
   if (
-    isFootPassable(world, tile.x, tile.y) &&
-    !edgeBlocksMovement(world, fromTile.x, fromTile.y, tile.x, tile.y, 'foot')
+    isPassableForUnit(world, tile.x, tile.y, mode) &&
+    !edgeBlocksMovement(world, fromTile.x, fromTile.y, tile.x, tile.y, mode)
   ) {
     return {
       position: clampToWorld(candidate, world),
@@ -147,8 +157,8 @@ function executeMovement(
   ];
   for (const c of candidates) {
     const t = tileOf(world, c);
-    if (!isFootPassable(world, t.x, t.y)) continue;
-    if (edgeBlocksMovement(world, fromTile.x, fromTile.y, t.x, t.y, 'foot')) continue;
+    if (!isPassableForUnit(world, t.x, t.y, mode)) continue;
+    if (edgeBlocksMovement(world, fromTile.x, fromTile.y, t.x, t.y, mode)) continue;
     return {
       position: clampToWorld(c, world),
       velocity: { x: c.x - unit.position.x, y: c.y - unit.position.y },
@@ -537,8 +547,11 @@ function processMovement(
 
   // Detect climb-trigger: would the next sub-tick step cross an intact
   // window edge? Inspect the from-tile (current) and the immediate
-  // neighbor toward the target. Foot/prone only — vehicles can't climb.
-  if (unit.stance !== 'prone' || true) {
+  // neighbor toward the target. edgeIsClimbable internally restricts to
+  // foot / prone modes, so once vehicle chassis types exist they short-
+  // circuit there.
+  const mode = unitMovementMode(unit);
+  {
     const ts = state.world.tileSizeMeters;
     const fromX = Math.floor(unit.position.x / ts);
     const fromY = Math.floor(unit.position.y / ts);
@@ -549,7 +562,7 @@ function processMovement(
     if (stepDx !== 0 || stepDy !== 0) {
       const tryCross = (nx: number, ny: number) => {
         if (nx < 0 || ny < 0 || nx >= state.world.width || ny >= state.world.height) return null;
-        const climb = edgeIsClimbable(state.world, fromX, fromY, nx, ny, 'foot');
+        const climb = edgeIsClimbable(state.world, fromX, fromY, nx, ny, mode);
         return climb.climbable ? { nx, ny, side: climb.edgeSide } : null;
       };
       // Prefer cardinal neighbors in the move direction. If diagonal,
@@ -582,7 +595,7 @@ function processMovement(
   }
 
   const mobility = unit.combat.mobilityPenalty + squadCohesionPenalty(unit, state);
-  const m = executeMovement(unit, unit.action.target, state.world, mobility);
+  const m = executeMovement(unit, unit.action.target, state.world, mobility, mode);
   if (m.arrived) {
     mergePatch(patches, unit.id, {
       position: m.position,
