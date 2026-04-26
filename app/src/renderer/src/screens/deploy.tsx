@@ -181,9 +181,17 @@ export function Deploy(): React.JSX.Element {
     return deriveUnitCard(u, unitsById, ops);
   }, [selectedUnitId, unitsById, ops]);
 
-  // Battalion-roll-up stats for the S8 banner.
-  const friendlies = snapshot?.units.filter((u) => u.teamId === 0) ?? [];
-  const hostiles = snapshot?.units.filter((u) => u.teamId === 1) ?? [];
+  // Battalion-roll-up stats for the S8 banner. Memoised on `snapshot` so
+  // ref identity is stable between renders that don't change the
+  // snapshot — the auto-select effect below depends on these.
+  const friendlies = useMemo(
+    () => snapshot?.units.filter((u) => u.teamId === 0) ?? [],
+    [snapshot],
+  );
+  const hostiles = useMemo(
+    () => snapshot?.units.filter((u) => u.teamId === 1) ?? [],
+    [snapshot],
+  );
   const team0Alive = friendlies.filter((u) => u.actionKind !== 'dead').length;
   const team1Alive = hostiles.filter((u) => u.actionKind !== 'dead').length;
   const team0Down = friendlies.filter((u) => u.actionKind === 'downed').length;
@@ -192,15 +200,24 @@ export function Deploy(): React.JSX.Element {
 
   const objectives = useObjectives(snapshot, contractId);
 
-  // Auto-select the first friendly that's still up if nothing's selected.
+  // Auto-select the first friendly that's still up if nothing's selected
+  // (or the current selection died). Depends on a primitive signature
+  // — `firstAliveId` + a boolean — so a fresh `friendlies` array each
+  // render does NOT re-fire the effect. Without this gate, casualty
+  // events trigger an infinite re-render loop and React 19 hard-crashes.
+  const firstAliveId = useMemo(
+    () => friendlies.find((u) => u.actionKind !== 'dead')?.id ?? null,
+    [friendlies],
+  );
+  const selectedIsAlive =
+    selectedUnitId !== null && unitsById.get(selectedUnitId)?.actionKind !== 'dead';
+
   useEffect(() => {
-    if (selectedUnitId !== null) {
-      const u = unitsById.get(selectedUnitId);
-      if (u && u.actionKind !== 'dead') return;
+    if (selectedIsAlive) return;
+    if (firstAliveId !== null && firstAliveId !== selectedUnitId) {
+      setSelectedUnitId(firstAliveId);
     }
-    const first = friendlies.find((u) => u.actionKind !== 'dead');
-    if (first) setSelectedUnitId(first.id);
-  }, [selectedUnitId, friendlies, unitsById]);
+  }, [selectedIsAlive, firstAliveId, selectedUnitId]);
 
   return (
     <div
@@ -341,7 +358,6 @@ export function Deploy(): React.JSX.Element {
           >
             <S8OpCards
               friendlies={friendlies}
-              ops={ops}
               selectedUnitId={selectedUnitId}
               onSelect={setSelectedUnitId}
             />
@@ -579,12 +595,10 @@ function RoeChips({ roe, setRoe }: { roe: Roe; setRoe: (r: Roe) => void }): Reac
 // ── S8 op cards (left rail) ───────────────────────────────────────────────
 function S8OpCards({
   friendlies,
-  ops,
   selectedUnitId,
   onSelect,
 }: {
   friendlies: readonly SnapshotUnit[];
-  ops: ReadonlyMap<string, ReturnType<typeof getContent>['operators'] extends ReadonlyMap<string, infer V> ? V : never>;
   selectedUnitId: number | null;
   onSelect: (id: number) => void;
 }): React.JSX.Element {
@@ -605,7 +619,7 @@ function S8OpCards({
           overflow: 'auto',
         }}
       >
-        {groups.map((g, i) => {
+        {groups.map((g) => {
           const alive = g.units.filter((u) => u.actionKind !== 'dead');
           const dead = g.units.length - alive.length;
           const avgBlood = alive.length === 0
@@ -794,7 +808,7 @@ function CommsLogStub(): React.JSX.Element {
       <div style={{ padding: 8, maxHeight: 160, overflow: 'auto' }}>
         {lines.map((l, i) => (
           <div
-            key={i}
+            key={`${l.ts}:${l.src}:${l.txt}`}
             style={{
               fontFamily: NW.mono,
               fontSize: 10,
@@ -876,12 +890,12 @@ function ObjectivesBar({
         boxShadow: `inset 0 0 0 1px ${NW.line2}`,
       }}
     >
-      {objectives.map((o, i) => {
+      {objectives.map((o) => {
         const c =
           o.status === 'complete' ? NW.green : o.status === 'failed' ? NW.magenta : NW.cyan;
         return (
           <div
-            key={`${o.kind}:${o.description}:${i}`}
+            key={`${o.kind}:${o.description}`}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -968,7 +982,6 @@ function feedColor(severity: HudEventEntry['severity']): string {
       return NW.green;
     case 'morale':
       return NW.cyan;
-    case 'misc':
     default:
       return NW.fg2;
   }
@@ -1250,6 +1263,7 @@ function CombatPaperdoll14({
   };
   return (
     <svg viewBox="0 0 60 110" width={64} height={118} aria-hidden>
+      <title>14-zone paperdoll</title>
       {/* head */}
       <circle cx="30" cy="8" r="6" fill={zoneFill('head')} stroke={zoneStroke('head')} strokeWidth="0.6" />
       {/* neck */}
@@ -1357,7 +1371,7 @@ function pickCommanderCallsign(
   ops: ReadonlyMap<string, ReturnType<typeof getContent>['operators'] extends ReadonlyMap<string, infer V> ? V : never>,
 ): string {
   const alive = friendlies.find((u) => u.actionKind !== 'dead' && u.operatorId);
-  if (!alive || !alive.operatorId) return 'ACTUAL';
+  if (!alive?.operatorId) return 'ACTUAL';
   const op = ops.get(alive.operatorId);
   return op?.callsign ?? 'ACTUAL';
 }
