@@ -84,6 +84,15 @@ export function NWLoadoutEditor({
   const [face, setFace] = useState<PaperdollFace>('front');
   const [selectedZone, setSelectedZone] = useState<PaperdollZone>('torso');
   const [hoverItemKey, setHoverItemKey] = useState<string | null>(null);
+  // Drag state: which stockpile item is being dragged + which zone is
+  // currently the drop target. The validity flag drives the per-zone
+  // green/red preview + the reason tooltip.
+  const [dragItem, setDragItem] = useState<{ type: StockpileCat; id: string } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    zone: PaperdollZone;
+    valid: boolean;
+    reason: string;
+  } | null>(null);
 
   function updateItems(next: LoadoutItem[]): void {
     setMemberLoadout(squadId, member.operatorId, { items: next });
@@ -97,6 +106,27 @@ export function NWLoadoutEditor({
 
   function resetLoadout(): void {
     updateItems([]);
+  }
+
+  function equipAt(
+    type: StockpileCat,
+    id: string,
+    zone: PaperdollZone,
+    opts: { swap?: boolean; evict?: boolean } = {},
+  ): void {
+    const targetZone = bodyZoneFor(zone, face);
+    const validity = canPlaceItem(bundle, member.loadout, type, id, targetZone, lookup);
+    if (!validity.valid && !opts.swap && !opts.evict) return;
+    let next = [...member.loadout.items];
+    if (opts.swap || opts.evict) {
+      // Strip anything currently occupying this zone before inserting.
+      // Swap = drop the new item where the old one was; Evict = explicit
+      // confirmation modifier (Alt) that lets the user clear the zone
+      // even when the new item wouldn't otherwise fit.
+      next = next.filter((it) => it.zone !== targetZone);
+    }
+    next.push({ type, id, zone: targetZone });
+    updateItems(next);
   }
 
   // ADR 016 §Q11. Total rounds carried by caliber, surfaced in the
@@ -153,13 +183,21 @@ export function NWLoadoutEditor({
           search={stockpileSearch}
           onSearchChange={setStockpileSearch}
           onEquip={(type, id) => {
-            // Default to selected paperdoll zone where viable; fall back
-            // to a stable default per item type.
+            // Double-click on a stockpile row → auto-fit to first valid
+            // zone (#280.25). defaultEquipZone biases toward the
+            // currently selected paperdoll zone where it's viable;
+            // otherwise it falls back to the canonical placement (e.g.
+            // first armor placement, sidearm → waist, ammo → torso).
             const targetZone = defaultEquipZone(type, selectedZone, face, bundle, id);
             updateItems([...member.loadout.items, { type, id, zone: targetZone }]);
           }}
           onHoverItem={setHoverItemKey}
           hoverItemKey={hoverItemKey}
+          onDragStart={(type, id) => setDragItem({ type, id })}
+          onDragEnd={() => {
+            setDragItem(null);
+            setDropTarget(null);
+          }}
         />
 
         <NWPaperdollEditor
@@ -171,6 +209,30 @@ export function NWLoadoutEditor({
           lookup={lookup}
           hoverItemKey={hoverItemKey}
           bundle={bundle}
+          fit={fit}
+          dragItem={dragItem}
+          dropTarget={dropTarget}
+          onDragOverZone={(zone, modifiers) => {
+            if (!dragItem) return;
+            const bz = bodyZoneFor(zone, face);
+            const v = canPlaceItem(bundle, member.loadout, dragItem.type, dragItem.id, bz, lookup);
+            // Shift = swap (treat occupied-zone failures as valid drop).
+            const valid =
+              v.valid ||
+              (modifiers.shift && v.reason.includes('already')) ||
+              modifiers.alt;
+            setDropTarget({ zone, valid, reason: v.reason });
+          }}
+          onDragLeaveZone={() => setDropTarget(null)}
+          onDropZone={(zone, modifiers) => {
+            if (!dragItem) return;
+            equipAt(dragItem.type, dragItem.id, zone, {
+              swap: modifiers.shift,
+              evict: modifiers.alt,
+            });
+            setDragItem(null);
+            setDropTarget(null);
+          }}
         />
 
         <NWZoneInspector
@@ -482,6 +544,8 @@ function NWStockpile({
   onEquip,
   onHoverItem,
   hoverItemKey,
+  onDragStart,
+  onDragEnd,
 }: {
   bundle: ContentBundle;
   loadout: { items: readonly LoadoutItem[] };
@@ -492,6 +556,8 @@ function NWStockpile({
   onEquip: (type: StockpileCat, id: string) => void;
   onHoverItem: (k: string | null) => void;
   hoverItemKey: string | null;
+  onDragStart: (type: StockpileCat, id: string) => void;
+  onDragEnd: () => void;
 }): React.JSX.Element {
   const items = useMemo(
     () => buildStockpile(bundle, loadout, activeCat, search),
@@ -580,6 +646,8 @@ function NWStockpile({
               hovered={hoverItemKey === it.key}
               onHover={(h) => onHoverItem(h ? it.key : null)}
               onEquip={() => onEquip(it.type, it.id)}
+              onDragStart={() => onDragStart(it.type, it.id)}
+              onDragEnd={onDragEnd}
             />
           ))
         )}
@@ -593,11 +661,15 @@ function StockpileRow({
   hovered,
   onHover,
   onEquip,
+  onDragStart,
+  onDragEnd,
 }: {
   item: StockpileItem;
   hovered: boolean;
   onHover: (h: boolean) => void;
   onEquip: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }): React.JSX.Element {
   const c = item.equipped ? NW.cyan : hovered ? NW.amber : NW.fg0;
   const bg = item.equipped ? NW.cyanSoft : hovered ? 'rgba(255,160,32,0.05)' : 'transparent';
@@ -608,6 +680,16 @@ function StockpileRow({
       onMouseLeave={() => onHover(false)}
       onDoubleClick={onEquip}
       onClick={onEquip}
+      draggable
+      onDragStart={(ev) => {
+        // Native HTML5 drag — the dataTransfer payload is mostly cosmetic
+        // (we steer the equip via React state in the parent), but a
+        // payload is required for Firefox to fire dragstart at all.
+        ev.dataTransfer.effectAllowed = 'copyMove';
+        ev.dataTransfer.setData('text/plain', `${item.type}:${item.id}`);
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
       style={{
         display: 'grid',
         gridTemplateColumns: '1fr auto',
@@ -622,7 +704,7 @@ function StockpileRow({
         borderTop: 'none',
         borderRight: 'none',
       }}
-      title="Click or double-click to equip"
+      title="Drag to a paperdoll zone, or click / double-click to auto-equip"
     >
       <div>
         <div
@@ -731,6 +813,49 @@ function buildStockpile(
   return q ? out.filter((it) => it.name.toLowerCase().includes(q) || it.meta.toLowerCase().includes(q)) : out;
 }
 
+// Drag-drop validity check (#280.21). Reports whether a stockpile item
+// can be placed on a paperdoll zone given the current loadout, with a
+// short reason string for the hover tooltip on failure. The Shift
+// modifier (swap) intentionally bypasses zone-occupied gating;
+// see equipAt() — we only fail "valid" here when the item is genuinely
+// not placeable at all (e.g. weapon hardpoint mismatch, armor zone
+// not in placements list).
+function canPlaceItem(
+  bundle: ContentBundle,
+  loadout: { items: readonly LoadoutItem[] },
+  type: StockpileCat,
+  id: string,
+  zone: BodyZone,
+  lookup: ReturnType<typeof contentLookup>,
+): { valid: boolean; reason: string } {
+  if (type === 'weapon') {
+    const w = bundle.weapons.get(id);
+    if (!w) return { valid: false, reason: 'unknown weapon' };
+    if (w.hardpoint === 'sidearm' && zone !== 'waist') {
+      return { valid: false, reason: 'sidearm fits the waist holster only' };
+    }
+    if (w.hardpoint === 'primary' && zone !== 'right_hand' && zone !== 'left_hand') {
+      return { valid: false, reason: 'primary fits a hand slot' };
+    }
+  } else if (type === 'armor') {
+    const a = bundle.armor.get(id);
+    if (!a) return { valid: false, reason: 'unknown armor' };
+    const placement = a.placements.find((p) => p.zone === zone);
+    if (!placement) {
+      return { valid: false, reason: `${a.name} doesn't cover this zone` };
+    }
+    // Per #285.04: at most one armor piece per zone.
+    const already = loadout.items.some((it) => {
+      if (it.type !== 'armor') return false;
+      const other = lookup.armor(it.id);
+      return other?.placements.some((p) => p.zone === zone) ?? false;
+    });
+    if (already) return { valid: false, reason: 'zone already armored — Shift to swap' };
+  }
+  // Ammo + utility have no per-zone gating; any zone is fine.
+  return { valid: true, reason: '' };
+}
+
 function defaultEquipZone(
   type: StockpileCat,
   selected: PaperdollZone,
@@ -769,6 +894,12 @@ function NWPaperdollEditor({
   lookup,
   hoverItemKey,
   bundle,
+  fit,
+  dragItem,
+  dropTarget,
+  onDragOverZone,
+  onDragLeaveZone,
+  onDropZone,
 }: {
   face: PaperdollFace;
   onFaceChange: (f: PaperdollFace) => void;
@@ -778,6 +909,12 @@ function NWPaperdollEditor({
   lookup: ReturnType<typeof contentLookup>;
   hoverItemKey: string | null;
   bundle: ContentBundle;
+  fit: ReturnType<typeof computeFit>;
+  dragItem: { type: StockpileCat; id: string } | null;
+  dropTarget: { zone: PaperdollZone; valid: boolean; reason: string } | null;
+  onDragOverZone: (zone: PaperdollZone, modifiers: { shift: boolean; alt: boolean }) => void;
+  onDragLeaveZone: () => void;
+  onDropZone: (zone: PaperdollZone, modifiers: { shift: boolean; alt: boolean }) => void;
 }): React.JSX.Element {
   const profile = useMemo(() => deriveCombatProfile(loadout, lookup), [loadout, lookup]);
 
@@ -845,17 +982,36 @@ function NWPaperdollEditor({
           opacity="0.2"
         />
 
-        {PAPERDOLL_ZONES.map((z) => (
-          <NWHitZone
-            key={z.id}
-            zone={z}
-            tone={zoneTone(z.id)}
-            selected={selectedZone === z.id}
-            onClick={() => onSelectZone(z.id)}
-            zoneDr={profile.zoneDr[bodyZoneFor(z.id, face)] ?? 0}
-            zoneKg={zoneKgFor(loadout, lookup, bodyZoneFor(z.id, face))}
-          />
-        ))}
+        {PAPERDOLL_ZONES.map((z) => {
+          const bz = bodyZoneFor(z.id, face);
+          const isDropTarget = dropTarget?.zone === z.id && dragItem !== null;
+          const slotsUsed = fit.perZone[bz]?.slotsUsed ?? 0;
+          const slotsCap = fit.perZone[bz]?.slotsCap ?? 0;
+          return (
+            <NWHitZone
+              key={z.id}
+              zone={z}
+              tone={zoneTone(z.id)}
+              selected={selectedZone === z.id}
+              onClick={() => onSelectZone(z.id)}
+              zoneDr={profile.zoneDr[bz] ?? 0}
+              zoneKg={zoneKgFor(loadout, lookup, bz)}
+              slotsUsed={slotsUsed}
+              slotsCap={slotsCap}
+              dropState={
+                isDropTarget ? (dropTarget?.valid ? 'valid' : 'invalid') : 'none'
+              }
+              dragActive={dragItem !== null}
+              onDragOver={(modifiers) => onDragOverZone(z.id, modifiers)}
+              onDragLeave={onDragLeaveZone}
+              onDrop={(modifiers) => onDropZone(z.id, modifiers)}
+            />
+          );
+        })}
+
+        {dropTarget && !dropTarget.valid && (
+          <DropTooltip target={dropTarget} />
+        )}
 
         {/* anatomical level ticks — "medical chart" feel */}
         {(
@@ -954,6 +1110,19 @@ const PAPERDOLL_ZONES: {
   { id: 'right_leg', d: 'M 72 138 L 90 138 L 92 200 L 74 200 Z', labelPos: [82, 168], label: 'R·LEG' },
 ];
 
+// Crit-slot grid sizes per zone (#280.10). Mirrors the design package
+// table — head 3×2, torso 4×3, arms 2×6, waist 3×2, legs 6×4-ish (we
+// use 3×4 to fit the silhouette area).
+const CRIT_SLOT_GRID: Record<PaperdollZone, { cols: number; rows: number }> = {
+  head: { cols: 3, rows: 2 },
+  torso: { cols: 4, rows: 3 },
+  left_arm: { cols: 2, rows: 6 },
+  right_arm: { cols: 2, rows: 6 },
+  waist: { cols: 3, rows: 2 },
+  left_leg: { cols: 3, rows: 4 },
+  right_leg: { cols: 3, rows: 4 },
+};
+
 function NWHitZone({
   zone,
   tone,
@@ -961,6 +1130,13 @@ function NWHitZone({
   onClick,
   zoneDr,
   zoneKg,
+  slotsUsed,
+  slotsCap,
+  dropState,
+  dragActive,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: {
   zone: (typeof PAPERDOLL_ZONES)[number];
   tone: ZoneTone;
@@ -968,26 +1144,57 @@ function NWHitZone({
   onClick: () => void;
   zoneDr: number;
   zoneKg: number;
+  slotsUsed: number;
+  slotsCap: number;
+  dropState: 'valid' | 'invalid' | 'none';
+  dragActive: boolean;
+  onDragOver: (modifiers: { shift: boolean; alt: boolean }) => void;
+  onDragLeave: () => void;
+  onDrop: (modifiers: { shift: boolean; alt: boolean }) => void;
 }): React.JSX.Element {
-  const fill =
+  const baseFill =
     tone === 'full'
       ? 'rgba(24,224,255,0.22)'
       : tone === 'partial'
         ? 'rgba(24,224,255,0.09)'
         : 'rgba(24,224,255,0.02)';
-  const stroke = selected
+  const fill =
+    dropState === 'valid'
+      ? 'rgba(51,255,160,0.22)'
+      : dropState === 'invalid'
+        ? 'rgba(255,45,154,0.22)'
+        : baseFill;
+  const baseStroke = selected
     ? NW.amber
     : tone === 'empty'
       ? NW.line2
       : tone === 'partial'
         ? `${NW.cyan}aa`
         : NW.cyan;
-  const sw = selected ? 1.4 : tone === 'empty' ? 0.5 : 0.8;
-  const dash = tone === 'empty' ? '2 2' : '';
+  const stroke =
+    dropState === 'valid' ? NW.green : dropState === 'invalid' ? NW.magenta : baseStroke;
+  const sw = selected || dropState !== 'none' ? 1.4 : tone === 'empty' ? 0.5 : 0.8;
+  const dash = dropState === 'invalid' ? '1 1' : tone === 'empty' && dropState === 'none' ? '2 2' : '';
   const labelColor = tone === 'empty' ? NW.fg2 : selected ? NW.amber : NW.cyan;
   const [tx, ty] = zone.labelPos;
   return (
-    <g onClick={onClick} style={{ cursor: 'pointer' }}>
+    <g
+      onClick={onClick}
+      onDragOver={(ev) => {
+        // preventDefault enables drop; we also surface the shift/alt
+        // modifier state every frame so the parent can re-evaluate
+        // validity.
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = ev.shiftKey ? 'move' : 'copy';
+        onDragOver({ shift: ev.shiftKey, alt: ev.altKey });
+      }}
+      onDragLeave={onDragLeave}
+      onDrop={(ev) => {
+        ev.preventDefault();
+        onDrop({ shift: ev.shiftKey, alt: ev.altKey });
+      }}
+      style={{ cursor: dragActive ? 'copy' : 'pointer' }}
+    >
       <path
         d={zone.d}
         fill={fill}
@@ -995,6 +1202,7 @@ function NWHitZone({
         strokeWidth={sw}
         strokeDasharray={dash}
       />
+      <CritSlotOverlay zone={zone} slotsUsed={slotsUsed} slotsCap={slotsCap} />
       <text
         x={tx}
         y={ty}
@@ -1031,6 +1239,88 @@ function NWHitZone({
         />
       ) : null}
     </g>
+  );
+}
+
+// Per-zone crit-slot grid (#280.10). Renders a small grid of dots
+// inside the zone polygon's bounding box — filled dots equal slotsUsed,
+// outlined dots equal slotsCap - slotsUsed. Pointer-events disabled so
+// the parent group still receives clicks + drops.
+function CritSlotOverlay({
+  zone,
+  slotsUsed,
+  slotsCap,
+}: {
+  zone: (typeof PAPERDOLL_ZONES)[number];
+  slotsUsed: number;
+  slotsCap: number;
+}): React.JSX.Element | null {
+  if (slotsCap <= 0) return null;
+  const { cols, rows } = CRIT_SLOT_GRID[zone.id];
+  // Place the grid centered on the zone's label position with a small
+  // y-bias upward so it doesn't overlap the KG / DR readout.
+  const [cx, cy] = zone.labelPos;
+  const cellW = 1.6;
+  const cellH = 1.6;
+  const gx = cx - (cols * cellW) / 2 + cellW / 2;
+  const gy = cy - 18;
+  const total = cols * rows;
+  // Cap the visual dot count to the schema capacity (slotsCap may be
+  // smaller than the grid we draw; we fade trailing cells when so).
+  const filledCount = Math.min(slotsUsed, slotsCap, total);
+  return (
+    <g pointerEvents="none">
+      {Array.from({ length: total }).map((_, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const beyondCap = i >= slotsCap;
+        const filled = i < filledCount;
+        const x = gx + col * cellW;
+        const y = gy + row * cellH;
+        return (
+          <circle
+            key={i}
+            cx={x}
+            cy={y}
+            r={0.45}
+            fill={filled ? NW.cyan : 'none'}
+            stroke={beyondCap ? NW.fgDim : filled ? NW.cyan : NW.line2}
+            strokeWidth={0.2}
+            opacity={beyondCap ? 0.3 : 1}
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+// Drop-validity tooltip (#280.21). Sits above the paperdoll panel so
+// users see *why* a zone isn't accepting the dragged item.
+function DropTooltip({
+  target,
+}: {
+  target: { zone: PaperdollZone; valid: boolean; reason: string };
+}): React.JSX.Element {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 12,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: 'rgba(20,30,60,0.95)',
+        boxShadow: `inset 0 0 0 1px ${NW.magenta}`,
+        padding: '6px 12px',
+        fontFamily: NW.mono,
+        fontSize: 10,
+        color: NW.magenta,
+        letterSpacing: '0.14em',
+        pointerEvents: 'none',
+        zIndex: 10,
+      }}
+    >
+      ◆ {target.reason || 'invalid drop'}
+    </div>
   );
 }
 
@@ -1375,6 +1665,12 @@ function EquippedRow({
 
   return (
     <div
+      onContextMenu={(ev) => {
+        // Right-click quick-unequip (#280.24): suppress the OS menu and
+        // remove the item back to the warehouse in one click.
+        ev.preventDefault();
+        onRemove();
+      }}
       style={{
         display: 'grid',
         gridTemplateColumns: '1fr auto auto',
@@ -1386,6 +1682,7 @@ function EquippedRow({
         boxShadow: `inset 0 0 0 1px ${NW.line2}`,
         marginBottom: 4,
       }}
+      title="Right-click to quick-unequip"
     >
       <div>
         <div
@@ -1415,7 +1712,7 @@ function EquippedRow({
       <button
         type="button"
         onClick={onRemove}
-        title="Right-click → quick unequip (planned); ✕ removes now"
+        title="Click to unequip (right-click does the same on the row)"
         style={{
           background: 'transparent',
           border: `1px solid ${NW.line2}`,
