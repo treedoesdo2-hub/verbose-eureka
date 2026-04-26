@@ -181,6 +181,36 @@ short note + date.
 - **Revisit when:** Loadout editing becomes a friction point in
   playtests, or post-MVP UX polish pass.
 
+### S5 briefing — NEON WIRE rebrand
+- **Source:** ADR 016 §S5 / task #291
+- **Date deferred:** 2026-04-25
+- **Reason:** The existing `briefing.tsx` is a substantial
+  surface (~637 lines) anchored on the live map-preview pipeline
+  (`useMapPreview`, `runPipelineWithRetry`, thumbnail render).
+  It works end-to-end. A full NEON WIRE rebrand requires
+  refactoring the map-preview hook + slot logic into NEON-WIRE-
+  styled containers without disturbing the deploy plumbing —
+  bigger lift than the other screens. Tabled to keep momentum
+  on the more-self-contained surfaces.
+- **Revisit when:** The remaining NEON WIRE surfaces are landed
+  and the visual delta on briefing becomes the loudest gap in
+  the MVP loop.
+
+### S2 / S8 combat view — full NEON WIRE rewrite
+- **Source:** ADR 016 §S2/S8 / task #288 (35 sub-tasks)
+- **Date deferred:** 2026-04-25
+- **Reason:** Largest screen rewrite by far — full-bleed map
+  layer + selected-operator card with 14-zone paperdoll +
+  squad-roster strip + objective bar + drone overwatch chrome +
+  comms log + decision queue stub + S8 banner with bn name and
+  mini-stats + ROE/WITHDRAW chips + footer with ISSUE BN ORDER.
+  Existing `deploy.tsx` (~206 lines) is functional and runs
+  full playtests. NEON WIRE rewrite is a multi-thousand-line
+  rebuild; not gating MVP playtest cadence.
+- **Revisit when:** The visual delta during playtests becomes
+  the loudest gap (likely after S5 lands so the menu→board→
+  briefing→combat flow is the only non-NW surface).
+
 ---
 
 ## Resolved deferrals
