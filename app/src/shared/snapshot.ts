@@ -168,8 +168,29 @@ export type MatchHighlight = {
   readonly text: string;
 };
 
+// AAR squad-position snapshot (#292.09 / #534). Captured every N sim
+// ticks during the match; the debrief screen renders these as a
+// timeline scrubber over the regional map. centerX/centerY are tile
+// coordinates (mean of alive friendly positions for that squad).
+export type AARSquadSnapshot = {
+  readonly tick: number;
+  readonly squads: readonly {
+    readonly squadId: string | null;
+    readonly memberCount: number;
+    readonly aliveCount: number;
+    readonly centerX: number;
+    readonly centerY: number;
+    readonly inContact: boolean;
+  }[];
+  // Hostile center-of-mass at this tick — single aggregate point so the
+  // overlay can show the contact axis without dumping individual enemy
+  // positions.
+  readonly hostileCenter: { x: number; y: number; aliveCount: number } | null;
+};
+
 export type MatchStats = {
   readonly totalTicks: number;
   readonly perUnit: readonly PerUnitStats[];
   readonly highlights: readonly MatchHighlight[];
+  readonly snapshots: readonly AARSquadSnapshot[];
 };

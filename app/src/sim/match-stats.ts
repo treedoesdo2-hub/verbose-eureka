@@ -1,7 +1,21 @@
 import type { UnitId } from '@shared/ids';
-import type { MatchHighlight, MatchStats, PerUnitStats } from '@shared/snapshot';
+import type {
+  AARSquadSnapshot,
+  MatchHighlight,
+  MatchStats,
+  PerUnitStats,
+} from '@shared/snapshot';
 import type { SimEvent } from './state';
 import type { Unit } from './unit';
+
+// AAR snapshot sampling cadence (#292.09). 30 sim seconds at 30Hz =
+// 900 ticks per sample. Tuned so a 10-minute match yields ~20 samples
+// — dense enough to see squad movement, sparse enough that finalize
+// can pick the best 4–8 evenly-spaced snapshots without losing detail.
+const SNAPSHOT_INTERVAL_TICKS = 30 * 30;
+// Cap how many snapshots we keep across the whole match (defensive
+// upper bound for very long runs).
+const MAX_SNAPSHOTS = 64;
 
 /**
  * Per-unit match-scoped tallies. Mutated tick-by-tick as events arrive.
@@ -28,6 +42,10 @@ export class MatchStatsAccumulator {
   private readonly stats = new Map<UnitId, MutableUnitStats>();
   // Last shooter that wounded each target — used to attribute kills/downs.
   private readonly lastShooterFor = new Map<UnitId, UnitId>();
+  // AAR squad-position snapshots captured at SNAPSHOT_INTERVAL_TICKS.
+  // Resolved against the squad metadata supplied by sample().
+  private readonly squadSnapshots: AARSquadSnapshot[] = [];
+  private lastSampleTick = -SNAPSHOT_INTERVAL_TICKS;
 
   seed(units: ReadonlyMap<UnitId, Unit>): void {
     for (const u of units.values()) {
@@ -91,6 +109,82 @@ export class MatchStatsAccumulator {
     }
   }
 
+  // Sample squad + hostile centers at the current tick (#292.09).
+  // Skips ticks that fall inside the same SNAPSHOT_INTERVAL_TICKS window
+  // as the last sample so we don't oversample at high speed multipliers.
+  // squadOf maps operatorId → squadId so we can group friendlies by
+  // their persisted squad without polluting the sim core with squad
+  // metadata.
+  sample(
+    tick: number,
+    units: ReadonlyMap<UnitId, Unit>,
+    squadOf: (operatorId: string) => string | null,
+  ): void {
+    if (tick - this.lastSampleTick < SNAPSHOT_INTERVAL_TICKS) return;
+    if (this.squadSnapshots.length >= MAX_SNAPSHOTS) return;
+    this.lastSampleTick = tick;
+
+    type Bucket = {
+      sumX: number;
+      sumY: number;
+      memberCount: number;
+      aliveCount: number;
+      inContact: boolean;
+    };
+    const friendlyBuckets = new Map<string, Bucket>();
+    let hostileSumX = 0;
+    let hostileSumY = 0;
+    let hostileAlive = 0;
+    let hostileTotal = 0;
+
+    for (const u of units.values()) {
+      if (u.teamId === 0) {
+        const sqId = u.operatorId ? squadOf(u.operatorId) : null;
+        const key = sqId ?? '__unassigned__';
+        const b =
+          friendlyBuckets.get(key) ??
+          { sumX: 0, sumY: 0, memberCount: 0, aliveCount: 0, inContact: false };
+        b.memberCount++;
+        if (u.action.kind !== 'dead') {
+          b.aliveCount++;
+          b.sumX += u.position.x;
+          b.sumY += u.position.y;
+          if (u.action.kind === 'firing' || u.alerted) b.inContact = true;
+        }
+        friendlyBuckets.set(key, b);
+      } else if (u.teamId === 1) {
+        hostileTotal++;
+        if (u.action.kind !== 'dead') {
+          hostileAlive++;
+          hostileSumX += u.position.x;
+          hostileSumY += u.position.y;
+        }
+      }
+    }
+
+    const squads: AARSquadSnapshot['squads'] = [];
+    for (const [key, b] of friendlyBuckets) {
+      squads.push({
+        squadId: key === '__unassigned__' ? null : key,
+        memberCount: b.memberCount,
+        aliveCount: b.aliveCount,
+        centerX: b.aliveCount > 0 ? b.sumX / b.aliveCount : 0,
+        centerY: b.aliveCount > 0 ? b.sumY / b.aliveCount : 0,
+        inContact: b.inContact,
+      });
+    }
+    void hostileTotal;
+    const hostileCenter =
+      hostileAlive > 0
+        ? {
+            x: hostileSumX / hostileAlive,
+            y: hostileSumY / hostileAlive,
+            aliveCount: hostileAlive,
+          }
+        : null;
+    this.squadSnapshots.push({ tick, squads, hostileCenter });
+  }
+
   finalize(totalTicks: number): MatchStats {
     const perUnit: PerUnitStats[] = [];
     for (const s of this.stats.values()) {
@@ -114,6 +208,7 @@ export class MatchStatsAccumulator {
       totalTicks,
       perUnit,
       highlights: computeHighlights(perUnit),
+      snapshots: this.squadSnapshots.slice(),
     };
   }
 }

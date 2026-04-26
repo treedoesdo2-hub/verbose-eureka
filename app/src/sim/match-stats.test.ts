@@ -187,4 +187,33 @@ describe('match stats accumulator', () => {
     expect(stats.highlights.some((h) => h.kind === 'ace' && h.unitId === 1)).toBe(true);
     expect(stats.highlights.some((h) => h.kind === 'medic' && h.unitId === 2)).toBe(true);
   });
+
+  it('captures squad-position snapshots at the sample interval (#292.09)', () => {
+    const acc = new MatchStatsAccumulator();
+    const units = makeMatchUnits();
+    acc.seed(units);
+    // Distinct positions for friendlies so the squad center has signal.
+    units.get(asUnitId(1))!.position = { x: 10, y: 10 };
+    units.get(asUnitId(2))!.position = { x: 14, y: 14 };
+    units.get(asUnitId(10))!.position = { x: 50, y: 50 };
+    const squadOf = (opId: string): string | null =>
+      opId === 'callsign-alpha' || opId === 'callsign-bravo' ? 'sq-1' : null;
+
+    // Tick 0 → first sample. Tick 100 inside same interval → no new sample.
+    acc.sample(0, units, squadOf);
+    acc.sample(100, units, squadOf);
+    // Tick 900 (= SNAPSHOT_INTERVAL_TICKS) → second sample.
+    acc.sample(900, units, squadOf);
+
+    const stats = acc.finalize(900);
+    expect(stats.snapshots).toHaveLength(2);
+    const first = stats.snapshots[0];
+    expect(first.tick).toBe(0);
+    expect(first.squads).toHaveLength(1);
+    expect(first.squads[0].squadId).toBe('sq-1');
+    expect(first.squads[0].aliveCount).toBe(2);
+    expect(first.squads[0].centerX).toBeCloseTo(12);
+    expect(first.squads[0].centerY).toBeCloseTo(12);
+    expect(first.hostileCenter?.x).toBeCloseTo(50);
+  });
 });

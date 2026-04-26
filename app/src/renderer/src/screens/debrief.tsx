@@ -6,11 +6,11 @@
 // the center map renders a placeholder schematic until the sim-side
 // snapshot capture lands.
 
-import type { PerUnitStats } from '@shared/snapshot';
-import { useMemo } from 'react';
+import type { AARSquadSnapshot, MatchHighlight, PerUnitStats } from '@shared/snapshot';
+import { useMemo, useState } from 'react';
 import { getContent } from '../content';
 import { useHotkeys } from '../hooks/useHotkeys';
-import { NW, NWChip, NWCTA, NWPanel } from '../neonwire';
+import { NW, NWChip, NWCTA, NWPanel, NWStatusDot, type NWAccent } from '../neonwire';
 import { useAppState } from '../stores/app-state';
 
 export function Debrief(): React.JSX.Element {
@@ -92,7 +92,7 @@ export function Debrief(): React.JSX.Element {
           casualties={casualties}
           survivors={survivors}
         />
-        <CenterAARMap />
+        <CenterAARMap snapshots={stats?.snapshots ?? []} totalTicks={stats?.totalTicks ?? 0} />
         <RightLedger
           stats={stats}
           enemyKills={enemyKills}
@@ -100,6 +100,7 @@ export function Debrief(): React.JSX.Element {
           playerWounds={playerWounds}
           playerUnits={playerUnits}
           bundle={bundle}
+          won={won}
         />
       </div>
       <Footer
@@ -216,24 +217,71 @@ function LeftRail({
   );
 }
 
-function CenterAARMap(): React.JSX.Element {
+function CenterAARMap({
+  snapshots,
+  totalTicks,
+}: {
+  snapshots: readonly AARSquadSnapshot[];
+  totalTicks: number;
+}): React.JSX.Element {
+  // Scrubber index — defaults to the last snapshot. Clicking a scrubber
+  // dot or pressing ←/→ would also work; for MVP the click handler on
+  // the scrubber dots is enough.
+  const [phaseIdx, setPhaseIdx] = useState<number>(Math.max(0, snapshots.length - 1));
+  // Determine the world bounds from snapshot positions so the SVG fits
+  // the play area (we don't have a world-size value in MatchStats).
+  const bounds = useMemo(() => computeBounds(snapshots), [snapshots]);
+
+  if (snapshots.length === 0) {
+    return (
+      <NWPanel title="MAP · AAR SNAPSHOTS" padding={0} style={{ minHeight: 0 }}>
+        <div
+          style={{
+            padding: 32,
+            fontFamily: NW.mono,
+            fontSize: 11,
+            color: NW.fg2,
+            textAlign: 'center',
+          }}
+        >
+          NO SNAPSHOT DATA · match too short
+        </div>
+      </NWPanel>
+    );
+  }
+
+  const cur = snapshots[Math.min(phaseIdx, snapshots.length - 1)];
+  // Build a path that connects each squad's center across all snapshots
+  // so the player sees movement, not just the final pin.
+  const squadIds = uniqueSquadIds(snapshots);
+
+  const w = bounds.maxX - bounds.minX || 100;
+  const h = bounds.maxY - bounds.minY || 100;
+  const pad = Math.max(w, h) * 0.08;
+  const vbX = bounds.minX - pad;
+  const vbY = bounds.minY - pad;
+  const vbW = w + 2 * pad;
+  const vbH = h + 2 * pad;
+
   return (
     <NWPanel
-      title="MAP · AAR SNAPSHOTS"
+      title={`MAP · AAR SNAPSHOTS · ${snapshots.length}`}
       padding={0}
       style={{ minHeight: 0, overflow: 'hidden' }}
     >
       <div
         style={{
-          width: '100%',
-          height: '100%',
           background: NW.bg2,
           display: 'flex',
           flexDirection: 'column',
-          minHeight: 320,
+          minHeight: 360,
         }}
       >
-        <svg viewBox="0 0 200 100" style={{ width: '100%', height: 'auto', flex: 1 }}>
+        <svg
+          viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ width: '100%', height: 'auto', flex: 1 }}
+        >
           <defs>
             <pattern id="aar-grid" width="10" height="10" patternUnits="userSpaceOnUse">
               <path
@@ -245,71 +293,186 @@ function CenterAARMap(): React.JSX.Element {
               />
             </pattern>
           </defs>
-          <rect width="200" height="100" fill="url(#aar-grid)" />
-          {/* Phase lines — placeholder schematic until #466–#469 wires real
-              squad-position snapshots. */}
-          {[0.25, 0.5, 0.75].map((p, i) => (
-            <line
-              key={i}
-              x1={p * 200}
-              y1={10}
-              x2={p * 200}
-              y2={90}
-              stroke={NW.cyan}
-              strokeWidth="0.4"
-              strokeDasharray="2 3"
-              opacity="0.3"
+          <rect x={vbX} y={vbY} width={vbW} height={vbH} fill="url(#aar-grid)" />
+
+          {/* Friendly squad axes — connect the centers across all
+              snapshots, then dot the current snapshot. */}
+          {squadIds.map((sqId, i) => {
+            const points = snapshots
+              .map((s) => s.squads.find((q) => (q.squadId ?? '__unassigned__') === sqId))
+              .filter((q): q is NonNullable<typeof q> => !!q && q.aliveCount > 0);
+            if (points.length < 2) return null;
+            const path = points.map((p, j) =>
+              `${j === 0 ? 'M' : 'L'} ${p.centerX.toFixed(2)} ${p.centerY.toFixed(2)}`,
+            ).join(' ');
+            return (
+              <path
+                key={sqId}
+                d={path}
+                fill="none"
+                stroke={squadColor(i)}
+                strokeWidth={Math.max(0.5, vbW / 200)}
+                strokeDasharray="2 1.5"
+                opacity={0.55}
+              />
+            );
+          })}
+
+          {/* Hostile center axis. */}
+          {(() => {
+            const hpts = snapshots.map((s) => s.hostileCenter).filter((h): h is NonNullable<typeof h> => !!h);
+            if (hpts.length < 2) return null;
+            const path = hpts.map((p, j) =>
+              `${j === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`,
+            ).join(' ');
+            return (
+              <path d={path} fill="none" stroke={NW.magenta} strokeWidth={Math.max(0.5, vbW / 200)} strokeDasharray="3 2" opacity={0.5} />
+            );
+          })()}
+
+          {/* Current-phase squad markers. */}
+          {cur.squads.map((q, i) => {
+            const sqId = q.squadId ?? '__unassigned__';
+            const idx = squadIds.indexOf(sqId);
+            const c = squadColor(idx >= 0 ? idx : i);
+            return (
+              <g key={`${sqId}:${i}`}>
+                <circle
+                  cx={q.centerX}
+                  cy={q.centerY}
+                  r={Math.max(1.5, vbW / 60)}
+                  fill={c}
+                  opacity={q.aliveCount > 0 ? 0.85 : 0.35}
+                />
+                <text
+                  x={q.centerX}
+                  y={q.centerY - vbW / 40}
+                  fill={c}
+                  fontSize={vbW / 50}
+                  fontFamily={NW.mono}
+                  textAnchor="middle"
+                  letterSpacing="0.4"
+                >
+                  {sqId === '__unassigned__' ? 'TF' : sqId.slice(-3).toUpperCase()}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Hostile center for current phase. */}
+          {cur.hostileCenter && (
+            <circle
+              cx={cur.hostileCenter.x}
+              cy={cur.hostileCenter.y}
+              r={Math.max(1.5, vbW / 60)}
+              fill={NW.magenta}
+              stroke={NW.bg0}
+              strokeWidth={0.4}
             />
-          ))}
-          {/* Axis of advance */}
-          <path
-            d="M 20 80 L 60 60 L 100 50 L 140 50 L 180 50"
-            stroke={NW.cyan}
-            strokeWidth="1"
-            fill="none"
-            opacity="0.7"
-          />
-          {/* T0 / T0.25 / T0.5 / T0.75 / T1.0 markers */}
-          {[
-            [20, 80],
-            [60, 60],
-            [100, 50],
-            [140, 50],
-            [180, 50],
-          ].map(([x, y], i) => (
-            <g key={i}>
-              <circle cx={x} cy={y} r="3" fill={NW.amber} />
-              <text
-                x={x}
-                y={y - 6}
-                fill={NW.amber}
-                fontSize="5"
-                fontFamily={NW.mono}
-                textAnchor="middle"
-                letterSpacing="0.2"
-              >
-                T{i === 0 ? '0' : `0.${i * 25}`.replace(/0$/, '5')}
-              </text>
-            </g>
-          ))}
+          )}
         </svg>
+
+        {/* Timeline scrubber (#292.12). One dot per snapshot; clicking a
+            dot rewinds the visible squads. */}
         <div
           style={{
-            padding: 14,
+            padding: '8px 14px',
             borderTop: `1px solid ${NW.line}`,
-            fontFamily: NW.mono,
-            fontSize: 10,
-            color: NW.fg2,
-            letterSpacing: '0.12em',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
           }}
         >
-          <span style={{ color: NW.amber }}>◆ NOTE</span> · per-quarter squad
-          snapshots are deferred — see DEFERRED.md (#292.09–#292.12). The
-          axis above is a placeholder schematic.
+          <div
+            style={{
+              fontFamily: NW.mono,
+              fontSize: 9,
+              color: NW.fg2,
+              letterSpacing: '0.16em',
+              display: 'flex',
+              justifyContent: 'space-between',
+            }}
+          >
+            <span>◆ TIMELINE</span>
+            <span>
+              T+{tickToTimeStr(cur.tick)} ·{' '}
+              {totalTicks > 0 ? Math.round((cur.tick / totalTicks) * 100) : 0}%
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {snapshots.map((s, i) => (
+              <button
+                key={s.tick}
+                type="button"
+                onClick={() => setPhaseIdx(i)}
+                title={`T+${tickToTimeStr(s.tick)} · ${s.squads.length} squads`}
+                style={{
+                  flex: 1,
+                  height: 12,
+                  background: i === phaseIdx ? NW.cyan : NW.line2,
+                  boxShadow: i === phaseIdx ? `0 0 6px ${NW.cyan}80` : 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  clipPath: 'polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%)',
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </NWPanel>
   );
+}
+
+function computeBounds(snapshots: readonly AARSquadSnapshot[]): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} {
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const s of snapshots) {
+    for (const q of s.squads) {
+      if (q.aliveCount === 0) continue;
+      minX = Math.min(minX, q.centerX);
+      minY = Math.min(minY, q.centerY);
+      maxX = Math.max(maxX, q.centerX);
+      maxY = Math.max(maxY, q.centerY);
+    }
+    if (s.hostileCenter) {
+      minX = Math.min(minX, s.hostileCenter.x);
+      minY = Math.min(minY, s.hostileCenter.y);
+      maxX = Math.max(maxX, s.hostileCenter.x);
+      maxY = Math.max(maxY, s.hostileCenter.y);
+    }
+  }
+  if (!isFinite(minX)) {
+    return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function uniqueSquadIds(snapshots: readonly AARSquadSnapshot[]): string[] {
+  const set = new Set<string>();
+  for (const s of snapshots) {
+    for (const q of s.squads) set.add(q.squadId ?? '__unassigned__');
+  }
+  return [...set];
+}
+
+function squadColor(index: number): string {
+  const palette = [NW.cyan, NW.green, NW.amber];
+  return palette[index % palette.length];
+}
+
+function tickToTimeStr(tick: number): string {
+  const seconds = Math.floor(tick / 30);
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = (seconds % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
 }
 
 function RightLedger({
@@ -319,6 +482,7 @@ function RightLedger({
   playerWounds,
   playerUnits,
   bundle,
+  won,
 }: {
   stats: ReturnType<typeof useAppState.getState>['lastDebrief'] extends infer T
     ? T extends { stats: infer S }
@@ -330,7 +494,13 @@ function RightLedger({
   playerWounds: number;
   playerUnits: PerUnitStats[];
   bundle: ReturnType<typeof getContent>;
+  won: boolean;
 }): React.JSX.Element {
+  const highlights = stats?.highlights ?? [];
+  const commsLines = useMemo(
+    () => buildCommsExtracts(stats, playerUnits, bundle),
+    [stats, playerUnits, bundle],
+  );
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
       <NWPanel title="KEY · LOSS LEDGER" accent="magenta">
@@ -441,32 +611,234 @@ function RightLedger({
           )}
         </div>
       </NWPanel>
-      {stats && stats.highlights.length > 0 ? (
-        <NWPanel title="STANDOUT MOMENTS" style={{ flexShrink: 0 }}>
-          {stats.highlights.slice(0, 4).map((h) => {
-            const op = h.operatorId ? bundle.operators.get(h.operatorId) : null;
-            const callsign = op?.callsign ?? h.operatorId ?? `unit-${h.unitId}`;
-            return (
-              <div
-                key={`${h.kind}-${h.unitId}-${h.text}`}
-                style={{
-                  padding: '6px 0',
-                  borderBottom: `1px dotted ${NW.line2}`,
-                  fontFamily: NW.mono,
-                  fontSize: 10,
-                  color: NW.fg1,
-                  display: 'flex',
-                  gap: 8,
-                }}
-              >
-                <span style={{ color: NW.amber, letterSpacing: '0.14em' }}>"{callsign}"</span>
-                <span>{h.text}</span>
-              </div>
-            );
-          })}
-        </NWPanel>
-      ) : null}
+      <CommsExtractsPanel lines={commsLines} />
+      <CommendationsPanel highlights={highlights} bundle={bundle} />
+      <IntelGainedPanel
+        won={won}
+        enemyKills={enemyKills}
+        enemyDowns={enemyDowns}
+      />
     </div>
+  );
+}
+
+// Comms extracts (#292.14). Reconstructs notable RTO transmissions
+// from the per-unit stats: first kill, casualty calls, medic stabilize
+// callouts. Stub-quality copy until the message bus surfaces real
+// timestamps.
+type CommsLine = {
+  ts: string;
+  src: string;
+  tone: NWAccent;
+  text: string;
+};
+
+function buildCommsExtracts(
+  stats: ReturnType<typeof useAppState.getState>['lastDebrief'] extends infer T
+    ? T extends { stats: infer S }
+      ? S
+      : null
+    : null,
+  playerUnits: PerUnitStats[],
+  bundle: ReturnType<typeof getContent>,
+): CommsLine[] {
+  if (!stats) return [];
+  const lines: CommsLine[] = [];
+  lines.push({ ts: 'T+00:00', src: 'CMD', tone: 'cyan', text: 'spinning up — comms green' });
+  // First confirmed kill — pick the player unit with highest kills.
+  const aces = [...playerUnits].sort((a, b) => b.kills - a.kills);
+  if (aces[0] && aces[0].kills > 0) {
+    const op = aces[0].operatorId ? bundle.operators.get(aces[0].operatorId) : null;
+    lines.push({
+      ts: estimatedTs(stats.totalTicks, 0.25),
+      src: op?.callsign?.slice(0, 3).toUpperCase() ?? 'A·1',
+      tone: 'cyan',
+      text: 'tango down — engaging next contact',
+    });
+  }
+  // Casualty calls.
+  const casualties = playerUnits.filter((u) => !u.survived);
+  for (const c of casualties.slice(0, 2)) {
+    const op = c.operatorId ? bundle.operators.get(c.operatorId) : null;
+    lines.push({
+      ts: estimatedTs(stats.totalTicks, 0.5),
+      src: 'CAS',
+      tone: 'magenta',
+      text: `"${op?.callsign ?? c.operatorId ?? `u${c.unitId}`}" down — evac requested`,
+    });
+  }
+  // Stabilize callouts.
+  const medics = playerUnits.filter((u) => u.alliesStabilized > 0);
+  for (const m of medics.slice(0, 1)) {
+    const op = m.operatorId ? bundle.operators.get(m.operatorId) : null;
+    lines.push({
+      ts: estimatedTs(stats.totalTicks, 0.65),
+      src: op?.callsign?.slice(0, 3).toUpperCase() ?? 'MED',
+      tone: 'green',
+      text: `${m.alliesStabilized} pax stabilized; bleed-out averted`,
+    });
+  }
+  lines.push({
+    ts: estimatedTs(stats.totalTicks, 1),
+    src: 'CMD',
+    tone: 'amber',
+    text: 'extraction complete — net up',
+  });
+  return lines;
+}
+
+function estimatedTs(totalTicks: number, frac: number): string {
+  const seconds = Math.floor((totalTicks * frac) / 30);
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = (seconds % 60).toString().padStart(2, '0');
+  return `T+${m}:${s}`;
+}
+
+function CommsExtractsPanel({ lines }: { lines: readonly CommsLine[] }): React.JSX.Element {
+  return (
+    <NWPanel title="COMMS · EXTRACTS" padding={0} style={{ flexShrink: 0 }}>
+      <div style={{ padding: 8 }}>
+        {lines.map((l, i) => (
+          <div
+            key={i}
+            style={{
+              fontFamily: NW.mono,
+              fontSize: 10,
+              color: NW.fg1,
+              padding: '3px 0',
+              display: 'flex',
+              gap: 6,
+              borderBottom: i < lines.length - 1 ? `1px solid ${NW.line}` : 'none',
+            }}
+          >
+            <span style={{ color: NW.fg2 }}>{l.ts}</span>
+            <span
+              style={{
+                color:
+                  l.tone === 'amber'
+                    ? NW.amber
+                    : l.tone === 'magenta'
+                      ? NW.magenta
+                      : l.tone === 'green'
+                        ? NW.green
+                        : NW.cyan,
+                fontWeight: 700,
+              }}
+            >
+              {l.src}
+            </span>
+            <span>{l.text}</span>
+          </div>
+        ))}
+      </div>
+    </NWPanel>
+  );
+}
+
+// Commendations / reprimands (#292.16). Player-side highlights map to
+// commendations (ace, medic, held-under-fire); heavy-casualty maps to
+// a reprimand-flavoured red-bordered entry.
+function CommendationsPanel({
+  highlights,
+  bundle,
+}: {
+  highlights: readonly MatchHighlight[];
+  bundle: ReturnType<typeof getContent>;
+}): React.JSX.Element | null {
+  if (highlights.length === 0) return null;
+  return (
+    <NWPanel title="COMMENDATIONS · REPRIMANDS" style={{ flexShrink: 0 }}>
+      {highlights.slice(0, 6).map((h) => {
+        const op = h.operatorId ? bundle.operators.get(h.operatorId) : null;
+        const callsign = op?.callsign ?? h.operatorId ?? `unit-${h.unitId}`;
+        const isReprimand = h.kind === 'heavy-casualty';
+        const tone: NWAccent = isReprimand ? 'magenta' : h.kind === 'medic' ? 'green' : 'amber';
+        const c =
+          tone === 'magenta' ? NW.magenta : tone === 'green' ? NW.green : NW.amber;
+        return (
+          <div
+            key={`${h.kind}-${h.unitId}-${h.text}`}
+            style={{
+              padding: '6px 8px',
+              borderLeft: `2px solid ${c}`,
+              fontFamily: NW.mono,
+              fontSize: 10,
+              color: NW.fg1,
+              marginBottom: 4,
+              background: NW.bg2,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ color: c, fontWeight: 700, letterSpacing: '0.14em' }}>
+                {isReprimand ? 'REPRIMAND' : 'COMMENDATION'} · {h.kind.replace(/-/g, ' ').toUpperCase()}
+              </span>
+            </div>
+            <div style={{ marginTop: 2 }}>
+              <span style={{ color: c }}>"{callsign}"</span> — {h.text}
+            </div>
+          </div>
+        );
+      })}
+    </NWPanel>
+  );
+}
+
+// Intel gained (#292.17). Static-tone summary of what the unit learned
+// from the engagement — derived from outcome + scorecard until the
+// intel-fragment system lands.
+function IntelGainedPanel({
+  won,
+  enemyKills,
+  enemyDowns,
+}: {
+  won: boolean;
+  enemyKills: number;
+  enemyDowns: number;
+}): React.JSX.Element {
+  const fragments: { tone: NWAccent; text: string }[] = [];
+  if (enemyKills > 0) {
+    fragments.push({
+      tone: 'cyan',
+      text: `${enemyKills} hostile KIA — equipment salvage logged for armory pickup`,
+    });
+  }
+  if (enemyDowns > enemyKills) {
+    fragments.push({
+      tone: 'amber',
+      text: `${enemyDowns - enemyKills} hostile downed — interrogation potential pending field-medic call`,
+    });
+  }
+  if (won) {
+    fragments.push({
+      tone: 'green',
+      text: 'sector control retained — patrol routes to cycle within 24h',
+    });
+  } else {
+    fragments.push({
+      tone: 'magenta',
+      text: 'objective contested — rival faction movements logged for next cycle',
+    });
+  }
+  return (
+    <NWPanel title="INTEL · GAINED" style={{ flexShrink: 0 }}>
+      {fragments.map((f, i) => (
+        <div
+          key={i}
+          style={{
+            padding: '4px 0',
+            fontFamily: NW.mono,
+            fontSize: 10,
+            color: NW.fg1,
+            display: 'flex',
+            gap: 6,
+            borderBottom: i < fragments.length - 1 ? `1px dotted ${NW.line}` : 'none',
+          }}
+        >
+          <NWStatusDot tone={f.tone} size={6} />
+          <span>{f.text}</span>
+        </div>
+      ))}
+    </NWPanel>
   );
 }
 

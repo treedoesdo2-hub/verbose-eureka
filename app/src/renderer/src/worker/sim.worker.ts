@@ -39,6 +39,11 @@ function logEvt(
 
 let sim: RecordingSim | null = null;
 let stats: MatchStatsAccumulator | null = null;
+// operatorId → squadId map carried over from the briefing into the
+// match. Used by the AAR snapshot sampler to bucket friendlies by
+// their persisted squad without polluting the sim core. Empty for
+// scenarios that don't author squads (legacy contracts).
+let operatorSquadMap: Record<string, string> = {};
 let speedMultiplier = 4;
 let paused = false;
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -310,10 +315,17 @@ function startLoop(): void {
       const steps = Math.max(1, Math.round(speedMultiplier));
       for (let i = 0; i < steps; i++) {
         sim.step();
+        const cur = sim.current();
         // Fold this tick's events into the running match stats accumulator.
-        if (stats) stats.ingest(sim.current().events);
+        if (stats) {
+          stats.ingest(cur.events);
+          // AAR squad-position sampling (#292.09). The accumulator
+          // self-throttles to SNAPSHOT_INTERVAL_TICKS so calling each
+          // tick is cheap.
+          stats.sample(cur.tick, cur.units, (opId) => operatorSquadMap[opId] ?? null);
+        }
         ticksSinceLastHeartbeat++;
-        if (sim.current().ended) break;
+        if (cur.ended) break;
       }
       post({ type: 'state', snapshot: snapshotState(sim.current()) });
       if (ticksSinceLastHeartbeat >= HEARTBEAT_TICKS && !sim.current().ended) {
@@ -331,7 +343,7 @@ function startLoop(): void {
               : null;
         const finalStats = stats
           ? stats.finalize(final.tick)
-          : { totalTicks: final.tick, perUnit: [], highlights: [] };
+          : { totalTicks: final.tick, perUnit: [], highlights: [], snapshots: [] };
         logEvt('info', 'sim', 'scenario ended', {
           tick: final.tick,
           durationSec: final.tick / BASE_HZ,
@@ -345,6 +357,7 @@ function startLoop(): void {
         stopLoop();
         sim = null;
         stats = null;
+        operatorSquadMap = {};
       }
     },
     Math.floor(1000 / BASE_HZ),
@@ -400,6 +413,7 @@ self.onmessage = (e: MessageEvent<RendererToWorker>): void => {
       sim = new RecordingSim(state, msg.payload.seed);
       stats = new MatchStatsAccumulator();
       stats.seed(state.units);
+      operatorSquadMap = msg.payload.scenarioRequest.operatorSquadIds ?? {};
       speedMultiplier = msg.payload.simSpeedMultiplier;
       paused = false;
       ticksSinceLastHeartbeat = 0;
@@ -415,6 +429,7 @@ self.onmessage = (e: MessageEvent<RendererToWorker>): void => {
       stopLoop();
       sim = null;
       stats = null;
+      operatorSquadMap = {};
       post({ type: 'simStopped' });
       break;
     case 'setSpeed':
