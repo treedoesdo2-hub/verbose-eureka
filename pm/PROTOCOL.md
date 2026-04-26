@@ -32,28 +32,52 @@ pm/
 
 ## Assignment lifecycle
 
+**Dispatch reality:** Steve is the dispatcher. Builder does not poll
+`pm/active/`. Briefs in `pm/active/` are PM tracking records (scope,
+AC, kill criteria, status); they are not the channel by which work
+reaches the Builder. Steve relays work to Builder's working todo list
+manually — sometimes from a review doc, sometimes from a `## Dispatch`
+block at the top of a PM brief, sometimes verbally.
+
 ```
 PM drafts brief → pm/active/T-NNN-slug.md
+    │             (with a ## Dispatch paste-block at the top
+    │              for items not already covered by a review doc)
+    ▼
+Steve relays the dispatch block (or review-doc entry) into Builder's
+todo list — PM does not autoroute
     │
     ▼
-Builder picks up (one at a time)
+Builder picks up the dispatched item
     │
-    ├─ creates branch task/T-NNN-slug from main
-    ├─ updates ## Status section daily
+    ├─ creates branch task/T-NNN-slug from main when the item maps
+    │  to a PM-tracked T-NNN; otherwise commits on main directly
+    │  (polish-track convention per CHARTER §"Parallel tracks")
+    ├─ updates ## Status section of the brief if Steve has flagged
+    │  it as PM-tracked, otherwise just commits
     │
     ▼
 Builder finishes → fills ## Status — Final → moves file to pm/review/
+    (PM-tracked items only)
     │
     ▼
-PM reviews against ## Acceptance criteria
+PM reviews against ## Acceptance criteria, runs gates
     │
     ├─ Pass: PM merges PR → moves file to pm/done/ → logs in pm/log.md
     └─ Fail: PM appends review notes → moves file back to pm/active/
                 with status "needs rework"
 ```
 
-There is exactly one active branch per Builder session. No parallel
-branches without an explicit PM dispensation (logged in `pm/log.md`).
+There is exactly one active branch per Builder session for PM-tracked
+work. Polish-track work follows whatever pattern Steve and Builder
+have established.
+
+**Implication for PM:** PM cannot assume a brief in `pm/active/` is
+"in flight" with Builder. It's only in flight after Steve dispatches
+it. PM should either author a `## Dispatch` block at the top of the
+brief for Steve's convenience, OR — for items already covered in a
+review doc — point Steve at the review-doc section in the brief's
+`## Notes`.
 
 ---
 

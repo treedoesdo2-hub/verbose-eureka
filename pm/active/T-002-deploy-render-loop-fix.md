@@ -12,6 +12,33 @@ risks.
 
 ---
 
+## Dispatch (paste-block for Builder todo)
+
+> Already documented in `reviews/2026-04-26-batch-1-findings.md`
+> § "Crash root cause" — Steve can dispatch from the review doc
+> if preferred. Paste-block here is the same content abbreviated:
+
+```
+[T-002] Fix Yard Assault render-loop crash in deploy.tsx (XS)
+- Root cause: deploy.tsx:185-203 — `friendlies` / `hostiles` /
+  `unitsById` are fresh refs every render; auto-select effect deps
+  trigger infinite render loop on casualty events. React 19 hard-
+  crashes with "max update depth exceeded".
+- Fix: memoise friendlies + hostiles on [snapshot]; change auto-
+  select effect deps to a primitive sig like
+  [selectedUnitId, firstAliveId].
+- Add a regression test that simulates rapid snapshot updates with
+  casualty changes and asserts the effect fires bounded.
+- Acceptance: Yard Assault runs through 3+ deaths cleanly; tests +
+  typecheck + lint green.
+- Out of scope: Pixi child-leak (T-008), other deploy.tsx polish,
+  any sim/worker change.
+- Branch: task/T-002-deploy-render-loop-fix
+- Full brief: pm/active/T-002-deploy-render-loop-fix.md
+```
+
+---
+
 ## Why
 
 Yard Assault contracts hard-crash with React 19 "max update depth

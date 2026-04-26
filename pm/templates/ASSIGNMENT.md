@@ -10,6 +10,28 @@
 
 ---
 
+## Dispatch (paste-block for Builder todo)
+
+> Steve dispatches from this block (or from a review-doc entry if
+> the item is already documented there). PM's job: keep this block
+> short, paste-ready, and self-contained — Steve copies once, doesn't
+> re-summarise.
+
+```
+[T-NNN] <one-line title> (size)
+- <One-line root cause or context>
+- <One-line desired outcome / fix direction>
+- Acceptance: <one-line testable criterion>
+- Out of scope: <one-line list of explicitly excluded items>
+- Branch: task/T-NNN-slug
+- Full brief: pm/active/T-NNN-slug.md
+```
+
+If the item is already documented in a `reviews/` doc, replace this
+block with a one-line pointer ("see `reviews/<file>.md` § <section>").
+
+---
+
 ## Why
 
 One paragraph. Why does this exist? What is the user-visible (or
