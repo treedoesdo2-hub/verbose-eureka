@@ -38,6 +38,12 @@ export class TerrainLayer {
         // shadingBake: 128 = neutral; <128 darkens, >128 brightens. Applied
         // as a multiplier (shade / 128).
         const shading = world.shadingBake;
+        // Contour overlay: 1 marks tiles that sit on an elevation step
+        // boundary. Bake them in as a darken-multiplier so the height
+        // map is legible at any zoom (the briefing thumbnail uses the
+        // same buffer for the same effect — see render-base-from-snapshot).
+        const contours = world.contours;
+        const CONTOUR_DARKEN = 0.6;
         for (let y = 0; y < ch; y++) {
           for (let x = 0; x < cw; x++) {
             const worldIdx = (cy + y) * world.width + (cx + x);
@@ -68,7 +74,8 @@ export class TerrainLayer {
                 b = baseRgb[2];
               }
             }
-            const shade = shading[worldIdx] / 128;
+            let shade = shading[worldIdx] / 128;
+            if (contours.length > worldIdx && contours[worldIdx]) shade *= CONTOUR_DARKEN;
             const pi = (y * cw + x) * 4;
             pixels[pi] = Math.min(255, Math.max(0, r * shade));
             pixels[pi + 1] = Math.min(255, Math.max(0, g * shade));
