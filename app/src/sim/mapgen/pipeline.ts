@@ -29,6 +29,7 @@ import { pickCapillaries, stampCapillary } from './capillary';
 import { paintForBiome } from './base-paint';
 import { bakeShading, bakeContours } from './elevation-shade';
 import { makeDebugSink } from './debug-sink';
+import { stampBuildingPerimeter } from './building-perimeter';
 import { stampHedgeNetwork } from './hedge-network';
 import { stampRoadNetwork } from './road-network';
 import { DENSITY_PROFILES, generateCoverDensity } from './density-field';
@@ -562,6 +563,27 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     seed: seedBase,
   });
 
+  // ---- Step: building perimeters (#275 / ADR 017) ----
+  // Stamp stone-wall perimeters around every building footprint, with
+  // one doorway and 0-2 window apertures. Runs after road network so
+  // buildings carved by the road bulldozer don't get walls floating on
+  // cleared tiles. The #276 edge-blocker gate consumes this data —
+  // walls become real movement gates, the door is the only foot-
+  // passable perimeter slot.
+  stampBuildingPerimeter({
+    W,
+    H,
+    buildings,
+    buildingId,
+    edgeN,
+    edgeW,
+    hpN,
+    hpW,
+    edgeOverrideN,
+    edgeOverrideW,
+    seed: seedBase,
+  });
+
   // ---- Step: hedgerow barriers if dominant line is hedgerow-spine ----
   // We reimplement the walker inline rather than constructing a full
   // World for stampBarrierLine — the pipeline only has raw buffers at
@@ -1002,14 +1024,14 @@ function bakeWalkabilityAndCover(
     const edgeNAxes = barrierAxesFromByte(edgeN[i]);
     const edgeWAxes = barrierAxesFromByte(edgeW[i]);
 
-    // Movement mask — intersection across layers. Base first. Edge
-    // barriers that restrict movement across the N or W boundary also
-    // narrow what can stand on this tile (a bocage-ringed tile can't be
-    // entered by wheeled chassis, so WALK_WHEELED is stripped).
+    // Movement mask — "what modes can STAND on this tile?" #276 split
+    // crossing-edges into a separate edgeBlocksMovement gate, so the
+    // tile mask no longer folds in edge barriers. A tile inside a
+    // building can be foot-passable (you can be in there); the
+    // doorway / wall barrier on the perimeter edges is enforced at
+    // step time, not at standing time.
     let mask = walkMaskFromMove(baseAxes.move);
     if (pointAxes) mask &= walkMaskFromMove(pointAxes.move);
-    if (edgeNAxes) mask &= walkMaskFromMove(edgeNAxes.move);
-    if (edgeWAxes) mask &= walkMaskFromMove(edgeWAxes.move);
     if (isBuilding) {
       // Building interior: infantry-only, no vehicles.
       mask &= WALK_INFANTRY_MASK;
