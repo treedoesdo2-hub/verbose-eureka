@@ -12,58 +12,64 @@ import type { BiomeId, TerrainBase } from '@schema/map';
 export type BasePaintFn = (elev: number, fert: number, rng01: number) => TerrainBase;
 
 // Rural open (P5.2). Bocage countryside — fields, hedgerows (point-
-// object layer), occasional creeks/mud patches. Elevation drives water
-// pooling in low spots, fertility picks between open field and mud
-// around them.
+// object layer), mud patches around low ground. No surface water:
+// Firefight rural_open exemplars never include rivers/ponds (the panel
+// target is 0% water_pct). Low elevation reads as wet mud instead.
+// Rubble outcrops gate on low fertility so they cluster naturally
+// around field corners (the cluster-pruner culls minSize<4 rubble, so
+// tile-level random rubble would be deleted).
 const rural_open: BasePaintFn = (elev, fert, rng01) => {
-  if (elev < 0.12) return 'water_shallow';
+  if (fert < 0.12 && rng01 < 0.7) return 'rubble_ground';
   if (elev < 0.18 && fert < 0.35) return 'mud';
   if (fert < 0.25 && rng01 < 0.4) return 'mud';
   return 'open';
 };
 
 // Rural village (P5.3). Open country with scattered village clusters.
-// Introduces road strips, mud around habitations, and occasional water.
+// Mud around habitations, occasional water. Roads come from the
+// road-network pass (#277) — not random rng painting, which produced
+// chicken-pox roads that didn't form a network.
 const rural_village: BasePaintFn = (elev, fert, rng01) => {
   if (elev < 0.12) return 'water_shallow';
   if (elev < 0.18 && fert < 0.4) return 'mud';
-  if (fert > 0.8 && rng01 < 0.08) return 'road'; // village path moments
   if (fert < 0.3 && rng01 < 0.25) return 'mud';
   return 'open';
 };
 
 // Mixed (P5.4). Everything everywhere moderately. Default fallback.
+// Mixed elevation profile uses amplitude 0.35, so elev>0.8 is rare —
+// fertility-gated rubble forms clusters that survive the pruner
+// (rubble_ground.minSize=4). Roads come from the road-network pass.
 const mixed: BasePaintFn = (elev, fert, rng01) => {
   if (elev < 0.15) return 'water_shallow';
   if (elev < 0.22 && fert < 0.35) return 'mud';
-  if (elev > 0.8 && rng01 < 0.15) return 'rubble_ground'; // rocky crests
+  if (fert < 0.12 && rng01 < 0.6) return 'rubble_ground';
   if (fert < 0.28 && rng01 < 0.2) return 'mud';
-  if (rng01 < 0.04) return 'road'; // scattered paths
   return 'open';
 };
 
-// Urban sparse (P5.5). Open with some road grid hints. Bumped
-// mud/road probabilities so 3-kind variety is reliable across seeds.
+// Urban sparse (P5.5). Open with mud spots; the road grid is stamped
+// by the road-network pass (#277), not random rng. Random rng road
+// scatter created chicken-pox pavement that didn't form a network.
 const urban_sparse: BasePaintFn = (elev, fert, rng01) => {
   if (elev < 0.2) return 'water_shallow';
   if (fert < 0.35 && rng01 < 0.3) return 'mud';
-  if (rng01 < 0.15) return 'road';
+  if (fert < 0.18 && rng01 < 0.5) return 'rubble_ground';
   return 'open';
 };
 
-// Urban dense (P5.6). City center — lots of road, rubble around
-// structures, minimal open.
+// Urban dense (P5.6). City center — rubble around structures, minimal
+// open. Road grid comes from the road-network pass.
 const urban_dense: BasePaintFn = (elev, fert, rng01) => {
   if (elev < 0.12) return 'water_shallow';
-  if (rng01 < 0.22) return 'road';
   if (fert < 0.3 && rng01 < 0.4) return 'rubble_ground';
   return 'open';
 };
 
-// Industrial (P5.7). Concrete lots, rubble, fuel-slick muds.
+// Industrial (P5.7). Concrete lots, rubble, fuel-slick muds. Road
+// network from the road-network pass (#277).
 const industrial: BasePaintFn = (elev, fert, rng01) => {
   if (elev < 0.12) return 'water_shallow';
-  if (rng01 < 0.25) return 'road';
   if (rng01 < 0.4) return 'rubble_ground';
   if (fert < 0.3 && rng01 < 0.55) return 'mud';
   return 'open';
@@ -71,9 +77,11 @@ const industrial: BasePaintFn = (elev, fert, rng01) => {
 
 // Forest (P5.8). Wooded base — but the trees themselves are point
 // objects layered by scatter. Base diversifies via mud clearings and
-// stream cuts.
-const forest: BasePaintFn = (elev, fert, _rng01) => {
-  if (elev < 0.15) return 'water_shallow';
+// rocky knolls; no surface water (Firefight forest exemplars have
+// water_pct=0). Rubble gates on low fertility so it forms clusters
+// large enough to survive the cluster-pruner (rubble_ground.minSize=4).
+const forest: BasePaintFn = (elev, fert, rng01) => {
+  if (fert < 0.12 && rng01 < 0.7) return 'rubble_ground';
   if (elev < 0.2 && fert > 0.6) return 'mud';
   return 'open';
 };

@@ -5,18 +5,28 @@
 // instead. Parity tests call this and compare against the Firefight
 // fixture.
 //
-// Metric definitions are chosen to be comparable across the two sources:
-//   - forest_pct: tiles whose point is a tree_* family
-//   - building_pct: tiles with buildingId > 0
-//   - hedge_pct: edges (N + W) with hedge or bocage kind, converted to
-//     percentage of tile-edges (normalized 2 edges per tile).
-//   - road_pct: base == road
-//   - water_pct: base == water_shallow | water_deep
-//   - open_pct: base == open
+// Metric definitions use *priority classification* per tile so that the
+// categories are mutually exclusive. This matches Firefight's HSL pixel
+// classifier, which sees only the topmost visual feature on any given
+// hero-JPG pixel: a pixel covered by a tree reads as "forest", not "open".
+// Without priority assignment, a tree-covered tile would inflate both
+// forest_pct AND open_pct (since base stays 'open' under a point-object
+// tree), and our open_pct would float ~95% on every map regardless of
+// content.
+//
+// Classification priority (highest wins):
+//   water > road > building > forest > hedge-tile-equiv > open
+//
+// Hedge is per-edge, not per-tile. We treat a tile with at least one
+// hedge/bocage edge as "hedge-classified" if no higher-priority class
+// applies — same approximation as a top-down photo where a hedge runs
+// along a tile boundary and visually dominates the adjacent strip.
+//
+// Other metrics:
 //   - contour_lines_per_1000_tiles: tile-edges where elevationStep differs
 //     from neighbor, normalized per 1000 tiles.
-//   - elevation_stddev_normalized: stddev(elevationStep) / 73.6
-//     (73.6 = theoretical stddev of uniform over [0,255]).
+//   - elevation_stddev_normalized: stddev(elevationStep) normalized so a
+//     uniform field over our 8 elevation steps reads ~1.0.
 
 import { byteToBase, byteToPoint, BARRIER_KINDS } from '../../world';
 import type { MapGenResult } from '../types';
@@ -46,39 +56,53 @@ export function measureGeneratedMap(result: MapGenResult): Metrics {
   const total = width * height;
   if (total === 0) return zeroMetrics();
 
-  // Base surface counts.
+  // Priority classification — mutually exclusive per tile. A tile with a
+  // tree on top of open base classifies as forest, not open. A building
+  // tile classifies as building even if base is open. Mirrors Firefight's
+  // HSL pixel classifier which sees only the topmost feature.
   let openTiles = 0;
   let roadTiles = 0;
   let waterTiles = 0;
-  for (let i = 0; i < total; i += 1) {
-    const kind = byteToBase(base[i]);
-    if (kind === 'open') openTiles += 1;
-    else if (kind === 'road') roadTiles += 1;
-    else if (kind === 'water_shallow' || kind === 'water_deep') waterTiles += 1;
-  }
-
-  // Point-object forest counts.
   let forestTiles = 0;
-  for (let i = 0; i < total; i += 1) {
-    const kind = byteToPoint(point[i]);
-    if (kind && TREE_POINT_KINDS.has(kind)) forestTiles += 1;
-  }
-
-  // Building-footprint tile count.
   let buildingTiles = 0;
+  let hedgeTiles = 0;
   for (let i = 0; i < total; i += 1) {
-    if (buildingId[i] > 0) buildingTiles += 1;
+    const baseKind = byteToBase(base[i]);
+    // Highest priority: water (always reads as water in any photo).
+    if (baseKind === 'water_shallow' || baseKind === 'water_deep') {
+      waterTiles += 1;
+      continue;
+    }
+    // Road next — visually dominant when present.
+    if (baseKind === 'road') {
+      roadTiles += 1;
+      continue;
+    }
+    // Building roofs occlude any underlying terrain.
+    if (buildingId[i] > 0) {
+      buildingTiles += 1;
+      continue;
+    }
+    // Tree canopy occludes ground.
+    const pointKind = byteToPoint(point[i]);
+    if (pointKind && TREE_POINT_KINDS.has(pointKind)) {
+      forestTiles += 1;
+      continue;
+    }
+    // Hedge edges (N or W) make this tile read as a hedge boundary.
+    if (
+      HEDGE_KIND_BYTES.has(extractBarrierKind(edgeN[i])) ||
+      HEDGE_KIND_BYTES.has(extractBarrierKind(edgeW[i]))
+    ) {
+      hedgeTiles += 1;
+      continue;
+    }
+    // Everything else (open / mud / sand / rubble / snow) buckets into open
+    // — the Firefight classifier doesn't distinguish ground variants
+    // beyond water/road/forest/hedge/building, and our parity tests don't
+    // either.
+    openTiles += 1;
   }
-
-  // Hedge/bocage edge count. Normalize to percent-of-tiles: each tile has 2
-  // authored edges (N, W), so dividing hedgeEdges/2/total gives tile-
-  // equivalent coverage.
-  let hedgeEdges = 0;
-  for (let i = 0; i < total; i += 1) {
-    if (HEDGE_KIND_BYTES.has(extractBarrierKind(edgeN[i]))) hedgeEdges += 1;
-    if (HEDGE_KIND_BYTES.has(extractBarrierKind(edgeW[i]))) hedgeEdges += 1;
-  }
-  const hedgeTileEquivalent = hedgeEdges / 2;
 
   // Contour density — count tile-boundaries where the elevationStep differs
   // from its N or W neighbor.
@@ -112,7 +136,7 @@ export function measureGeneratedMap(result: MapGenResult): Metrics {
   return {
     forest_pct: (forestTiles / total) * 100,
     building_pct: (buildingTiles / total) * 100,
-    hedge_pct: (hedgeTileEquivalent / total) * 100,
+    hedge_pct: (hedgeTiles / total) * 100,
     road_pct: (roadTiles / total) * 100,
     water_pct: (waterTiles / total) * 100,
     open_pct: (openTiles / total) * 100,

@@ -42,6 +42,13 @@ export type DensityProfile = {
   };
 };
 
+// Elevation amplitude/frequency/smoothness tuned 2026-04-25 to bring
+// contour density in line with Firefight panel exemplars. Empirically:
+// each unit of `amplitude` × octaves of unsmoothed noise produces ~30
+// step crossings per 1000 tiles. Firefight target is ~10-40 per biome,
+// so we want amplitude≤0.4 with smoothness≥3 across the board. Higher
+// smoothness (>3) trades silhouette visibility for parity — keep just
+// barely enough to see hills in the thumbnail.
 export const URBAN_SPARSE_DENSITY: DensityProfile = {
   name: 'urban_sparse',
   baseFreq: 0.02,
@@ -49,7 +56,7 @@ export const URBAN_SPARSE_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.0, hi: 0.55 },
   elevationBand: { lo: 0.1, hi: 0.9 },
   densityMultiplier: 1.0,
-  elevationGen: { amplitude: 0.30, frequency: 0.015, octaves: 4, smoothness: 2 },
+  elevationGen: { amplitude: 0.20, frequency: 0.011, octaves: 3, smoothness: 3 },
 };
 
 export const RURAL_OPEN_DENSITY: DensityProfile = {
@@ -59,7 +66,7 @@ export const RURAL_OPEN_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.35, hi: 0.95 },
   elevationBand: { lo: 0.05, hi: 0.75 },
   densityMultiplier: 0.9,
-  elevationGen: { amplitude: 0.55, frequency: 0.018, octaves: 4, smoothness: 2 },
+  elevationGen: { amplitude: 0.30, frequency: 0.012, octaves: 3, smoothness: 4 },
 };
 
 export const MIXED_DENSITY: DensityProfile = {
@@ -69,7 +76,7 @@ export const MIXED_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.2, hi: 0.85 },
   elevationBand: { lo: 0.05, hi: 0.9 },
   densityMultiplier: 1.0,
-  elevationGen: { amplitude: 0.60, frequency: 0.021, octaves: 5, smoothness: 1 },
+  elevationGen: { amplitude: 0.35, frequency: 0.014, octaves: 3, smoothness: 4 },
 };
 
 // P2.1 — urban_dense: town centers. Higher frequency = more cluster
@@ -83,7 +90,7 @@ export const URBAN_DENSE_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.0, hi: 0.45 },
   elevationBand: { lo: 0.05, hi: 0.95 },
   densityMultiplier: 1.4,
-  elevationGen: { amplitude: 0.15, frequency: 0.012, octaves: 3, smoothness: 3 },
+  elevationGen: { amplitude: 0.10, frequency: 0.010, octaves: 3, smoothness: 4 },
 };
 
 // P2.2 — industrial: large footprints spaced further apart than urban_dense.
@@ -96,7 +103,7 @@ export const INDUSTRIAL_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.0, hi: 0.35 },
   elevationBand: { lo: 0.1, hi: 0.7 },
   densityMultiplier: 1.1,
-  elevationGen: { amplitude: 0.25, frequency: 0.014, octaves: 3, smoothness: 2 },
+  elevationGen: { amplitude: 0.15, frequency: 0.012, octaves: 3, smoothness: 4 },
 };
 
 // P2.3 — forest: densest scatter we produce. Tree clusters dominate
@@ -108,7 +115,7 @@ export const FOREST_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.3, hi: 0.95 },
   elevationBand: { lo: 0.05, hi: 0.85 },
   densityMultiplier: 1.6,
-  elevationGen: { amplitude: 0.85, frequency: 0.022, octaves: 6, smoothness: 0 },
+  elevationGen: { amplitude: 0.40, frequency: 0.013, octaves: 3, smoothness: 4 },
 };
 
 // P2.4 — rural_village: one village cluster + scattered rural structures.
@@ -121,7 +128,7 @@ export const RURAL_VILLAGE_DENSITY: DensityProfile = {
   fertilityAffinity: { lo: 0.25, hi: 0.85 },
   elevationBand: { lo: 0.05, hi: 0.8 },
   densityMultiplier: 1.15,
-  elevationGen: { amplitude: 0.45, frequency: 0.017, octaves: 4, smoothness: 2 },
+  elevationGen: { amplitude: 0.25, frequency: 0.012, octaves: 3, smoothness: 4 },
 };
 
 // P2.5 — arid: mostly empty desert with sparse anchors. Extremely low

@@ -5,7 +5,7 @@
     "size": 128,
     "targetSize": 96,
     "tier": "briefing",
-    "hash": "7dab5dd221a0f923",
+    "hash": "5f64061cd1b996a1",
     "pixelCount": 36864
   },
   "rural_open:golden-rural-briefing-1:128:96:briefing": {
@@ -14,7 +14,7 @@
     "size": 128,
     "targetSize": 96,
     "tier": "briefing",
-    "hash": "bf3e730f929ded72",
+    "hash": "1cb2506af5f0d42f",
     "pixelCount": 36864
   },
   "mixed:golden-mixed-strategic-1:128:96:strategic": {
@@ -23,7 +23,7 @@
     "size": 128,
     "targetSize": 96,
     "tier": "strategic",
-    "hash": "09e12ae632e9a933",
+    "hash": "afb3da4f7e37e812",
     "pixelCount": 36864
   }
 }

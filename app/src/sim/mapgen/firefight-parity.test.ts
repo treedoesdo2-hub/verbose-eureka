@@ -87,7 +87,7 @@ describe('firefight panel parity (P0.6)', () => {
     const fixture = firefightMetrics.per_biome[biome];
     if (!fixture || fixture.sampleCount === 0) continue;
 
-    it.skip(`${biome} median metrics within tolerance of Firefight panel`, () => {
+    it(`${biome} median metrics within tolerance of Firefight panel`, () => {
       const samples = SEEDS.map((seed) => {
         const result = runPipeline(req(biome, seed));
         return measureGeneratedMap(result);

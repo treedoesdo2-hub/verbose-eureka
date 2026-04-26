@@ -29,6 +29,8 @@ import { pickCapillaries, stampCapillary } from './capillary';
 import { paintForBiome } from './base-paint';
 import { bakeShading, bakeContours } from './elevation-shade';
 import { makeDebugSink } from './debug-sink';
+import { stampHedgeNetwork } from './hedge-network';
+import { stampRoadNetwork } from './road-network';
 import { DENSITY_PROFILES, generateCoverDensity } from './density-field';
 import {
   extractHotspots,
@@ -107,7 +109,11 @@ const BIOMES: Record<BiomeId, BiomeDef> = {
     },
     buildingClusters: 8,
     buildingClusterSize: [2, 4],
-    forestClusters: 18,
+    // Bumped 2026-04-25 (#277). Bocage countryside is hedgerow-divided
+    // patchwork, not empty fields. Higher forest target produces tree
+    // lines + groves that bring open_pct down toward Firefight panel
+    // mean (~25%).
+    forestClusters: 70,
     roadDensity: 0.2,
   },
   mixed: {
@@ -118,7 +124,7 @@ const BIOMES: Record<BiomeId, BiomeDef> = {
     },
     buildingClusters: 22,
     buildingClusterSize: [2, 6],
-    forestClusters: 12,
+    forestClusters: 55,
     roadDensity: 0.35,
   },
   // Deferred biomes stubbed with the mixed profile.
@@ -126,7 +132,10 @@ const BIOMES: Record<BiomeId, BiomeDef> = {
     paint(elev) {
       return elev < 0.16 ? 'water_deep' : 'open';
     },
-    buildingClusters: 90,
+    // Lowered 2026-04-25 (#277). Was 90 — produced 30%+ building_pct
+    // (Firefight target 9.5%). Even dense city centers have streets,
+    // courtyards, and gaps; 35 hits parity.
+    buildingClusters: 35,
     buildingClusterSize: [3, 8],
     forestClusters: 2,
     roadDensity: 0.7,
@@ -167,7 +176,7 @@ const BIOMES: Record<BiomeId, BiomeDef> = {
     },
     buildingClusters: 18,
     buildingClusterSize: [2, 5],
-    forestClusters: 14,
+    forestClusters: 65,
     roadDensity: 0.3,
   },
 };
@@ -537,6 +546,22 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
     seedBase,
   );
 
+  // ---- Step: road network (#277) ----
+  // Stamp a connected road network — perpendicular grid for urban
+  // biomes, single edge-to-edge march road for rural. Runs after
+  // building scatter so the road threads around building footprints
+  // instead of cutting through them. Replaces the random-rng road
+  // scatter that used to live in base-paint and produced chicken-pox
+  // pavement (no connected network, no edge contact).
+  stampRoadNetwork({
+    biome: req.biome,
+    W,
+    H,
+    base,
+    buildingId,
+    seed: seedBase,
+  });
+
   // ---- Step: hedgerow barriers if dominant line is hedgerow-spine ----
   // We reimplement the walker inline rather than constructing a full
   // World for stampBarrierLine — the pipeline only has raw buffers at
@@ -544,6 +569,25 @@ function runPipelineCore(req: MapGenRequest): MapGenResult {
   if (dominantLine && dominantLine.kind === 'hedgerow-spine') {
     stampHedgerowEdges(dominantLine.waypoints, edgeN, edgeW, hpN, hpW, W, H);
   }
+
+  // ---- Step: bocage hedge network (#277) ----
+  // For rural / wooded biomes, lay down a perturbed-grid hedgerow
+  // network that turns the empty-field default into proper bocage. This
+  // is the single biggest contributor to Firefight-style "patchwork"
+  // map reads — without it, rural maps register ~95% open_pct vs the
+  // panel target ~25%.
+  stampHedgeNetwork({
+    biome: req.biome,
+    W,
+    H,
+    edgeN,
+    edgeW,
+    hpN,
+    hpW,
+    buildingId,
+    point,
+    seed: seedBase,
+  });
 
   // ---- Step: threshold-driven pruning sweep (COA-3) ----
   // Removes single-tile "chicken pox" scatter + elongated strips from the
