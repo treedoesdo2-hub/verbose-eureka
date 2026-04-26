@@ -53,6 +53,22 @@ export type Wound = {
 
 export type Vec2 = { readonly x: number; readonly y: number };
 
+// ADR 016 ammo task #281.05. Magazine stack — `Unit.ammo` (the legacy
+// scalar) holds the rounds remaining in the currently-loaded magazine;
+// `Unit.mags` is the operator's carried spare-mag stack. On reload, we
+// pop a mag and set `ammo` to its `rounds`. When `ammo === 0` and
+// `mags.length === 0`, the weapon is dry — see `unit-reload-failed`
+// event in state.ts and the BT dry-weapon branch.
+export type Mag = {
+  // Authored ammo content id (null for synthetic / fallback mags). The
+  // sim doesn't currently dispatch on this — same-caliber assumption
+  // until specialty rounds (AP / HP / tracer) become real mechanics.
+  readonly ammoId: string | null;
+  readonly rounds: number;
+};
+
+export const DEFAULT_SPARE_MAG_COUNT = 6;
+
 export type LastSeen = {
   readonly pos: Vec2;
   readonly tick: number;
@@ -126,7 +142,13 @@ export type Unit = {
   readonly suppression: number;
   readonly morale: number;
   readonly wounds: readonly Wound[];
+  // Currently-loaded round count. When this hits 0 the unit reloads,
+  // popping a mag from `mags` (see Mag type above).
   readonly ammo: number;
+  // Spare mags carried. Pulled from on reload; if empty when reload
+  // fires, weapon is dry — emits `unit-reload-failed`, BT routes to
+  // dry-weapon fallback (see ai/bt.ts).
+  readonly mags: readonly Mag[];
   readonly action: UnitAction;
   readonly aiState: AiState;
   readonly stance: Stance;
@@ -151,8 +173,21 @@ export function makeUnit(params: {
   waypoints?: readonly Vec2[];
   squadId?: string | null;
   role?: UnitRole;
+  /** Override the default spare mag count (see DEFAULT_SPARE_MAG_COUNT). */
+  spareMagCount?: number;
 }): Unit {
   const combat = params.combat ?? emptyCombatProfile();
+  const magSize = combat.primaryWeapon?.magazineSize ?? 0;
+  const spareCount = params.spareMagCount ?? DEFAULT_SPARE_MAG_COUNT;
+  // Initial mag stack: N synthetic full mags. Once loadout-driven ammo
+  // wires through (see ADR 016 ammo follow-up tasks), this comes from
+  // the operator's equipped Ammo items rather than a synthetic default.
+  const mags: Mag[] = [];
+  if (magSize > 0) {
+    for (let i = 0; i < spareCount; i++) {
+      mags.push({ ammoId: null, rounds: magSize });
+    }
+  }
   return {
     id: params.id,
     teamId: params.teamId,
@@ -167,7 +202,8 @@ export function makeUnit(params: {
     suppression: 0,
     morale: MAX_MORALE,
     wounds: [],
-    ammo: combat.primaryWeapon?.magazineSize ?? 0,
+    ammo: magSize,
+    mags,
     action: { kind: 'idle' },
     aiState: 'hold',
     stance: 'standing',
@@ -180,6 +216,25 @@ export function makeUnit(params: {
     waypoints: params.waypoints ?? [],
     role: params.role ?? 'rifleman',
   };
+}
+
+/**
+ * True when the unit has no rounds loaded AND no spare mags to reload
+ * from. BT should route dry units to fallback (secondary, melee, flee)
+ * rather than letting them try to reload an empty stack.
+ */
+export function isDryWeapon(u: Unit): boolean {
+  return u.ammo <= 0 && u.mags.length === 0;
+}
+
+/**
+ * Sum of currently-loaded rounds + rounds in all spare mags. Used by
+ * the armory's AMMO readout (#281.12) and the combat HUD's WEAP line.
+ */
+export function totalRoundsCarried(u: Unit): number {
+  let total = u.ammo;
+  for (const m of u.mags) total += m.rounds;
+  return total;
 }
 
 export function isAlive(u: Unit): boolean {

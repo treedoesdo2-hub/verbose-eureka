@@ -1,0 +1,8 @@
+{
+  "id": "9mm-ball-15",
+  "name": "9mm Ball · 15rd",
+  "caliber": "9mm",
+  "roundsPerMag": 15,
+  "weightKg": 0.18,
+  "cost": 12
+}

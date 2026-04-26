@@ -1,3 +1,4 @@
+import type { Ammo, Caliber } from '@schema/ammo';
 import type { Armor } from '@schema/armor';
 import type {
   BodyHardpoint,
@@ -46,7 +47,16 @@ export type FitError =
       avail: number;
     }
   | { kind: 'consumable_no_host'; itemId: string; category: ConsumableCategory }
-  | { kind: 'internal_slot_overflow'; hostItemId: string; category: ConsumableCategory };
+  | { kind: 'internal_slot_overflow'; hostItemId: string; category: ConsumableCategory }
+  // ADR 016 §Q14c — only one armor item per zone. An armor item declaring
+  // multiple `placements[]` zones is fine (e.g. plate carrier covering
+  // chest + abdomen), but two armor items both declaring chest is a hard
+  // error. Non-armor items are unaffected.
+  | { kind: 'armor_zone_occupied'; zone: BodyZone; occupyingItemId: string; conflictItemId: string }
+  // ADR 016 ammo task #281.10. Weapon needs same-caliber ammo carried.
+  // `weaponId` is the offending weapon's id; `caliber` is what it expects.
+  // Missing weapon caliber metadata (legacy content) skips this check.
+  | { kind: 'ammo_missing'; weaponId: string; caliber: Caliber };
 
 export type InternalUsageEntry = {
   hostItemId: string;
@@ -164,6 +174,37 @@ function resolveUtility(item: LoadoutItem, u: Utility): ResolvedItem {
   };
 }
 
+// ADR 016 ammo task #281.10. Ammo items behave like consumable bins —
+// they slot into a host's `mag_rifle`/`mag_pistol` internal slots or
+// fall back to a bare `pouch_mount` in their declared zone. The category
+// is inferred from caliber (rifle calibers → mag_rifle, pistol → mag_pistol).
+function ammoConsumableCategory(a: Ammo): ConsumableCategory {
+  switch (a.caliber) {
+    case '9mm':
+    case '.45':
+      return 'mag_pistol';
+    default:
+      return 'mag_rifle';
+  }
+}
+
+function resolveAmmo(item: LoadoutItem, a: Ammo): ResolvedItem {
+  const footprint = emptyFootprint();
+  const hasExplicit = Object.keys(a.slotFootprint).length > 0;
+  if (hasExplicit) {
+    for (const [z, n] of Object.entries(a.slotFootprint)) footprint[z as BodyZone] = n as number;
+  }
+  return {
+    item,
+    weightKg: a.weightKg,
+    slotFootprint: footprint,
+    hardpointNeeds: [...a.hardpointNeeds],
+    internalSlots: { ...a.internalSlots },
+    consumableCategory: ammoConsumableCategory(a),
+    displayName: a.name,
+  };
+}
+
 function resolveItem(item: LoadoutItem, content: ContentLookup): ResolvedItem | null {
   if (item.type === 'weapon') {
     const w = content.weapon(item.id);
@@ -172,6 +213,10 @@ function resolveItem(item: LoadoutItem, content: ContentLookup): ResolvedItem | 
   if (item.type === 'armor') {
     const a = content.armor(item.id);
     return a ? resolveArmor(item, a) : null;
+  }
+  if (item.type === 'ammo') {
+    const a = content.ammo?.(item.id);
+    return a ? resolveAmmo(item, a) : null;
   }
   const u = content.utility(item.id);
   return u ? resolveUtility(item, u) : null;
@@ -236,6 +281,54 @@ export function computeFit(
   for (const it of loadout.items) {
     const r = resolveItem(it, content);
     if (r) resolved.push(r);
+  }
+
+  // ADR 016 ammo task #281.10 — caliber match. Each weapon with an
+  // explicit `caliber` field needs at least one carried ammo item of
+  // the same caliber. Weapons that haven't been migrated yet (no
+  // `caliber` field) skip the check; the derived `weaponCaliber()`
+  // helper exists for sim-side ammo dispatch but the loadout layer
+  // requires explicit declaration so legacy fixtures stay green until
+  // their content opts in.
+  if (content.ammo) {
+    const carriedCalibers = new Set<Caliber>();
+    for (const it of loadout.items) {
+      if (it.type !== 'ammo') continue;
+      const a = content.ammo(it.id);
+      if (a) carriedCalibers.add(a.caliber);
+    }
+    for (const it of loadout.items) {
+      if (it.type !== 'weapon') continue;
+      const w = content.weapon(it.id);
+      if (!w || !w.caliber) continue;
+      if (!carriedCalibers.has(w.caliber)) {
+        errors.push({ kind: 'ammo_missing', weaponId: w.id, caliber: w.caliber });
+      }
+    }
+  }
+
+  // ADR 016 §Q14c — armor placement-overlap check. One armor item per zone.
+  // Walk armor items in loadout order; first one to claim a zone wins, any
+  // later armor claiming the same zone produces an `armor_zone_occupied`
+  // error. Non-armor items share zones via crit slots and are unaffected.
+  const armorByZone = new Map<BodyZone, string>();
+  for (const it of loadout.items) {
+    if (it.type !== 'armor') continue;
+    const a = content.armor(it.id);
+    if (!a) continue;
+    for (const p of a.placements) {
+      const occupying = armorByZone.get(p.zone);
+      if (occupying !== undefined && occupying !== it.id) {
+        errors.push({
+          kind: 'armor_zone_occupied',
+          zone: p.zone,
+          occupyingItemId: occupying,
+          conflictItemId: it.id,
+        });
+      } else if (occupying === undefined) {
+        armorByZone.set(p.zone, it.id);
+      }
+    }
   }
 
   const hosts = resolved.filter((r) => Object.keys(r.internalSlots).length > 0);

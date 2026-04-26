@@ -80,6 +80,18 @@ export const ConsumableCategory = z.enum([
 ]);
 export type ConsumableCategory = z.infer<typeof ConsumableCategory>;
 
+// Partial records — sparse shapes are the norm (a rifle only fills right_hand).
+// Lifted from weapon.ts so weapon/armor/ammo can all reference these without a
+// cycle through the per-entity modules. ADR 016 ammo task #281.05.
+export const SlotFootprint = z.partialRecord(BodyZone, z.number().int().positive());
+export type SlotFootprint = z.infer<typeof SlotFootprint>;
+
+export const HardpointNeed = z.object({ zone: BodyZone, kind: SlotHardpointKind });
+export type HardpointNeed = z.infer<typeof HardpointNeed>;
+
+export const InternalSlots = z.partialRecord(ConsumableCategory, z.number().int().nonnegative());
+export type InternalSlots = z.infer<typeof InternalSlots>;
+
 export const ZONE_SLOT_CAPACITY: Record<BodyZone, number> = {
   head: 6,
   torso_front: 10,

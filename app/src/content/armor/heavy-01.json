@@ -4,13 +4,69 @@
   "class": "heavy",
   "cost": 2800,
   "placements": [
-    { "zone": "head", "damageReduction": 35, "weightKg": 1.5, "plate": "hard" },
-    { "zone": "torso_front", "damageReduction": 75, "weightKg": 4.5, "plate": "hard" },
-    { "zone": "torso_back", "damageReduction": 65, "weightKg": 4.0, "plate": "hard" },
-    { "zone": "left_arm", "damageReduction": 25, "weightKg": 1.2, "plate": "soft" },
-    { "zone": "right_arm", "damageReduction": 25, "weightKg": 1.2, "plate": "soft" },
-    { "zone": "left_leg", "damageReduction": 30, "weightKg": 1.5, "plate": "soft" },
-    { "zone": "right_leg", "damageReduction": 30, "weightKg": 1.5, "plate": "soft" }
+    {
+      "zone": "head",
+      "damageReduction": 35,
+      "weightKg": 1.5,
+      "plate": "hard",
+      "penetrationResistance": 25,
+      "fireResistance": 0,
+      "empResistance": 0
+    },
+    {
+      "zone": "torso_front",
+      "damageReduction": 75,
+      "weightKg": 4.5,
+      "plate": "hard",
+      "penetrationResistance": 60,
+      "fireResistance": 0,
+      "empResistance": 0
+    },
+    {
+      "zone": "torso_back",
+      "damageReduction": 65,
+      "weightKg": 4.0,
+      "plate": "hard",
+      "penetrationResistance": 55,
+      "fireResistance": 0,
+      "empResistance": 0
+    },
+    {
+      "zone": "left_arm",
+      "damageReduction": 25,
+      "weightKg": 1.2,
+      "plate": "soft",
+      "penetrationResistance": 0,
+      "fireResistance": 0,
+      "empResistance": 0
+    },
+    {
+      "zone": "right_arm",
+      "damageReduction": 25,
+      "weightKg": 1.2,
+      "plate": "soft",
+      "penetrationResistance": 0,
+      "fireResistance": 0,
+      "empResistance": 0
+    },
+    {
+      "zone": "left_leg",
+      "damageReduction": 30,
+      "weightKg": 1.5,
+      "plate": "soft",
+      "penetrationResistance": 0,
+      "fireResistance": 0,
+      "empResistance": 0
+    },
+    {
+      "zone": "right_leg",
+      "damageReduction": 30,
+      "weightKg": 1.5,
+      "plate": "soft",
+      "penetrationResistance": 0,
+      "fireResistance": 0,
+      "empResistance": 0
+    }
   ],
   "slotFootprint": {
     "head": 2,

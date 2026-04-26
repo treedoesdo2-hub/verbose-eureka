@@ -88,12 +88,13 @@ export const ContractModifiers = z
 export type ContractModifiers = z.infer<typeof ContractModifiers>;
 
 // Map contract sizeHint to concrete tile dimensions for the generator.
-// Kept conservative for MVP (schema allows up to 4096, but render perf
-// is validated at 512).
+// Firefight parity: 4096-tile maps (aspirational/target per user). small /
+// medium / large are three rungs up to that target; every downstream path
+// (buffer budget, chunk bake, pathfinding, shading) must hold at 4096.
 export const CONTRACT_SIZE_TILES: Record<'small' | 'medium' | 'large', number> = {
-  small: 128,
-  medium: 256,
-  large: 512,
+  small: 1024,
+  medium: 2048,
+  large: 4096,
 };
 
 export const Contract = z

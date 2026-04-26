@@ -1,3 +1,4 @@
+export * from './ammo';
 export * from './armor';
 export * from './common';
 export * from './contract';

@@ -1,0 +1,150 @@
+/*
+ * NEON WIRE design tokens.
+ * Source of truth: SS for design/Claude Design Package/.../source/primitives.jsx
+ * + BRAND.md. Names align with the JSX `NW.*` keys for trace-back.
+ *
+ * ADR 016 — adopted as the game-wide UI design language.
+ */
+
+:root[data-nw="on"] {
+  color-scheme: dark;
+
+  /* ── Backgrounds ──────────────────────────────────────── */
+  --nw-bg-0: #060914;     /* app background */
+  --nw-bg-1: #0a0f1e;     /* system bar / footer / inlay */
+  --nw-bg-2: #0f1529;     /* panel secondary / building fills */
+  --nw-bg-3: #141b33;     /* badge backing / bar track */
+  --nw-panel: #0c1226;    /* primary panel fill */
+
+  /* ── Lines ────────────────────────────────────────────── */
+  --nw-line: #1c2648;     /* hairline dividers */
+  --nw-line-2: #2a3860;   /* emphasized dividers, panel borders */
+
+  /* ── Text ─────────────────────────────────────────────── */
+  --nw-fg-0: #e6edff;     /* primary */
+  --nw-fg-1: #98a4c8;     /* secondary */
+  --nw-fg-2: #5e6a8c;     /* labels / muted */
+  --nw-fg-dim: #3a4260;   /* disabled / separators */
+
+  /* ── Semantic accents — color encodes state ───────────── */
+  --nw-cyan: #18e0ff;     /* primary · ours · info · navigable */
+  --nw-amber: #ffa020;    /* warning · caution · priority · contested */
+  --nw-magenta: #ff2d9a;  /* kill · hostile · in-contact · alert */
+  --nw-green: #33ffa0;    /* positive · ready · federal */
+  --nw-red: #ff4a5c;      /* exclusion · insurgent · nil-entry */
+
+  /* ── Soft tints (for fills under tone strokes) ────────── */
+  --nw-cyan-soft: rgba(24, 224, 255, 0.10);
+  --nw-amber-soft: rgba(255, 160, 32, 0.12);
+  --nw-magenta-soft: rgba(255, 45, 154, 0.14);
+
+  /* ── Glow ─────────────────────────────────────────────── */
+  --nw-cyan-glow: 0 0 12px rgba(24, 224, 255, 0.45);
+
+  /* ── Type ─────────────────────────────────────────────── */
+  --nw-font-display: 'Chakra Petch', 'Rajdhani', ui-sans-serif, system-ui, sans-serif;
+  --nw-font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --nw-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* ── Line-height ──────────────────────────────────────── */
+  --nw-lh-tight: 1;
+  --nw-lh-prose: 1.45;
+
+  /* ── Spacing ──────────────────────────────────────────── */
+  --nw-pad-panel: 14px;
+  --nw-pad-compact: 10px;
+  --nw-gap-columns: 14px;     /* major 3-column layouts */
+  --nw-gap-stack: 12px;       /* vertical panel stacks */
+  --nw-gap-inline: 8px;       /* chip rows */
+
+  /* ── Hex-clip polygons (NEON WIRE uses clip-path, not radius) ── */
+  --nw-clip-tl-br: polygon(
+    12px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    0 100%,
+    0 12px
+  );
+  --nw-clip-tr-bl: polygon(
+    0 0,
+    calc(100% - 12px) 0,
+    100% 12px,
+    100% 100%,
+    12px 100%,
+    0 calc(100% - 12px)
+  );
+  --nw-clip-chip: polygon(
+    6px 0,
+    100% 0,
+    calc(100% - 6px) 100%,
+    0 100%
+  );
+  /* Smaller chamfer used on inline pills / item rows */
+  --nw-clip-chip-sm: polygon(
+    4px 0,
+    100% 0,
+    calc(100% - 4px) 100%,
+    0 100%
+  );
+}
+
+/* ── Global rules ───────────────────────────────────────────────────────── */
+
+/* Tabular figures on every mono span — columns of numbers must align. */
+:root[data-nw="on"] .nw-mono,
+:root[data-nw="on"] [data-font="mono"] {
+  font-family: var(--nw-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-nw="on"] .nw-display,
+:root[data-nw="on"] [data-font="display"] {
+  font-family: var(--nw-font-display);
+}
+
+:root[data-nw="on"] .nw-body,
+:root[data-nw="on"] [data-font="body"] {
+  font-family: var(--nw-font-body);
+}
+
+/* Hex-clip utility classes. */
+:root[data-nw="on"] .nw-hex-tl-br {
+  clip-path: var(--nw-clip-tl-br);
+  -webkit-clip-path: var(--nw-clip-tl-br);
+}
+:root[data-nw="on"] .nw-hex-tr-bl {
+  clip-path: var(--nw-clip-tr-bl);
+  -webkit-clip-path: var(--nw-clip-tr-bl);
+}
+:root[data-nw="on"] .nw-chip-clip {
+  clip-path: var(--nw-clip-chip);
+  -webkit-clip-path: var(--nw-clip-chip);
+}
+:root[data-nw="on"] .nw-chip-clip-sm {
+  clip-path: var(--nw-clip-chip-sm);
+  -webkit-clip-path: var(--nw-clip-chip-sm);
+}
+
+/* ── Animations (used by status dots, drone tracks, sonar pings) ──────── */
+
+@keyframes nw-pulse {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+
+:root[data-nw="on"] .nw-pulse {
+  animation: nw-pulse 1.15s linear infinite;
+}
+
+/* Drone path bead pulse — slower, gentler than status-dot pulse. */
+@keyframes nw-bead {
+  0%   { opacity: 0.4; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+:root[data-nw="on"] .nw-bead {
+  animation: nw-bead 2.4s linear infinite;
+}

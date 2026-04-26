@@ -71,8 +71,8 @@ export default function App(): React.JSX.Element {
   return (
     <div className="app-shell">
       <header>
-        <h1>merc-autobattler</h1>
-        <span className="subtitle">MVP vertical slice</span>
+        <h1>PAYROLL</h1>
+        <span className="subtitle">A Private Military Sim</span>
         <div className="shell-prefs" role="group" aria-label="UI preferences">
           <select
             className="pref-select mono"

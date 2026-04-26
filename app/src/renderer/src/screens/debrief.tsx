@@ -39,7 +39,7 @@ export function Debrief(): React.JSX.Element {
         <h2>Debrief</h2>
       </div>
       <div className={`debrief-banner ${won ? 'won' : 'lost'}`}>
-        {won ? 'Contract completed' : 'Contract failed'}
+        {won ? 'MISSION COMPLETE' : 'CONTRACT FORFEIT'}
       </div>
 
       <section className="debrief-summary">

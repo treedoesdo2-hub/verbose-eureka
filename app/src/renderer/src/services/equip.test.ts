@@ -7,7 +7,17 @@ import { equipLoadout, unequipLoadout } from './equip';
 
 const rifle = makeWeapon();
 const lightArmor = makeLightArmor({
-  placements: [{ zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' }],
+  placements: [
+    {
+      zone: 'torso_front',
+      damageReduction: 20,
+      weightKg: 2,
+      plate: 'soft',
+      penetrationResistance: 0,
+      fireResistance: 0,
+      empResistance: 0,
+    },
+  ],
 });
 const content = makeContent([rifle], [lightArmor]);
 

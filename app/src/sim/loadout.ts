@@ -1,3 +1,4 @@
+import type { Ammo } from '@schema/ammo';
 import type { Armor, ArmorPlacement } from '@schema/armor';
 import type { BodyZone } from '@schema/common';
 import { ALL_BODY_ZONES, ZONE_CAPACITY_KG } from '@schema/common';
@@ -5,7 +6,7 @@ import type { LoadoutTemplate } from '@schema/template';
 import type { Utility } from '@schema/utility';
 import type { Weapon } from '@schema/weapon';
 
-export type LoadoutItemType = 'weapon' | 'armor' | 'utility';
+export type LoadoutItemType = 'weapon' | 'armor' | 'utility' | 'ammo';
 
 export type LoadoutItem = {
   readonly type: LoadoutItemType;
@@ -21,6 +22,10 @@ export type ContentLookup = {
   weapon(id: string): Weapon | undefined;
   armor(id: string): Armor | undefined;
   utility(id: string): Utility | undefined;
+  // ADR 016 ammo task #281.10. Optional during transition — older test
+  // fixtures construct lookups without ammo. Validation falls back to a
+  // permissive shape when the lookup is absent.
+  ammo?(id: string): Ammo | undefined;
 };
 
 export const INFANTRY_WEIGHT_KG_BUDGET = 30;

@@ -1,3 +1,4 @@
+import type { Ammo } from '@schema/ammo';
 import type { Armor } from '@schema/armor';
 import type { BodyZone } from '@schema/common';
 import type { Utility } from '@schema/utility';
@@ -62,8 +63,24 @@ export function makeLightArmor(overrides: Partial<Armor> = {}): Armor {
     class: 'light',
     cost: 400,
     placements: [
-      { zone: 'torso_front', damageReduction: 20, weightKg: 2, plate: 'soft' },
-      { zone: 'torso_back', damageReduction: 20, weightKg: 2, plate: 'soft' },
+      {
+        zone: 'torso_front',
+        damageReduction: 20,
+        weightKg: 2,
+        plate: 'soft',
+        penetrationResistance: 0,
+        fireResistance: 0,
+        empResistance: 0,
+      },
+      {
+        zone: 'torso_back',
+        damageReduction: 20,
+        weightKg: 2,
+        plate: 'soft',
+        penetrationResistance: 0,
+        fireResistance: 0,
+        empResistance: 0,
+      },
     ],
     slotFootprint: {},
     hardpointNeeds: [],
@@ -79,12 +96,60 @@ export function makeHeavyArmor(overrides: Partial<Armor> = {}): Armor {
     class: 'heavy',
     cost: 2000,
     placements: [
-      { zone: 'head', damageReduction: 30, weightKg: 1.5, plate: 'hard' },
-      { zone: 'torso_front', damageReduction: 70, weightKg: 5, plate: 'hard' },
-      { zone: 'torso_back', damageReduction: 70, weightKg: 5, plate: 'hard' },
-      { zone: 'waist', damageReduction: 60, weightKg: 3, plate: 'hard' },
-      { zone: 'left_arm', damageReduction: 40, weightKg: 1.5, plate: 'hard' },
-      { zone: 'right_arm', damageReduction: 40, weightKg: 1.5, plate: 'hard' },
+      {
+        zone: 'head',
+        damageReduction: 30,
+        weightKg: 1.5,
+        plate: 'hard',
+        penetrationResistance: 30,
+        fireResistance: 0,
+        empResistance: 0,
+      },
+      {
+        zone: 'torso_front',
+        damageReduction: 70,
+        weightKg: 5,
+        plate: 'hard',
+        penetrationResistance: 60,
+        fireResistance: 0,
+        empResistance: 0,
+      },
+      {
+        zone: 'torso_back',
+        damageReduction: 70,
+        weightKg: 5,
+        plate: 'hard',
+        penetrationResistance: 60,
+        fireResistance: 0,
+        empResistance: 0,
+      },
+      {
+        zone: 'waist',
+        damageReduction: 60,
+        weightKg: 3,
+        plate: 'hard',
+        penetrationResistance: 50,
+        fireResistance: 0,
+        empResistance: 0,
+      },
+      {
+        zone: 'left_arm',
+        damageReduction: 40,
+        weightKg: 1.5,
+        plate: 'hard',
+        penetrationResistance: 30,
+        fireResistance: 0,
+        empResistance: 0,
+      },
+      {
+        zone: 'right_arm',
+        damageReduction: 40,
+        weightKg: 1.5,
+        plate: 'hard',
+        penetrationResistance: 30,
+        fireResistance: 0,
+        empResistance: 0,
+      },
     ],
     slotFootprint: {},
     hardpointNeeds: [],
@@ -171,19 +236,38 @@ export function makeZoneDr(
   };
 }
 
+export function makeAmmo(overrides: Partial<Ammo> = {}): Ammo {
+  return {
+    id: '556-ball-30',
+    name: '5.56 Ball · 30rd',
+    caliber: '5.56',
+    roundsPerMag: 30,
+    weightKg: 0.4,
+    cost: 25,
+    slotFootprint: {},
+    hardpointNeeds: [],
+    internalSlots: {},
+    damageBonus: 0,
+    penetrationBonus: 0,
+    ...overrides,
+  };
+}
+
 /**
  * Build a content lookup from arrays of fixtures. Tests don't need the full
- * ContentBundle — just the id→object resolver for weapons/armor/utility.
+ * ContentBundle — just the id→object resolver for weapons/armor/utility/ammo.
  */
 export function makeContent(
   weapons: Weapon[] = [],
   armor: Armor[] = [],
   utility: Utility[] = [],
+  ammo: Ammo[] = [],
 ): ContentLookup {
   return {
     weapon: (id) => weapons.find((w) => w.id === id),
     armor: (id) => armor.find((a) => a.id === id),
     utility: (id) => utility.find((u) => u.id === id),
+    ammo: (id) => ammo.find((a) => a.id === id),
   };
 }
 

@@ -55,6 +55,10 @@ export type SimEvent =
   | { kind: 'unit-pinned'; unitId: UnitId; tick: number }
   | { kind: 'unit-broke'; unitId: UnitId; tick: number }
   | { kind: 'unit-rallied'; unitId: UnitId; tick: number }
+  // ADR 016 ammo task #281.08. Emitted when a unit attempts to reload
+  // with an empty mag stack — weapon goes dry. BT routes to fallback
+  // (secondary, melee, flee).
+  | { kind: 'unit-reload-failed'; unitId: UnitId; tick: number }
   | { kind: 'noise-emitted'; sourceUnitId: UnitId; pos: Vec2; noiseKind: NoiseKind; tick: number }
   | {
       kind: 'objective-status-changed';

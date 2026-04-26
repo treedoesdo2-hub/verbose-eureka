@@ -335,10 +335,23 @@ function processReload(
 ): void {
   if (shooter.action.kind !== 'reloading') return;
   if (shooter.action.ticksRemaining > 0) return;
-  const mag = shooter.combat.primaryWeapon?.magazineSize ?? 0;
+  // ADR 016 ammo task #281.06. Pop a mag from the spare stack and load
+  // its rounds. If the stack is empty, the weapon goes dry — emit
+  // `unit-reload-failed`, stay idle with ammo=0, BT routes to fallback.
+  if (shooter.mags.length === 0) {
+    mergePatch(patches, shooter.id, {
+      action: { kind: 'idle' },
+      ammo: 0,
+    });
+    events.push({ kind: 'unit-reload-failed', unitId: shooter.id, tick });
+    return;
+  }
+  const nextMag = shooter.mags[0];
+  const remainingMags = shooter.mags.slice(1);
   mergePatch(patches, shooter.id, {
     action: { kind: 'idle' },
-    ammo: mag,
+    ammo: nextMag.rounds,
+    mags: remainingMags,
   });
   events.push({
     kind: 'noise-emitted',

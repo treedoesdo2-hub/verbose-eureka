@@ -1,0 +1,8 @@
+{
+  "id": "556-ball-30",
+  "name": "5.56 Ball · 30rd",
+  "caliber": "5.56",
+  "roundsPerMag": 30,
+  "weightKg": 0.4,
+  "cost": 25
+}

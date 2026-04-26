@@ -600,7 +600,11 @@ function LoadoutEditorPane({
     setMemberLoadout(squadId, member.operatorId, { items: next });
   }
 
-  function addItem(zone: BodyZone, type: 'weapon' | 'armor' | 'utility', id: string): void {
+  function addItem(
+    zone: BodyZone,
+    type: 'weapon' | 'armor' | 'utility' | 'ammo',
+    id: string,
+  ): void {
     updateItems([...member.loadout.items, { type, id, zone }]);
   }
 
@@ -620,6 +624,27 @@ function LoadoutEditorPane({
     [...bundle.armor.values()].filter((a) => a.placements.some((p) => p.zone === zone));
   const utilitiesAt = (zone: BodyZone) =>
     [...bundle.utility.values()].filter((u) => u.allowedZones.includes(zone));
+  const ammoAt = (zone: BodyZone) => {
+    // Mags slot into pouch-bearing zones — the bin/host pipeline in
+    // computeFit handles the actual placement; the stockpile shows ammo
+    // wherever a host (rig) or fallback pouch_mount could land it.
+    const allowed: BodyZone[] = ['waist', 'torso_front', 'torso_back', 'back_mount'];
+    if (!allowed.includes(zone)) return [];
+    return [...bundle.ammo.values()];
+  };
+
+  // ADR 016 ammo task #281.12. Total rounds carried by caliber, summed
+  // from this loadout's ammo items. Drives the AMMO line below.
+  const carriedAmmoByCaliber = new Map<string, number>();
+  for (const it of member.loadout.items) {
+    if (it.type !== 'ammo') continue;
+    const a = lookup.ammo?.(it.id);
+    if (!a) continue;
+    carriedAmmoByCaliber.set(
+      a.caliber,
+      (carriedAmmoByCaliber.get(a.caliber) ?? 0) + a.roundsPerMag,
+    );
+  }
 
   return (
     <section className="armory-editor">
@@ -649,6 +674,15 @@ function LoadoutEditorPane({
         />
       </div>
 
+      {carriedAmmoByCaliber.size > 0 ? (
+        <div className="ammo-summary mono dim" title="Total rounds carried, summed per caliber">
+          AMMO ·{' '}
+          {[...carriedAmmoByCaliber.entries()]
+            .map(([cal, n]) => `${cal}: ${n}`)
+            .join(' · ')}
+        </div>
+      ) : null}
+
       <div className="zone-grid">
         {ALL_BODY_ZONES.map((zone) => {
           const itemsHere = member.loadout.items
@@ -662,6 +696,7 @@ function LoadoutEditorPane({
               return acc + (p?.weightKg ?? 0);
             }
             if (it.type === 'utility') return acc + (lookup.utility(it.id)?.weightKg ?? 0);
+            if (it.type === 'ammo') return acc + (lookup.ammo?.(it.id)?.weightKg ?? 0);
             return acc;
           }, 0);
           const cap = ZONE_CAPACITY_KG[zone];
@@ -704,7 +739,9 @@ function LoadoutEditorPane({
                         ? lookup.weapon(it.id)?.name
                         : it.type === 'armor'
                           ? lookup.armor(it.id)?.name
-                          : lookup.utility(it.id)?.name;
+                          : it.type === 'ammo'
+                            ? lookup.ammo?.(it.id)?.name
+                            : lookup.utility(it.id)?.name;
                     return (
                       <li key={`${zone}-${i}`}>
                         <span className="item-type mono">{it.type[0]}</span>
@@ -726,6 +763,7 @@ function LoadoutEditorPane({
                   weapons={weaponsAt(zone)}
                   armor={armorAt(zone)}
                   utilities={utilitiesAt(zone)}
+                  ammo={ammoAt(zone)}
                   onPick={(type, id) => addItem(zone, type, id)}
                 />
               </div>
@@ -783,6 +821,10 @@ function formatFitError(e: FitError): string {
       return `${e.itemId} has no ${e.category} host or fallback pouch`;
     case 'internal_slot_overflow':
       return `${e.hostItemId} ${e.category} internal slots overflow`;
+    case 'armor_zone_occupied':
+      return `${e.zone} already occupied by ${e.occupyingItemId} (cannot equip ${e.conflictItemId})`;
+    case 'ammo_missing':
+      return `${e.weaponId} needs ${e.caliber} ammo`;
   }
 }
 
@@ -790,14 +832,16 @@ function AddItemDropdown({
   weapons,
   armor,
   utilities,
+  ammo,
   onPick,
 }: {
   weapons: { id: string; name: string; weightKg: number }[];
   armor: { id: string; name: string }[];
   utilities: { id: string; name: string; weightKg: number }[];
-  onPick: (type: 'weapon' | 'armor' | 'utility', id: string) => void;
+  ammo: { id: string; name: string; weightKg: number; caliber: string; roundsPerMag: number }[];
+  onPick: (type: 'weapon' | 'armor' | 'utility' | 'ammo', id: string) => void;
 }): React.JSX.Element {
-  const total = weapons.length + armor.length + utilities.length;
+  const total = weapons.length + armor.length + utilities.length + ammo.length;
   if (total === 0) return <span className="mono dim">no items</span>;
 
   return (
@@ -807,7 +851,10 @@ function AddItemDropdown({
       onChange={(e) => {
         const v = e.target.value;
         if (!v) return;
-        const [type, id] = v.split(':', 2) as ['weapon' | 'armor' | 'utility', string];
+        const [type, id] = v.split(':', 2) as [
+          'weapon' | 'armor' | 'utility' | 'ammo',
+          string,
+        ];
         onPick(type, id);
         e.target.value = '';
       }}
@@ -836,6 +883,15 @@ function AddItemDropdown({
           {utilities.map((u) => (
             <option key={u.id} value={`utility:${u.id}`}>
               {u.name} · {u.weightKg} kg
+            </option>
+          ))}
+        </optgroup>
+      ) : null}
+      {ammo.length > 0 ? (
+        <optgroup label="ammo">
+          {ammo.map((a) => (
+            <option key={a.id} value={`ammo:${a.id}`}>
+              {a.name} · {a.weightKg} kg
             </option>
           ))}
         </optgroup>

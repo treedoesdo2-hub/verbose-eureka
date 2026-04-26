@@ -1,4 +1,5 @@
 import {
+  Ammo,
   Armor,
   Contract,
   Faction,
@@ -15,6 +16,7 @@ export type ContentBundle = {
   weapons: Map<string, Weapon>;
   armor: Map<string, Armor>;
   utility: Map<string, Utility>;
+  ammo: Map<string, Ammo>;
   factions: Map<string, Faction>;
   contracts: Map<string, Contract>;
   maps: Map<string, GameMap>;
@@ -59,6 +61,10 @@ export function loadContent(): ContentBundle {
     eager: true,
     import: 'default',
   });
+  const ammoMods = import.meta.glob<unknown>('../../content/ammo/*.json', {
+    eager: true,
+    import: 'default',
+  });
   const factionMods = import.meta.glob<unknown>('../../content/factions/*.json', {
     eager: true,
     import: 'default',
@@ -81,6 +87,7 @@ export function loadContent(): ContentBundle {
     weapons: validateGroup(Weapon, weaponMods, 'weapons'),
     armor: validateGroup(Armor, armorMods, 'armor'),
     utility: validateGroup(Utility, utilityMods, 'utility'),
+    ammo: validateGroup(Ammo, ammoMods, 'ammo'),
     factions: validateGroup(Faction, factionMods, 'factions'),
     contracts: validateGroup(Contract, contractMods, 'contracts'),
     maps: validateGroup(GameMap, mapMods, 'maps'),

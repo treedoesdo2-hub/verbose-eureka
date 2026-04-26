@@ -1,6 +1,12 @@
 import { z } from 'zod';
-import { BodyZone, ConsumableCategory, Id } from './common';
-import { HardpointNeed, InternalSlots, SlotFootprint } from './weapon';
+import {
+  BodyZone,
+  ConsumableCategory,
+  HardpointNeed,
+  Id,
+  InternalSlots,
+  SlotFootprint,
+} from './common';
 
 export const UtilityKind = z.enum(['grenade', 'smoke', 'medkit', 'tool']);
 export type UtilityKind = z.infer<typeof UtilityKind>;

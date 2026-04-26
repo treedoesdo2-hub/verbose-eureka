@@ -139,11 +139,23 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
       ? unit.alerted
       : false;
 
+  // ADR 016 ammo task #281.07 — dry-weapon fallback. A unit whose
+  // mag stack is empty AND has no rounds loaded cannot fire or
+  // reload meaningfully; skip the engagement branch entirely so it
+  // falls through to movement / panic behavior. Future fallback
+  // ladder (secondary fire → melee → flee) belongs here.
+  const dryWeapon = unit.ammo <= 0 && unit.mags.length === 0;
+
   // Engagement branch — only entered when the unit can actually shoot.
   // Without a primary weapon there's nothing to reload or fire, so a
   // weaponless unit that "sees" an enemy must fall through to movement
   // behavior rather than entering an infinite reload loop.
-  if (threatened && perception.bestTarget !== null && unit.combat.primaryWeapon) {
+  if (
+    threatened &&
+    perception.bestTarget !== null &&
+    unit.combat.primaryWeapon &&
+    !dryWeapon
+  ) {
     const target = state.units.get(perception.bestTarget);
     if (target) {
       const alreadyAiming =

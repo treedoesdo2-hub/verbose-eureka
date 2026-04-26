@@ -16,10 +16,42 @@ const ar = makeWeapon({ name: 'AR', baseAccuracy: 70 });
 const light = makeLightArmor();
 const heavy = makeHeavyArmor({
   placements: [
-    { zone: 'head', damageReduction: 30, weightKg: 1, plate: 'hard' },
-    { zone: 'torso_front', damageReduction: 70, weightKg: 4, plate: 'hard' },
-    { zone: 'torso_back', damageReduction: 65, weightKg: 3.5, plate: 'hard' },
-    { zone: 'waist', damageReduction: 55, weightKg: 2.5, plate: 'hard' },
+    {
+      zone: 'head',
+      damageReduction: 30,
+      weightKg: 1,
+      plate: 'hard',
+      penetrationResistance: 30,
+      fireResistance: 0,
+      empResistance: 0,
+    },
+    {
+      zone: 'torso_front',
+      damageReduction: 70,
+      weightKg: 4,
+      plate: 'hard',
+      penetrationResistance: 60,
+      fireResistance: 0,
+      empResistance: 0,
+    },
+    {
+      zone: 'torso_back',
+      damageReduction: 65,
+      weightKg: 3.5,
+      plate: 'hard',
+      penetrationResistance: 55,
+      fireResistance: 0,
+      empResistance: 0,
+    },
+    {
+      zone: 'waist',
+      damageReduction: 55,
+      weightKg: 2.5,
+      plate: 'hard',
+      penetrationResistance: 50,
+      fireResistance: 0,
+      empResistance: 0,
+    },
   ],
 });
 const content = makeContent([ar], [light, heavy]);

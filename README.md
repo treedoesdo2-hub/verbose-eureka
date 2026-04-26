@@ -1,12 +1,24 @@
-# merc-autobattler (working title)
+# PAYROLL — A Private Military Sim
 
-Single-player roguelite autobattler with mercenary-squad / mil-sci-fi flavor. Target tier: Electron/web-tech indie. Low art budget, high systems/UI bar.
+> **You run the company. The company runs the war.**
+
+(Codebase / repo name: `merc-autobattler`. Game brands as **PAYROLL** —
+see ADR 016.)
+
+Single-player roguelite autobattler with PMC / mil-sci-fi flavor. Target
+tier: Electron/web-tech indie. Low art budget, high systems / UI bar.
 
 ## The one-liner
 
-> **Backpack Battles × Firefight × BattleTech in a cyberpunk-frontier merc hideout.**
+> **Backpack Battles × Firefight × BattleTech in a cyberpunk corporate-PMC
+> ops console.**
 
-You run a merc crew. Each run = ~25–30 contracts. Prep phase: hire operators, buy gear, set positions and behavior tags. Press GO. Watch the top-down tactical engagement play out autonomously in ~60 seconds. Collect payout, patch the wounded, grieve the dead, re-prep, next contract. Synergies between classes/gear/traits are where the game lives.
+You run a private military company. Each run = ~25–30 contracts. Prep
+phase: hire operators, buy gear, set positions and behavior tags. Press
+DEPLOY. Watch the top-down tactical engagement play out autonomously in
+~60 seconds. Collect payout, patch the wounded, grieve the dead, re-prep,
+next contract. Synergies between classes / gear / traits are where the
+game lives.
 
 ## Genre niche
 
