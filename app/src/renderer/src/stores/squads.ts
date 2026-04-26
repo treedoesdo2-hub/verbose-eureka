@@ -1,9 +1,10 @@
-import { newSquadId, type Squad, type SquadMember } from '@schema/squad';
+import { newSquadId, type Branch, type Squad, type SquadMember } from '@schema/squad';
 import type { Loadout } from '@sim/loadout';
 import { enableMapSet } from 'immer';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
+import { defaultCompanyForBranch, useCompanies } from './companies';
 
 enableMapSet();
 
@@ -11,9 +12,10 @@ export type SquadsState = {
   squads: Map<string, Squad>;
   order: string[];
 
-  create: (name: string) => string;
+  create: (name: string, branch?: Branch) => string;
   rename: (squadId: string, name: string) => void;
   remove: (squadId: string) => void;
+  setBranch: (squadId: string, branch: Branch) => void;
 
   addMember: (squadId: string, member: SquadMember) => void;
   removeMember: (squadId: string, operatorId: string) => void;
@@ -58,10 +60,23 @@ export const useSquads = create<SquadsState>()(
       squads: new Map(),
       order: [],
 
-      create: (name) => {
+      create: (name, branch = 'infantry') => {
         const id = newSquadId();
+        // Auto-link to the canonical company for this branch (#533).
+        // Companies store seeds A/B/HQ on first load so this never
+        // returns undefined in normal operation; the fallback handles
+        // the unseeded edge case gracefully.
+        const companies = useCompanies.getState();
+        const company = defaultCompanyForBranch(companies, branch);
         set((s) => {
-          s.squads.set(id, { id, name: name.trim() || 'Squad', members: [] });
+          s.squads.set(id, {
+            id,
+            name: name.trim() || 'Squad',
+            members: [],
+            branch,
+            soulsAuthorized: 8,
+            companyId: company?.id,
+          });
           s.order.push(id);
         });
         return id;
@@ -72,6 +87,16 @@ export const useSquads = create<SquadsState>()(
           const sq = s.squads.get(squadId);
           if (!sq) return;
           sq.name = name.trim() || sq.name;
+        }),
+
+      setBranch: (squadId, branch) =>
+        set((s) => {
+          const sq = s.squads.get(squadId);
+          if (!sq) return;
+          sq.branch = branch;
+          const companies = useCompanies.getState();
+          const company = defaultCompanyForBranch(companies, branch);
+          sq.companyId = company?.id;
         }),
 
       remove: (squadId) =>

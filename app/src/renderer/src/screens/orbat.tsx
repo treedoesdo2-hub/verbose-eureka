@@ -13,7 +13,7 @@
 // - Drill-in panel (right): selected squad's roster with stat readout.
 // - Filter chips: branch toggle bar.
 
-import type { Branch, Squad } from '@schema/squad';
+import type { Branch, Company, Squad } from '@schema/squad';
 import { useMemo, useState } from 'react';
 import { getContent } from '../content';
 import {
@@ -26,6 +26,7 @@ import {
 } from '../neonwire';
 import { useAppState } from '../stores/app-state';
 import { useHotkeys } from '../hooks/useHotkeys';
+import { useCompanies } from '../stores/companies';
 import { useSquads } from '../stores/squads';
 
 const ALL_BRANCHES: Branch[] = [
@@ -82,6 +83,8 @@ export function Orbat(): React.JSX.Element {
   const go = useAppState((s) => s.go);
   const squadMap = useSquads((s) => s.squads);
   const order = useSquads((s) => s.order);
+  const battalion = useCompanies((s) => s.battalion);
+  const companies = useCompanies((s) => s.companies);
   const squads = useMemo(
     () => order.map((id) => squadMap.get(id)).filter((x): x is Squad => !!x),
     [squadMap, order],
@@ -135,6 +138,9 @@ export function Orbat(): React.JSX.Element {
       }}
     >
       <BattalionBanner
+        designator={battalion.designator}
+        name={battalion.name}
+        motto={battalion.motto}
         totalAuthorized={totalAuthorized}
         totalFilled={totalFilled}
         onBack={() => go('menu')}
@@ -187,6 +193,7 @@ export function Orbat(): React.JSX.Element {
       >
         <CompanyColumns
           squads={visibleSquads}
+          companies={companies}
           selectedSquadId={selectedSquad?.id ?? null}
           onSelect={setSelectedSquadId}
         />
@@ -197,10 +204,16 @@ export function Orbat(): React.JSX.Element {
 }
 
 function BattalionBanner({
+  designator,
+  name,
+  motto,
   totalAuthorized,
   totalFilled,
   onBack,
 }: {
+  designator: string;
+  name: string;
+  motto: string;
   totalAuthorized: number;
   totalFilled: number;
   onBack: () => void;
@@ -235,10 +248,10 @@ function BattalionBanner({
             color: NW.fg0,
           }}
         >
-          1ST BN · "PAYROLL"
+          {designator} · {name}
         </div>
         <div style={{ fontFamily: NW.mono, fontSize: 10, color: NW.fg2, letterSpacing: '0.1em' }}>
-          ID 00001 · DEPOT · OSAKA-1
+          {motto || '—'}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>
@@ -272,25 +285,57 @@ function BattalionBanner({
 
 function CompanyColumns({
   squads,
+  companies,
   selectedSquadId,
   onSelect,
 }: {
   squads: Squad[];
+  companies: readonly Company[];
   selectedSquadId: string | null;
   onSelect: (id: string) => void;
 }): React.JSX.Element {
-  // Group squads by branch. Each unique branch becomes a column —
-  // visually equivalent to a "company" for now (true companies require
-  // content authoring, deferred).
-  const byBranch = new Map<Branch, Squad[]>();
+  // Bucket squads by their linked companyId. Squads without a companyId
+  // (legacy persisted state from before #533) fall through to a synthetic
+  // "UNASSIGNED" column so they remain visible.
+  const byCompany = new Map<string, Squad[]>();
+  const unassigned: Squad[] = [];
   for (const sq of squads) {
-    const arr = byBranch.get(sq.branch) ?? [];
-    arr.push(sq);
-    byBranch.set(sq.branch, arr);
+    if (sq.companyId && companies.some((c) => c.id === sq.companyId)) {
+      const arr = byCompany.get(sq.companyId) ?? [];
+      arr.push(sq);
+      byCompany.set(sq.companyId, arr);
+    } else {
+      unassigned.push(sq);
+    }
   }
-  const columns = [...byBranch.entries()];
 
-  if (columns.length === 0) {
+  // Render columns in the canonical company order so A CO is always
+  // leftmost. Empty columns still render — the headcount of zero is
+  // useful information ("Bravo has no squads yet").
+  const columns: { key: string; designator: string; name: string; branch: Branch; squads: Squad[] }[] =
+    companies.map((c) => ({
+      key: c.id,
+      designator: c.designator,
+      name: c.name,
+      branch: c.branch,
+      squads: byCompany.get(c.id) ?? [],
+    }));
+  if (unassigned.length > 0) {
+    columns.push({
+      key: '__unassigned__',
+      designator: '—',
+      name: 'Unassigned',
+      branch: 'infantry',
+      squads: unassigned,
+    });
+  }
+
+  // Drop columns that would render empty AND have no authoring meaning
+  // — but keep canonical companies even when empty (the grid is the
+  // ORBAT). Unassigned only appears if it actually has squads, handled
+  // above.
+  const totalSquads = columns.reduce((s, c) => s + c.squads.length, 0);
+  if (totalSquads === 0) {
     return (
       <NWPanel title="ORBAT · COMPANIES">
         <div
@@ -326,11 +371,13 @@ function CompanyColumns({
           gap: 14,
         }}
       >
-        {columns.map(([branch, sqs]) => (
+        {columns.map((col) => (
           <CompanyColumn
-            key={branch}
-            branch={branch}
-            squads={sqs}
+            key={col.key}
+            designator={col.designator}
+            name={col.name}
+            branch={col.branch}
+            squads={col.squads}
             selectedSquadId={selectedSquadId}
             onSelect={onSelect}
           />
@@ -341,42 +388,79 @@ function CompanyColumns({
 }
 
 function CompanyColumn({
+  designator,
+  name,
   branch,
   squads,
   selectedSquadId,
   onSelect,
 }: {
+  designator: string;
+  name: string;
   branch: Branch;
   squads: Squad[];
   selectedSquadId: string | null;
   onSelect: (id: string) => void;
 }): React.JSX.Element {
   const tone = branchTone(branch);
+  const headerColor =
+    tone === 'amber' ? NW.amber : tone === 'green' ? NW.green : tone === 'magenta' ? NW.magenta : NW.cyan;
   return (
     <div>
       <div
         style={{
-          fontFamily: NW.mono,
-          fontSize: 9,
-          letterSpacing: '0.18em',
-          color: tone === 'amber' ? NW.amber : tone === 'green' ? NW.green : NW.cyan,
           padding: '4px 0 8px 0',
           borderBottom: `1px solid ${NW.line}`,
           marginBottom: 8,
         }}
       >
-        ◆ {branch.toUpperCase()} · {squads.length}
+        <div
+          style={{
+            fontFamily: NW.mono,
+            fontSize: 9,
+            letterSpacing: '0.18em',
+            color: headerColor,
+          }}
+        >
+          ◆ {designator} · {squads.length}
+        </div>
+        <div
+          style={{
+            fontFamily: NW.display,
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            color: NW.fg0,
+            marginTop: 2,
+          }}
+        >
+          {name}
+        </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {squads.map((sq) => (
-          <SquadPlaque
-            key={sq.id}
-            squad={sq}
-            tone={tone}
-            selected={selectedSquadId === sq.id}
-            onClick={() => onSelect(sq.id)}
-          />
-        ))}
+        {squads.length === 0 ? (
+          <div
+            style={{
+              fontFamily: NW.mono,
+              fontSize: 10,
+              color: NW.fg2,
+              fontStyle: 'italic',
+              padding: '8px 4px',
+            }}
+          >
+            no squads assigned
+          </div>
+        ) : (
+          squads.map((sq) => (
+            <SquadPlaque
+              key={sq.id}
+              squad={sq}
+              tone={branchTone(sq.branch)}
+              selected={selectedSquadId === sq.id}
+              onClick={() => onSelect(sq.id)}
+            />
+          ))
+        )}
       </div>
     </div>
   );
