@@ -13,5 +13,6 @@ export function contentLookup() {
     weapon: (id: string) => bundle.weapons.get(id),
     armor: (id: string) => bundle.armor.get(id),
     utility: (id: string) => bundle.utility.get(id),
+    ammo: (id: string) => bundle.ammo.get(id),
   };
 }

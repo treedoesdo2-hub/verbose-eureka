@@ -365,6 +365,7 @@ describe('mapgen pipeline', () => {
         team0: { x: 0, y: 0, w: 8, h: 8 },
         team1: { x: size - 8, y: size - 8, w: 8, h: 8 },
       },
+      unitSlots: { team0: [], team1: [] },
       objectiveAnchors: [
         { kindHint: 'extract', rect: { x: 30, y: 30, w: 4, h: 4 }, qualityScore: 1 },
         { kindHint: 'defend', rect: { x: 20, y: 20, w: 4, h: 4 }, qualityScore: 1 },

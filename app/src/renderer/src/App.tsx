@@ -74,7 +74,7 @@ export default function App(): React.JSX.Element {
       <header>
         <h1>PAYROLL</h1>
         <span className="subtitle">A Private Military Sim</span>
-        <div className="shell-prefs" role="group" aria-label="UI preferences">
+        <section className="shell-prefs" aria-label="UI preferences">
           <select
             className="pref-select mono"
             value={density}
@@ -93,7 +93,7 @@ export default function App(): React.JSX.Element {
           >
             {theme === 'dark' ? '☾ dark' : '☼ light'}
           </button>
-        </div>
+        </section>
       </header>
       <main ref={mainRef}>
         {screen === 'menu' && <MainMenu />}

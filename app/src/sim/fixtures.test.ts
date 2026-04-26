@@ -79,7 +79,7 @@ describe('fixture: destructible_walk', () => {
     expect(intactScore).toBeGreaterThan(0);
 
     // Damage past half — hedge is now thin/light with low height.
-    applyBarrierDamage(w, 15, 8, 'N', BARRIER_MAX_HP['hedge']! - 5);
+    applyBarrierDamage(w, 15, 8, 'N', BARRIER_MAX_HP.hedge! - 5);
     const damagedScore = coverEvalAt(
       w,
       { x: 15, y: 2 },

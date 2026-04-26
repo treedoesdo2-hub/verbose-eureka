@@ -105,7 +105,7 @@ export function generateThumbnail(
     // P3.7b — contour stroke. Dark-stipple per-tile wherever the
     // downsampled contours flag is 1. Drawn on top of the shaded base
     // so the stroke contrasts cleanly.
-    if (contoursD && contoursD[i]) {
+    if (contoursD?.[i]) {
       pixels[o] = Math.round(pixels[o] * 0.6);
       pixels[o + 1] = Math.round(pixels[o + 1] * 0.6);
       pixels[o + 2] = Math.round(pixels[o + 2] * 0.6);

@@ -13,7 +13,7 @@
 // Per Q14a: medical history is UI-only stub; ArmorPlacement
 // resistance fields exist in schema but FIRE/EMP stay inert in sim.
 
-import { ALL_BODY_ZONES, type BodyZone, ZONE_CAPACITY_KG } from '@schema/common';
+import { type BodyZone, ZONE_CAPACITY_KG } from '@schema/common';
 import type { Operator } from '@schema/operator';
 import type { SquadMember } from '@schema/squad';
 import type { LoadoutItem } from '@sim/loadout';
@@ -39,15 +39,22 @@ import { useSquads } from '../stores/squads';
 
 type StockpileCat = 'weapon' | 'armor' | 'utility' | 'ammo';
 
-// Paperdoll has 7 visible zones per ADR 016 §S3 (no left_hand /
-// right_hand / back_mount on the silhouette). The torso slot toggles
-// between torso_front (FRONT view) and torso_back (REAR view).
+// Paperdoll zones drawn on the silhouette. ADR 016 §S3 originally
+// listed 7, but #280.21 wires drag-drop through `canPlaceItem` which
+// gates primary/sidearm weapons on `right_hand` / `left_hand`. Without
+// hand zones on the paperdoll, primaries fail validity on every drop
+// AND render nowhere on the silhouette. Adding hands to the paperdoll
+// reconciles both bugs (batch-1 drag-equip + batch-2 weapon render).
+// The torso slot toggles between torso_front (FRONT view) and
+// torso_back (REAR view).
 type PaperdollFace = 'front' | 'rear';
 type PaperdollZone =
   | 'head'
   | 'torso'
   | 'left_arm'
   | 'right_arm'
+  | 'left_hand'
+  | 'right_hand'
   | 'waist'
   | 'left_leg'
   | 'right_leg';
@@ -119,11 +126,14 @@ export function NWLoadoutEditor({
     if (!validity.valid && !opts.swap && !opts.evict) return;
     let next = [...member.loadout.items];
     if (opts.swap || opts.evict) {
-      // Strip anything currently occupying this zone before inserting.
-      // Swap = drop the new item where the old one was; Evict = explicit
-      // confirmation modifier (Alt) that lets the user clear the zone
-      // even when the new item wouldn't otherwise fit.
-      next = next.filter((it) => it.zone !== targetZone);
+      // Strip only the items the new one would actually conflict with.
+      // The previous logic stripped EVERY item at targetZone, which
+      // wiped pouches / ammo / kit anchored on the same zone whenever
+      // someone shift-swapped a plate. Conflict rules mirror
+      // canPlaceItem: weapons conflict with weapons in the same slot,
+      // armor conflicts with any armor covering the target zone (via
+      // placements), and ammo / utility never force eviction.
+      next = next.filter((it) => !conflictsWith(it, type, targetZone, lookup));
     }
     next.push({ type, id, zone: targetZone });
     updateItems(next);
@@ -308,6 +318,7 @@ function NWArmoryTopBar({
       >
         <div style={{ width: 54, height: 58, position: 'relative' }}>
           <svg viewBox="0 0 54 58" aria-hidden>
+            <title>operator portrait frame</title>
             <path
               d="M 27 2 L 50 14 L 50 42 L 27 56 L 4 42 L 4 14 Z"
               fill={NW.cyanSoft}
@@ -856,6 +867,28 @@ function canPlaceItem(
   return { valid: true, reason: '' };
 }
 
+// Whether an existing loadout item conflicts with a new one being
+// shift-swapped onto `targetZone`. Conflict means "same slot can't
+// hold both" — kept narrow so the swap evicts only what canPlaceItem
+// would otherwise reject. Ammo / utility never force eviction; they
+// can stack at the same zone.
+function conflictsWith(
+  it: LoadoutItem,
+  newType: StockpileCat,
+  targetZone: BodyZone,
+  lookup: ReturnType<typeof contentLookup>,
+): boolean {
+  if (newType === 'weapon') {
+    return it.type === 'weapon' && it.zone === targetZone;
+  }
+  if (newType === 'armor') {
+    if (it.type !== 'armor') return false;
+    const armor = lookup.armor(it.id);
+    return armor?.placements.some((p) => p.zone === targetZone) ?? false;
+  }
+  return false;
+}
+
 function defaultEquipZone(
   type: StockpileCat,
   selected: PaperdollZone,
@@ -947,6 +980,7 @@ function NWPaperdollEditor({
         preserveAspectRatio="xMidYMid meet"
         style={{ width: '100%', height: '100%', display: 'block' }}
       >
+        <title>operator paperdoll</title>
         <defs>
           <pattern id="nwa-grid" width="8" height="8" patternUnits="userSpaceOnUse">
             <path
@@ -1093,8 +1127,9 @@ function zoneKgFor(
   return kg;
 }
 
-// 7-zone paperdoll geometry. Only the torso slot toggles between
-// torso_front and torso_back via the FRONT/REAR chip.
+// 9-zone paperdoll geometry. Torso toggles between torso_front and
+// torso_back via the FRONT/REAR chip. Hand zones sit just below the
+// arms — that's where the primary / sidearm slots anchor.
 const PAPERDOLL_ZONES: {
   id: PaperdollZone;
   d: string;
@@ -1105,6 +1140,8 @@ const PAPERDOLL_ZONES: {
   { id: 'torso', d: 'M 46 54 L 94 54 L 96 96 L 90 124 L 50 124 L 44 96 Z', labelPos: [70, 90], label: 'TORSO' },
   { id: 'left_arm', d: 'M 30 56 L 46 54 L 48 116 L 30 118 Z', labelPos: [38, 88], label: 'L·ARM' },
   { id: 'right_arm', d: 'M 94 54 L 110 56 L 110 118 L 92 116 Z', labelPos: [102, 88], label: 'R·ARM' },
+  { id: 'left_hand', d: 'M 26 118 L 48 116 L 46 134 L 24 134 Z', labelPos: [36, 128], label: 'L·HAND' },
+  { id: 'right_hand', d: 'M 92 116 L 114 118 L 116 134 L 94 134 Z', labelPos: [104, 128], label: 'R·HAND' },
   { id: 'waist', d: 'M 50 124 L 90 124 L 88 138 L 52 138 Z', labelPos: [70, 132], label: 'WAIST' },
   { id: 'left_leg', d: 'M 50 138 L 68 138 L 66 200 L 48 200 Z', labelPos: [58, 168], label: 'L·LEG' },
   { id: 'right_leg', d: 'M 72 138 L 90 138 L 92 200 L 74 200 Z', labelPos: [82, 168], label: 'R·LEG' },
@@ -1118,6 +1155,8 @@ const CRIT_SLOT_GRID: Record<PaperdollZone, { cols: number; rows: number }> = {
   torso: { cols: 4, rows: 3 },
   left_arm: { cols: 2, rows: 6 },
   right_arm: { cols: 2, rows: 6 },
+  left_hand: { cols: 2, rows: 1 },
+  right_hand: { cols: 2, rows: 1 },
   waist: { cols: 3, rows: 2 },
   left_leg: { cols: 3, rows: 4 },
   right_leg: { cols: 3, rows: 4 },
@@ -1178,8 +1217,17 @@ function NWHitZone({
   const labelColor = tone === 'empty' ? NW.fg2 : selected ? NW.amber : NW.cyan;
   const [tx, ty] = zone.labelPos;
   return (
+    // biome-ignore lint/a11y/useSemanticElements: SVG <g> can't be a <button>; role/tabIndex/onKeyDown give keyboard parity.
     <g
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          onClick();
+        }
+      }}
       onDragOver={(ev) => {
         // preventDefault enables drop; we also surface the shift/alt
         // modifier state every frame so the parent can re-evaluate
@@ -1275,11 +1323,12 @@ function CritSlotOverlay({
         const row = Math.floor(i / cols);
         const beyondCap = i >= slotsCap;
         const filled = i < filledCount;
+        const slotKey = `${col}-${row}`;
         const x = gx + col * cellW;
         const y = gy + row * cellH;
         return (
           <circle
-            key={i}
+            key={slotKey}
             cx={x}
             cy={y}
             r={0.45}
@@ -1608,6 +1657,8 @@ function prettyZone(z: PaperdollZone, face: PaperdollFace): string {
   if (z === 'torso') return face === 'front' ? 'TORSO · FRONT' : 'TORSO · REAR';
   if (z === 'left_arm') return 'LEFT ARM';
   if (z === 'right_arm') return 'RIGHT ARM';
+  if (z === 'left_hand') return 'LEFT HAND';
+  if (z === 'right_hand') return 'RIGHT HAND';
   if (z === 'left_leg') return 'LEFT LEG';
   if (z === 'right_leg') return 'RIGHT LEG';
   if (z === 'waist') return 'WAIST';
@@ -1664,7 +1715,9 @@ function EquippedRow({
   }
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: rendered inside an inventory list; the parent container is the list, this row is content with a right-click affordance only.
     <div
+      role="listitem"
       onContextMenu={(ev) => {
         // Right-click quick-unequip (#280.24): suppress the OS menu and
         // remove the item back to the warehouse in one click.
@@ -1820,8 +1873,8 @@ function NWArmoryBottomBar({
           }}
         >
           <span>⚠ {errLabels.length} ISSUE{errLabels.length === 1 ? '' : 'S'}:</span>
-          {errLabels.slice(0, 3).map((e, i) => (
-            <span key={i} style={{ color: NW.fg2 }}>
+          {errLabels.slice(0, 3).map((e) => (
+            <span key={e} style={{ color: NW.fg2 }}>
               {e}
             </span>
           ))}

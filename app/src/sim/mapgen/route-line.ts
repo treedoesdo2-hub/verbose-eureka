@@ -113,8 +113,8 @@ export function routeRail(
   const steps = Math.max(Math.abs(dx), Math.abs(dy));
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    let x = Math.round(entry.x + dx * t);
-    let y = Math.round(entry.y + dy * t);
+    const x = Math.round(entry.x + dx * t);
+    const y = Math.round(entry.y + dy * t);
     if (i > 0 && x >= 0 && x < W && y >= 0 && y < H) {
       const prevStep = elevationStep[prev.y * W + prev.x];
       const curStep = elevationStep[y * W + x];

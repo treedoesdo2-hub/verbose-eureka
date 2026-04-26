@@ -118,9 +118,9 @@ function rearThirdRect(
   if (side === 1) {
     return { x: W - thirdW, y: 0, w: thirdW, h: H };
   }
-  return { x: 0, y: 0, w: thirdW, h: H };
   void axisCx;
   void axisCy;
+  return { x: 0, y: 0, w: thirdW, h: H };
 }
 
 // ---------------------------------------------------------------------------

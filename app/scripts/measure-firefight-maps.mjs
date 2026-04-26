@@ -233,7 +233,7 @@ function measureMapJpg(jpgPath) {
 
 // Count contour pixels in the transparent overlay. Any pixel with alpha>0
 // and dark RGB (l<0.5) is considered contour ink.
-function measureContoursPng(pngPath, mapTileCount) {
+function measureContoursPng(pngPath, _mapTileCount) {
   if (!existsSync(pngPath)) return { contour_lines_per_1000_tiles: 0, elevation_stddev_normalized: 0 };
   const { width, height, channels, pixels } = decodePng(readFileSync(pngPath));
   let contourPixels = 0;

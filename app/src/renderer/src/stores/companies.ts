@@ -12,8 +12,8 @@
 // player has authored.
 
 import {
-  Battalion,
-  Company,
+  type Battalion,
+  type Company,
   newBattalionId,
   newCompanyId,
 } from '@schema/squad';

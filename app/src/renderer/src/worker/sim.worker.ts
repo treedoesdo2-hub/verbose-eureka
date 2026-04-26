@@ -143,8 +143,8 @@ function startSim(seed: number, req: ScenarioRequest): SimState | null {
   // from the content pack. Generator anchors bind to contract objectives so
   // "extract" without an authored zone resolves to a generator-picked rect.
   let map: Parameters<typeof buildScenario>[0]['map'];
-  let prebuiltWorld: Parameters<typeof buildScenario>[0]['prebuiltWorld'] = undefined;
-  let prebuiltMapMeta: Parameters<typeof buildScenario>[0]['prebuiltMapMeta'] = undefined;
+  let prebuiltWorld: Parameters<typeof buildScenario>[0]['prebuiltWorld'] ;
+  let prebuiltMapMeta: Parameters<typeof buildScenario>[0]['prebuiltMapMeta'] ;
   let objectiveZoneOverrides:
     | ReadonlyMap<string, { x: number; y: number; w: number; h: number }>
     | undefined;

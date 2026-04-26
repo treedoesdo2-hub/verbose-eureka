@@ -71,6 +71,7 @@ export function NWLogo({ size = 20 }: { size?: number }): React.JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <svg width={size} height={size} viewBox="0 0 20 20" aria-hidden>
+        <title>PAYROLL hex crest</title>
         <path
           d="M 10 1 L 18 6 L 18 14 L 10 19 L 2 14 L 2 6 Z"
           fill="none"
@@ -470,6 +471,7 @@ export function NWHexIcon({
 }): React.JSX.Element {
   return (
     <svg width={size} height={size * 1.1} viewBox="0 0 20 22" aria-hidden>
+      <title>hex icon</title>
       <path
         d="M 10 1 L 18 6 L 18 16 L 10 21 L 2 16 L 2 6 Z"
         fill={filled ? color : 'none'}
@@ -496,6 +498,7 @@ export function NWDiamond({
       style={{ display: 'inline-block' }}
       aria-hidden
     >
+      <title>diamond icon</title>
       <path
         d={`M ${size} 0 L ${size * 2} ${size} L ${size} ${size * 2} L 0 ${size} Z`}
         fill={color}

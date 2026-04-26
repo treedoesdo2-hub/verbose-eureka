@@ -49,9 +49,6 @@ function branchTone(b: Branch): NWAccent {
       return 'magenta';
     case 'engineering':
       return 'amber';
-    case 'mechanized':
-    case 'support':
-    case 'infantry':
     default:
       return 'cyan';
   }
@@ -603,11 +600,11 @@ function SquadDrillIn({ squad }: { squad: Squad | null }): React.JSX.Element {
             {squad.members.length === 0 ? (
               <div style={{ fontFamily: NW.mono, fontSize: 10, color: NW.fg2 }}>no members</div>
             ) : (
-              squad.members.map((m, i) => {
+              squad.members.map((m) => {
                 const op = bundle.operators.get(m.operatorId);
                 return (
                   <div
-                    key={`${m.operatorId}:${i}`}
+                    key={m.operatorId}
                     style={{
                       padding: '6px 10px',
                       clipPath: 'polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)',

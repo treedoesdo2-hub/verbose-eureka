@@ -162,7 +162,9 @@ export class MatchStatsAccumulator {
       }
     }
 
-    const squads: AARSquadSnapshot['squads'] = [];
+    // Mutable accumulator; AARSquadSnapshot['squads'] is readonly so the
+    // assignment below widens (mutable → readonly) implicitly.
+    const squads: Array<AARSquadSnapshot['squads'][number]> = [];
     for (const [key, b] of friendlyBuckets) {
       squads.push({
         squadId: key === '__unassigned__' ? null : key,

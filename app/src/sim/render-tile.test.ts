@@ -22,13 +22,13 @@ describe('getRenderTile', () => {
     const w = makeWorld(8, 8, 1);
     const t = getRenderTile(w, 3, 3);
     expect(t).not.toBeNull();
-    expect(t!.base).toBe('open');
-    expect(t!.point).toBeNull();
-    expect(t!.buildingId).toBe(0);
-    expect(t!.elevationStep).toBe(0);
-    expect(t!.edgeN.kind).toBeNull();
-    expect(t!.edgeW.kind).toBeNull();
-    expect(t!.strongestAxes.move).toBe('walkable-free');
+    expect(t?.base).toBe('open');
+    expect(t?.point).toBeNull();
+    expect(t?.buildingId).toBe(0);
+    expect(t?.elevationStep).toBe(0);
+    expect(t?.edgeN.kind).toBeNull();
+    expect(t?.edgeW.kind).toBeNull();
+    expect(t?.strongestAxes.move).toBe('walkable-free');
   });
 
   it('combines base + point into strongestAxes', () => {
@@ -47,7 +47,7 @@ describe('getRenderTile', () => {
   it('reflects damaged point state', () => {
     const w = makeWorld(8, 8, 1);
     setPoint(w, 1, 1, 'car');
-    const maxHp = POINT_MAX_HP['car']!;
+    const maxHp = POINT_MAX_HP.car!;
     applyPointDamage(w, 1, 1, Math.ceil(maxHp * 0.6));
     const t = getRenderTile(w, 1, 1)!;
     expect(t.pointDamaged).toBe(true);

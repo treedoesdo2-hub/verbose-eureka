@@ -59,7 +59,7 @@ export type StartSimPayload = {
 };
 
 export type WireLoadoutItem = {
-  readonly type: 'weapon' | 'armor' | 'utility';
+  readonly type: 'weapon' | 'armor' | 'utility' | 'ammo';
   readonly id: string;
   readonly zone: BodyZone;
 };

@@ -6,7 +6,7 @@
 import type { DominantCapillary, DominantLine, LineKind } from './dominant-line';
 import type { HeroLandmark } from './hero-landmark';
 import { lineStroke, OVERLAY_PALETTE, type RGBA } from './palette';
-import type { DeployZone, ObjectiveAnchor, UnitSlots } from './types';
+import type { ObjectiveAnchor, UnitSlots } from './types';
 
 export type DrawTarget = {
   readonly width: number;

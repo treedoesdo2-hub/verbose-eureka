@@ -54,7 +54,7 @@ describe('P3.12 per-mode cliff guard', () => {
     expect(wheeled).not.toBeNull();
     // Assert the wheeled path does not go directly through y=4's ridge
     // cells — at least one waypoint must be off-row.
-    const offRow = wheeled!.some((p) => {
+    const offRow = wheeled?.some((p) => {
       const ty = Math.floor(p.y / TS);
       return ty !== 4;
     });

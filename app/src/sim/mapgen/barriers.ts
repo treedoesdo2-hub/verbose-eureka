@@ -7,7 +7,7 @@
 // This file owns the pure data (per-kind props, HP base tables) and
 // the line rasterization + pipeline-level stampers.
 
-import { type LinearBarrierKind } from '@schema/map';
+import type { LinearBarrierKind } from '@schema/map';
 import {
   BARRIER_MAX_HP,
   encodeBarrier,

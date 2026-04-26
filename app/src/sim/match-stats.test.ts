@@ -193,9 +193,11 @@ describe('match stats accumulator', () => {
     const units = makeMatchUnits();
     acc.seed(units);
     // Distinct positions for friendlies so the squad center has signal.
-    units.get(asUnitId(1))!.position = { x: 10, y: 10 };
-    units.get(asUnitId(2))!.position = { x: 14, y: 14 };
-    units.get(asUnitId(10))!.position = { x: 50, y: 50 };
+    // `Unit.position` is readonly; rebuild each unit with the new position
+    // rather than mutating in place.
+    units.set(asUnitId(1), { ...units.get(asUnitId(1))!, position: { x: 10, y: 10 } });
+    units.set(asUnitId(2), { ...units.get(asUnitId(2))!, position: { x: 14, y: 14 } });
+    units.set(asUnitId(10), { ...units.get(asUnitId(10))!, position: { x: 50, y: 50 } });
     const squadOf = (opId: string): string | null =>
       opId === 'callsign-alpha' || opId === 'callsign-bravo' ? 'sq-1' : null;
 

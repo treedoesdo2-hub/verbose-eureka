@@ -67,7 +67,7 @@ export function Briefing(): React.JSX.Element {
 
   // Re-roll the preview seed every time the contract switches so the map
   // shown matches the map that will be sent to the worker on launch.
-  const previewSeed = useMemo(() => Date.now() & 0xffff, [contract?.id]);
+  const previewSeed = useMemo(() => Date.now() & 0xffff, []);
   const preview = useMapPreview(contract?.id ?? null, previewSeed);
 
   const initialSlotCount = contract
@@ -426,7 +426,7 @@ function BriefObjectives({
         <tbody>
           {contract.objectives.map((o, i) => (
             <tr
-              key={`${o.kind}:${o.description}:${i}`}
+              key={`${o.kind}:${o.description}`}
               style={{
                 borderBottom: i < contract.objectives.length - 1 ? `1px solid ${NW.line}` : 'none',
               }}

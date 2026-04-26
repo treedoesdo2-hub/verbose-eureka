@@ -9,7 +9,6 @@ import type { Contract } from '@schema/contract';
 import { useMemo } from 'react';
 import { getContent } from '../content';
 import {
-  HEX_CLIP_TL_BR,
   NW,
   NWBar,
   NWChip,
@@ -351,6 +350,7 @@ function HoloMap({ contracts }: { contracts: Contract[] }): React.JSX.Element {
         preserveAspectRatio="xMidYMid meet"
         style={{ width: '100%', height: '100%', display: 'block' }}
       >
+        <title>HQ holographic map</title>
         <defs>
           <pattern id="hm-grid" width="20" height="20" patternUnits="userSpaceOnUse">
             <path
@@ -373,7 +373,7 @@ function HoloMap({ contracts }: { contracts: Contract[] }): React.JSX.Element {
           opacity="0.25"
         />
 
-        {hexes.map((h, i) => {
+        {hexes.map((h) => {
           const fill =
             h.tone === 'aoi'
               ? `${NW.cyan}33`
@@ -383,7 +383,7 @@ function HoloMap({ contracts }: { contracts: Contract[] }): React.JSX.Element {
           const stroke =
             h.tone === 'aoi' ? NW.cyan : h.tone === 'rival' ? NW.magenta : NW.line2;
           const sw = h.tone === 'bg' ? 0.4 : 1.4;
-          return <Hex key={i} cx={h.cx} cy={h.cy} r={HEX_R} fill={fill} stroke={stroke} sw={sw} />;
+          return <Hex key={`${h.cx}-${h.cy}`} cx={h.cx} cy={h.cy} r={HEX_R} fill={fill} stroke={stroke} sw={sw} />;
         })}
 
         {/* Drone track — amber dashed path with pulse */}
@@ -659,7 +659,7 @@ function Ticker(): React.JSX.Element {
     <NWPanel title="DARKNET · TICKER">
       {lines.map((l, i) => (
         <div
-          key={i}
+          key={l}
           style={{
             fontFamily: NW.mono,
             fontSize: 10,

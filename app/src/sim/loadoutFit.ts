@@ -300,7 +300,7 @@ export function computeFit(
     for (const it of loadout.items) {
       if (it.type !== 'weapon') continue;
       const w = content.weapon(it.id);
-      if (!w || !w.caliber) continue;
+      if (!w?.caliber) continue;
       if (!carriedCalibers.has(w.caliber)) {
         errors.push({ kind: 'ammo_missing', weaponId: w.id, caliber: w.caliber });
       }

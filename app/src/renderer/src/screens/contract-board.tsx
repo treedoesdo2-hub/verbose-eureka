@@ -343,6 +343,7 @@ function ContractMap({ contract }: { contract: Contract | null }): React.JSX.Ele
       >
         {contract ? (
           <svg viewBox="0 0 200 100" style={{ width: '100%', height: '100%' }}>
+            <title>contract map preview</title>
             <defs>
               <pattern id="cm-grid" width="10" height="10" patternUnits="userSpaceOnUse">
                 <path

@@ -34,19 +34,23 @@ function setupWorldAndUnit() {
   // Stamp an intact window on the north edge of (5, 5).
   world.edgeOverrideN[5 * 10 + 5] = EDGE_OVERRIDE_WINDOW_INTACT;
   // Unit at tile (5, 4), tasked to walk south into the building.
-  const unit = makeUnit({
-    id: asUnitId(1),
-    teamId: 0,
-    operatorId: null,
-    position: { x: 5.5, y: 4.5 },
-    facing: Math.PI / 2,
-    combat: deriveCombatProfile(
-      { items: [{ type: 'weapon', id: ar.id, zone: 'right_hand' }] },
-      content,
-    ),
-    action: { kind: 'moving', target: { x: 5.5, y: 5.5 } },
-    waypoints: [{ x: 5.5, y: 5.5 }],
-  });
+  // makeUnit always initialises action=idle; override to a moving action
+  // post-construction since the test scenario starts mid-move.
+  const unit = {
+    ...makeUnit({
+      id: asUnitId(1),
+      teamId: 0,
+      operatorId: null,
+      position: { x: 5.5, y: 4.5 },
+      facing: Math.PI / 2,
+      combat: deriveCombatProfile(
+        { items: [{ type: 'weapon', id: ar.id, zone: 'right_hand' }] },
+        content,
+      ),
+      waypoints: [{ x: 5.5, y: 5.5 }],
+    }),
+    action: { kind: 'moving' as const, target: { x: 5.5, y: 5.5 } },
+  };
   return { world, unit };
 }
 

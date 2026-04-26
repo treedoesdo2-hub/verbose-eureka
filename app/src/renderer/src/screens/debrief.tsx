@@ -282,6 +282,7 @@ function CenterAARMap({
           preserveAspectRatio="xMidYMid meet"
           style={{ width: '100%', height: 'auto', flex: 1 }}
         >
+          <title>after-action-report regional map</title>
           <defs>
             <pattern id="aar-grid" width="10" height="10" patternUnits="userSpaceOnUse">
               <path
@@ -336,7 +337,7 @@ function CenterAARMap({
             const idx = squadIds.indexOf(sqId);
             const c = squadColor(idx >= 0 ? idx : i);
             return (
-              <g key={`${sqId}:${i}`}>
+              <g key={sqId}>
                 <circle
                   cx={q.centerX}
                   cy={q.centerY}
@@ -449,7 +450,7 @@ function computeBounds(snapshots: readonly AARSquadSnapshot[]): {
       maxY = Math.max(maxY, s.hostileCenter.y);
     }
   }
-  if (!isFinite(minX)) {
+  if (!Number.isFinite(minX)) {
     return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
   }
   return { minX, minY, maxX, maxY };
@@ -700,7 +701,7 @@ function CommsExtractsPanel({ lines }: { lines: readonly CommsLine[] }): React.J
       <div style={{ padding: 8 }}>
         {lines.map((l, i) => (
           <div
-            key={i}
+            key={`${l.ts}:${l.text}`}
             style={{
               fontFamily: NW.mono,
               fontSize: 10,
@@ -823,7 +824,7 @@ function IntelGainedPanel({
     <NWPanel title="INTEL · GAINED" style={{ flexShrink: 0 }}>
       {fragments.map((f, i) => (
         <div
-          key={i}
+          key={`${f.tone}:${f.text}`}
           style={{
             padding: '4px 0',
             fontFamily: NW.mono,
