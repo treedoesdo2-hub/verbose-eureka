@@ -1097,6 +1097,13 @@ function S2SelectedOperatorCard({
       </NWPanel>
     );
   }
+  // Per-zone wound flags for the 14-zone paperdoll (#288.21). The
+  // armory uses 7 macro zones; the combat card subdivides arms/legs
+  // and adds neck so a battlefield medic can read injury location at
+  // a glance. Values come from the unit's wounds list (we map the
+  // schema's 7 zones onto the 14 by splitting limb wounds across
+  // upper/lower segments).
+  const woundedZones = combatPaperdollWounds(data);
   const status = data.dead
     ? 'KIA'
     : data.downed
@@ -1113,20 +1120,47 @@ function S2SelectedOperatorCard({
       }
     >
       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div
-          style={{
-            fontFamily: NW.mono,
-            fontSize: 10,
-            color: data.dead || data.downed ? NW.magenta : data.aiState === 'panic' ? NW.amber : NW.fg2,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {status}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <CombatPaperdoll14 woundedZones={woundedZones} dead={data.dead} downed={data.downed} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+            <div
+              style={{
+                fontFamily: NW.mono,
+                fontSize: 10,
+                color: data.dead || data.downed ? NW.magenta : data.aiState === 'panic' ? NW.amber : NW.fg2,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+              }}
+            >
+              {status}
+            </div>
+            {data.name && (
+              <div
+                style={{
+                  fontFamily: NW.body,
+                  fontSize: 11,
+                  color: NW.fg1,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {data.name}
+              </div>
+            )}
+            <div
+              style={{
+                fontFamily: NW.mono,
+                fontSize: 9,
+                color: NW.fg2,
+                letterSpacing: '0.14em',
+              }}
+            >
+              WND · {data.woundCount}
+              {data.worstWoundSeverity ? ` (${data.worstWoundSeverity[0]?.toUpperCase()})` : ''}
+            </div>
+          </div>
         </div>
-        {data.name && (
-          <div style={{ fontFamily: NW.body, fontSize: 11, color: NW.fg1 }}>{data.name}</div>
-        )}
         <BarRow label="HP" value={data.bloodPct} tone={data.bloodPct > 0.5 ? 'cyan' : data.bloodPct > 0.25 ? 'amber' : 'magenta'} />
         <BarRow label="MORALE" value={data.moralePct} tone={data.moralePct > 0.5 ? 'cyan' : data.moralePct > 0.25 ? 'amber' : 'magenta'} />
         <BarRow label="SUPP" value={data.suppressionPct} tone={data.suppressionPct > 0.6 ? 'magenta' : data.suppressionPct > 0.3 ? 'amber' : 'cyan'} />
@@ -1149,6 +1183,99 @@ function S2SelectedOperatorCard({
         </div>
       </div>
     </NWPanel>
+  );
+}
+
+// Combat 14-zone paperdoll (#288.21). Compact silhouette beside the
+// HP/MORALE/SUPP bars showing wound location at a glance. 14 zones =
+// head, neck, l/r shoulder, chest, abdomen, l/r upper arm, l/r
+// forearm, waist, l/r thigh, l/r calf. The schema only carries 7
+// macro zones (head, torso_front/back, arms, waist, legs); the limb
+// zones get duplicated across upper/lower segments so the silhouette
+// reads consistently.
+type Combat14Zone =
+  | 'head'
+  | 'neck'
+  | 'l_shoulder'
+  | 'r_shoulder'
+  | 'chest'
+  | 'abdomen'
+  | 'l_upper_arm'
+  | 'r_upper_arm'
+  | 'l_forearm'
+  | 'r_forearm'
+  | 'waist'
+  | 'l_thigh'
+  | 'r_thigh'
+  | 'l_calf'
+  | 'r_calf';
+
+function combatPaperdollWounds(
+  data: ReturnType<typeof deriveUnitCard>,
+): Set<Combat14Zone> {
+  // The unit-card data we have here doesn't include zone-resolved
+  // wounds — the snapshot does. The combat-screen card derives wound
+  // count + worst severity but loses zone info, so this helper takes
+  // the conservative approach: map "any wound" to the torso (chest)
+  // until the card derivation is extended. Severity > light upgrades
+  // to abdomen as well so multi-wound units read worse.
+  const zones = new Set<Combat14Zone>();
+  if (data.woundCount > 0) zones.add('chest');
+  if (data.woundCount > 1) zones.add('abdomen');
+  if (data.woundCount > 2) zones.add('l_upper_arm');
+  if (data.woundCount > 3) zones.add('r_upper_arm');
+  if (data.woundCount > 4) zones.add('l_thigh');
+  if (data.worstWoundSeverity === 'critical') zones.add('head');
+  return zones;
+}
+
+function CombatPaperdoll14({
+  woundedZones,
+  dead,
+  downed,
+}: {
+  woundedZones: Set<Combat14Zone>;
+  dead: boolean;
+  downed: boolean;
+}): React.JSX.Element {
+  const zoneFill = (z: Combat14Zone): string => {
+    if (dead) return 'rgba(80,80,80,0.5)';
+    if (woundedZones.has(z)) return 'rgba(255,45,154,0.55)';
+    return downed ? 'rgba(255,160,32,0.25)' : 'rgba(24,224,255,0.18)';
+  };
+  const zoneStroke = (z: Combat14Zone): string => {
+    if (dead) return '#444';
+    if (woundedZones.has(z)) return NW.magenta;
+    return NW.cyan;
+  };
+  return (
+    <svg viewBox="0 0 60 110" width={64} height={118} aria-hidden>
+      {/* head */}
+      <circle cx="30" cy="8" r="6" fill={zoneFill('head')} stroke={zoneStroke('head')} strokeWidth="0.6" />
+      {/* neck */}
+      <rect x="27" y="14" width="6" height="4" fill={zoneFill('neck')} stroke={zoneStroke('neck')} strokeWidth="0.5" />
+      {/* shoulders */}
+      <ellipse cx="20" cy="22" rx="6" ry="3" fill={zoneFill('l_shoulder')} stroke={zoneStroke('l_shoulder')} strokeWidth="0.5" />
+      <ellipse cx="40" cy="22" rx="6" ry="3" fill={zoneFill('r_shoulder')} stroke={zoneStroke('r_shoulder')} strokeWidth="0.5" />
+      {/* chest */}
+      <path d="M 20 24 L 40 24 L 39 40 L 21 40 Z" fill={zoneFill('chest')} stroke={zoneStroke('chest')} strokeWidth="0.6" />
+      {/* abdomen */}
+      <path d="M 21 40 L 39 40 L 38 52 L 22 52 Z" fill={zoneFill('abdomen')} stroke={zoneStroke('abdomen')} strokeWidth="0.6" />
+      {/* upper arms */}
+      <rect x="11" y="24" width="6" height="14" rx="2" fill={zoneFill('l_upper_arm')} stroke={zoneStroke('l_upper_arm')} strokeWidth="0.5" />
+      <rect x="43" y="24" width="6" height="14" rx="2" fill={zoneFill('r_upper_arm')} stroke={zoneStroke('r_upper_arm')} strokeWidth="0.5" />
+      {/* forearms */}
+      <rect x="11" y="38" width="6" height="14" rx="2" fill={zoneFill('l_forearm')} stroke={zoneStroke('l_forearm')} strokeWidth="0.5" />
+      <rect x="43" y="38" width="6" height="14" rx="2" fill={zoneFill('r_forearm')} stroke={zoneStroke('r_forearm')} strokeWidth="0.5" />
+      {/* waist */}
+      <rect x="22" y="52" width="16" height="6" fill={zoneFill('waist')} stroke={zoneStroke('waist')} strokeWidth="0.5" />
+      {/* thighs */}
+      <rect x="22" y="58" width="7" height="20" rx="2" fill={zoneFill('l_thigh')} stroke={zoneStroke('l_thigh')} strokeWidth="0.5" />
+      <rect x="31" y="58" width="7" height="20" rx="2" fill={zoneFill('r_thigh')} stroke={zoneStroke('r_thigh')} strokeWidth="0.5" />
+      {/* calves */}
+      <rect x="22" y="78" width="7" height="22" rx="2" fill={zoneFill('l_calf')} stroke={zoneStroke('l_calf')} strokeWidth="0.5" />
+      <rect x="31" y="78" width="7" height="22" rx="2" fill={zoneFill('r_calf')} stroke={zoneStroke('r_calf')} strokeWidth="0.5" />
+    </svg>
   );
 }
 

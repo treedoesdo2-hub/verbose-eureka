@@ -47,6 +47,8 @@ type Scene = {
   objectiveLayer: Container;
   // Translucent callsigns for selected + firing units (#288.18).
   nameplateLayer: Container;
+  // LAST·SEEN markers from friendly lastHeard hints (#288.17).
+  ghostLayer: Container;
   fx: FxEmitter;
   atmosphere: AtmosphereState;
   camera: Camera;
@@ -98,6 +100,9 @@ export function CombatView({
         const lockLayer = new Container();
         const objectiveLayer = new Container();
         const nameplateLayer = new Container();
+        // Ghost-contact layer (#288.17) — sits beneath nameplates so the
+        // selected-unit callsign always reads on top.
+        const ghostLayer = new Container();
         worldLayer.addChild(terrain.container);
         worldLayer.addChild(decalLayer);
         worldLayer.addChild(visionLayer);
@@ -105,6 +110,7 @@ export function CombatView({
         worldLayer.addChild(unitsLayer);
         worldLayer.addChild(fxLayer);
         worldLayer.addChild(lockLayer);
+        worldLayer.addChild(ghostLayer);
         worldLayer.addChild(nameplateLayer);
         app.stage.addChild(worldLayer);
 
@@ -141,6 +147,7 @@ export function CombatView({
           lockLayer,
           objectiveLayer,
           nameplateLayer,
+          ghostLayer,
           fx,
           atmosphere,
           camera,
@@ -199,6 +206,7 @@ export function CombatView({
     scene.lockLayer.removeChildren();
     scene.objectiveLayer.removeChildren();
     scene.nameplateLayer.removeChildren();
+    scene.ghostLayer.removeChildren();
 
     const byId = new Map<number, SnapshotUnit>();
     for (const u of snapshot.units) byId.set(u.id, u);
@@ -221,6 +229,30 @@ export function CombatView({
       drawTargetLock(scene.lockLayer, target, now);
     }
 
+    // Ghost contacts (#288.17) — render lastHeard hints from friendly
+    // units as faded markers labelled LAST·SEEN. We dedupe by source
+    // unit id within a single tick so a hint heard by multiple
+    // friendlies only renders once.
+    const ghostByUnitId = new Map<number, SnapshotUnit['lastHeard'][number] & { dist: number }>();
+    for (const u of snapshot.units) {
+      if (u.teamId !== 0) continue;
+      if (u.actionKind === 'dead' || u.actionKind === 'downed') continue;
+      for (const h of u.lastHeard) {
+        const target = byId.get(h.sourceUnitId);
+        // Skip ghosts for units we can already see (alive friendlies
+        // would visually duplicate the silhouette).
+        if (target && target.actionKind !== 'dead' && target.teamId === 0) continue;
+        const prev = ghostByUnitId.get(h.sourceUnitId);
+        const dist = Math.hypot(h.approxX - u.x, h.approxY - u.y);
+        if (!prev || dist < prev.dist) {
+          ghostByUnitId.set(h.sourceUnitId, { ...h, dist });
+        }
+      }
+    }
+    for (const ghost of ghostByUnitId.values()) {
+      drawGhostContact(scene.ghostLayer, ghost, snapshot.tick);
+    }
+
     // Nameplates (#288.18) — selected unit always; firing units transient.
     for (const u of snapshot.units) {
       if (u.actionKind === 'dead') continue;
@@ -241,7 +273,75 @@ export function CombatView({
     }
   }, [snapshot, selectedUnitId, callsigns]);
 
-  return <div ref={containerRef} className="combat-view" />;
+  return (
+    <div ref={containerRef} className="combat-view" style={{ position: 'relative' }}>
+      {/* LOS edge vignette (#288.09) — radial fade at the viewport edges
+          implies the player's visual range falls off near the periphery.
+          Pure visual chrome over the PIXI canvas; no FOV mask. */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          background:
+            'radial-gradient(ellipse at center, transparent 55%, rgba(6,9,20,0.35) 80%, rgba(6,9,20,0.7) 100%)',
+        }}
+      />
+    </div>
+  );
+}
+
+// LAST·SEEN ghost-contact marker (#288.17). Rendered as a faded amber
+// hex outline with a small label, positioned at the lastHeard hint's
+// approximate coordinates. Confidence < 0.4 hints render at lower
+// opacity so weak intel reads as weak.
+function drawGhostContact(
+  layer: Container,
+  hint: SnapshotUnit['lastHeard'][number] & { dist: number },
+  currentTick: number,
+): void {
+  const ageTicks = Math.max(0, currentTick - hint.tick);
+  // Decay opacity over ~10 seconds (300 ticks) so older hints fade out.
+  const ageFade = Math.max(0, 1 - ageTicks / 300);
+  const alpha = Math.max(0.25, hint.confidence) * ageFade;
+  if (alpha <= 0.05) return;
+
+  const r = 1.4;
+  const g = new Graphics();
+  g.position.set(hint.approxX, hint.approxY);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+    const px = Math.cos(a) * r;
+    const py = Math.sin(a) * r;
+    if (i === 0) g.moveTo(px, py);
+    else g.lineTo(px, py);
+  }
+  g.closePath();
+  g.stroke({ color: 0xffa020, alpha, width: 0.16 });
+  // X mark inside.
+  g.moveTo(-r * 0.5, -r * 0.5);
+  g.lineTo(r * 0.5, r * 0.5);
+  g.moveTo(-r * 0.5, r * 0.5);
+  g.lineTo(r * 0.5, -r * 0.5);
+  g.stroke({ color: 0xffa020, alpha: alpha * 0.7, width: 0.12 });
+  layer.addChild(g);
+
+  const text = new Text({
+    text: 'LAST·SEEN',
+    style: new TextStyle({
+      fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
+      fontSize: 22,
+      fontWeight: '700',
+      fill: 0xffa020,
+      letterSpacing: 1.2,
+    }),
+  });
+  text.anchor.set(0.5, 0);
+  text.position.set(hint.approxX, hint.approxY + r + 0.4);
+  text.scale.set(0.1);
+  text.alpha = alpha;
+  layer.addChild(text);
 }
 
 function drawUnit(units: Container, vision: Container, u: SnapshotUnit, now: number): void {
