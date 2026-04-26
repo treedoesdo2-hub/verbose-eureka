@@ -1,6 +1,6 @@
 import 'pixi.js/unsafe-eval';
 import type { SimSnapshot, SnapshotUnit, WorldSnapshot } from '@shared/snapshot';
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { useEffect, useRef } from 'react';
 import { AtmosphereState } from './atmosphere-state';
 import { Camera } from './camera';
@@ -28,6 +28,10 @@ const TEAM_COLORS: Record<number, number> = {
 type Props = {
   world: WorldSnapshot;
   snapshot: SimSnapshot | null;
+  selectedUnitId?: number | null;
+  // operatorId → callsign for nameplate rendering. Optional: when omitted
+  // we fall back to "unit-{id}".
+  callsigns?: ReadonlyMap<string, string>;
 };
 
 type Scene = {
@@ -39,12 +43,21 @@ type Scene = {
   unitsLayer: Container;
   fxLayer: Container;
   lockLayer: Container;
+  // Hex-ring markers for active objectives (#288.14).
+  objectiveLayer: Container;
+  // Translucent callsigns for selected + firing units (#288.18).
+  nameplateLayer: Container;
   fx: FxEmitter;
   atmosphere: AtmosphereState;
   camera: Camera;
 };
 
-export function CombatView({ world, snapshot }: Props): React.JSX.Element {
+export function CombatView({
+  world,
+  snapshot,
+  selectedUnitId = null,
+  callsigns,
+}: Props): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<Scene | null>(null);
   const lastTickRef = useRef<number>(-1);
@@ -83,12 +96,16 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
         const unitsLayer = new Container();
         const fxLayer = new Container();
         const lockLayer = new Container();
+        const objectiveLayer = new Container();
+        const nameplateLayer = new Container();
         worldLayer.addChild(terrain.container);
         worldLayer.addChild(decalLayer);
         worldLayer.addChild(visionLayer);
+        worldLayer.addChild(objectiveLayer);
         worldLayer.addChild(unitsLayer);
         worldLayer.addChild(fxLayer);
         worldLayer.addChild(lockLayer);
+        worldLayer.addChild(nameplateLayer);
         app.stage.addChild(worldLayer);
 
         const atmosphere = new AtmosphereState(world.width, world.height, world.tileSizeMeters);
@@ -122,6 +139,8 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
           unitsLayer,
           fxLayer,
           lockLayer,
+          objectiveLayer,
+          nameplateLayer,
           fx,
           atmosphere,
           camera,
@@ -178,10 +197,19 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
     scene.unitsLayer.removeChildren();
     scene.visionLayer.removeChildren();
     scene.lockLayer.removeChildren();
+    scene.objectiveLayer.removeChildren();
+    scene.nameplateLayer.removeChildren();
 
     const byId = new Map<number, SnapshotUnit>();
     for (const u of snapshot.units) byId.set(u.id, u);
     const now = performance.now();
+
+    // Objective hex rings (#288.14). Drawn beneath units so silhouettes
+    // sit cleanly on top.
+    for (const obj of snapshot.objectives) {
+      drawObjectiveMarker(scene.objectiveLayer, obj, now);
+    }
+
     for (const u of snapshot.units) drawUnit(scene.unitsLayer, scene.visionLayer, u, now);
 
     for (const shooter of snapshot.units) {
@@ -193,6 +221,16 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
       drawTargetLock(scene.lockLayer, target, now);
     }
 
+    // Nameplates (#288.18) — selected unit always; firing units transient.
+    for (const u of snapshot.units) {
+      if (u.actionKind === 'dead') continue;
+      const isSelected = selectedUnitId !== null && u.id === selectedUnitId;
+      const isFiring = u.actionKind === 'firing';
+      if (!isSelected && !isFiring) continue;
+      const callsign = (u.operatorId ? callsigns?.get(u.operatorId) : null) ?? `unit-${u.id}`;
+      drawNameplate(scene.nameplateLayer, u, callsign, isSelected);
+    }
+
     // Snapshots arrive on the render clock; the same tick can arrive twice in
     // dev fast-refresh or if React re-runs the effect — de-dupe by tick so we
     // don't double-ingest events.
@@ -201,7 +239,7 @@ export function CombatView({ world, snapshot }: Props): React.JSX.Element {
       scene.fx.ingestEvents(snapshot.events, byId);
       lastTickRef.current = snapshot.tick;
     }
-  }, [snapshot]);
+  }, [snapshot, selectedUnitId, callsigns]);
 
   return <div ref={containerRef} className="combat-view" />;
 }
@@ -549,4 +587,97 @@ function blendTowardGray(color: number, amount: number): number {
   const gray = Math.round((r + gr + b) / 3);
   const lerp = (c: number) => Math.round(c + (gray - c) * amount);
   return (lerp(r) << 16) | (lerp(gr) << 8) | lerp(b);
+}
+
+// ── Objective hex-ring marker (#288.14) ───────────────────────────────────
+// Draws a flat hex outline around the objective's zone with a small
+// kind-letter legend. Cyan when active, green when complete, magenta
+// when failed.
+function drawObjectiveMarker(
+  layer: Container,
+  obj: SimSnapshot['objectives'][number],
+  now: number,
+): void {
+  if (!obj.zone) return;
+  const color =
+    obj.status === 'complete' ? 0x33ffa0 : obj.status === 'failed' ? 0xff2d9a : 0x18e0ff;
+  const cx = obj.zone.x + obj.zone.w / 2;
+  const cy = obj.zone.y + obj.zone.h / 2;
+  // Hex radius scales with the zone's larger axis.
+  const r = Math.max(obj.zone.w, obj.zone.h) * 0.55;
+  const g = new Graphics();
+  g.position.set(cx, cy);
+
+  // Outer hex.
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+    const px = Math.cos(a) * r;
+    const py = Math.sin(a) * r;
+    if (i === 0) g.moveTo(px, py);
+    else g.lineTo(px, py);
+  }
+  g.closePath();
+  g.stroke({ color, alpha: 0.7, width: 0.18 });
+
+  // Pulsing inner hex (active objectives only).
+  if (obj.status === 'active') {
+    const pulse = 0.5 + 0.5 * Math.sin((now / 1100) * Math.PI * 2);
+    const r2 = r * (0.55 + 0.05 * pulse);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+      const px = Math.cos(a) * r2;
+      const py = Math.sin(a) * r2;
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.stroke({ color, alpha: 0.35 + 0.3 * pulse, width: 0.12 });
+  }
+
+  layer.addChild(g);
+
+  // Kind letter overlay — small Pixi Text; cheap because objectives are
+  // O(1).
+  const label = obj.kind === 'extract' ? 'X' : obj.kind === 'defend' ? 'D' : 'S';
+  const text = new Text({
+    text: label,
+    style: new TextStyle({
+      fontFamily: 'Chakra Petch, system-ui, sans-serif',
+      fontSize: 32,
+      fontWeight: '700',
+      fill: color,
+      letterSpacing: 2,
+    }),
+  });
+  text.anchor.set(0.5, 0.5);
+  text.position.set(cx, cy);
+  text.scale.set(r * 0.06);
+  layer.addChild(text);
+}
+
+// ── Nameplate (#288.18) ────────────────────────────────────────────────────
+// Translucent callsign rendered above a unit. Used for the selected unit
+// (sticky) and any unit currently firing (transient).
+function drawNameplate(
+  layer: Container,
+  u: SnapshotUnit,
+  callsign: string,
+  isSelected: boolean,
+): void {
+  const text = new Text({
+    text: `"${callsign}"`,
+    style: new TextStyle({
+      fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
+      fontSize: 24,
+      fontWeight: '600',
+      fill: u.teamId === 0 ? 0x18e0ff : 0xff5a4a,
+      letterSpacing: 1,
+      stroke: { color: 0x000000, width: 4 },
+    }),
+  });
+  text.anchor.set(0.5, 1);
+  text.position.set(u.x, u.y - 2.2);
+  text.scale.set(0.12);
+  text.alpha = isSelected ? 0.95 : 0.7;
+  layer.addChild(text);
 }

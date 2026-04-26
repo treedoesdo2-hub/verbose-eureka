@@ -148,6 +148,12 @@ export function Deploy(): React.JSX.Element {
   const bundle = getContent();
   const ops = bundle.operators;
 
+  const callsignByOpId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const op of ops.values()) map.set(op.id, op.callsign);
+    return map;
+  }, [ops]);
+
   const unitsById = useMemo(() => {
     const map = new Map<number, SnapshotUnit>();
     if (snapshot) for (const u of snapshot.units) map.set(u.id, u);
@@ -210,7 +216,12 @@ export function Deploy(): React.JSX.Element {
       {/* PIXI map fills the entire screen — chrome floats over it. */}
       <div style={{ position: 'absolute', inset: 0 }}>
         {world ? (
-          <CombatView world={world} snapshot={snapshot} />
+          <CombatView
+            world={world}
+            snapshot={snapshot}
+            selectedUnitId={selectedUnitId}
+            callsigns={callsignByOpId}
+          />
         ) : (
           <div
             style={{
