@@ -11,15 +11,39 @@ const CHUNK_TILES = 32;
 // in a Sprite. Result: one draw call per chunk, per-tile tint-capable
 // (enables the P3.5 shaded-relief pass), and the ImageData path gives us
 // direct per-pixel control for subsequent baked effects like contours.
+//
+// #275 increment 3 — building roof toggle. setHiddenBuildings() takes a
+// set of building IDs whose roofs should be hidden (revealing the
+// interior floor). Re-bakes the terrain so the chunks containing those
+// buildings show the underlying base byte instead of the grey roof
+// fill. Selection-state plumbing is part of the S2/S8 combat-view
+// rewrite; this exposes the API the rewrite consumes.
 export class TerrainLayer {
   readonly container: Container;
   private chunks: { sprite: Sprite; x: number; y: number; w: number; h: number }[] = [];
   private tileSize: number;
+  private world: WorldSnapshot;
+  private hiddenBuildings: ReadonlySet<number> = new Set();
 
   constructor(world: WorldSnapshot) {
     this.container = new Container();
     this.tileSize = world.tileSizeMeters;
+    this.world = world;
     this.bake(world);
+  }
+
+  // Show interior floor for the given building ids by re-baking the
+  // terrain layer with their roof tiles rendered as base. Set of zero
+  // bytes restores the default roof rendering.
+  setHiddenBuildings(ids: ReadonlySet<number>): void {
+    this.hiddenBuildings = ids;
+    // Tear down the current chunk sprites and re-bake.
+    for (const c of this.chunks) {
+      c.sprite.texture.destroy(true);
+      c.sprite.destroy();
+    }
+    this.chunks = [];
+    this.bake(this.world);
   }
 
   private bake(world: WorldSnapshot): void {
@@ -53,7 +77,8 @@ export class TerrainLayer {
             let g: number;
             let b: number;
             const buildingId = world.buildingId[worldIdx];
-            if (buildingId > 0) {
+            const roofHidden = buildingId > 0 && this.hiddenBuildings.has(buildingId);
+            if (buildingId > 0 && !roofHidden) {
               // Flat building fill — darker warm grey so sprite+shadow
               // overlays (P5+) read clearly against it. Same tone for all
               // families until family-specific sprites land.
