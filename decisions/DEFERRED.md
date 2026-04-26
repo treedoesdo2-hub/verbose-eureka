@@ -159,6 +159,28 @@ short note + date.
   the data-capture mechanic and overlay rendering need design.
 - **Revisit when:** S6 Debrief implementation begins (#292).
 
+### Armory paperdoll per-zone crit-slot grid overlay
+- **Source:** ADR 016 §S3 / task #350
+- **Date deferred:** 2026-04-25
+- **Reason:** The NEON WIRE armory ships with numeric `slotsUsed
+  / slotsCap` in the inspector and DR readouts on the silhouette;
+  the per-zone 3×2 / 4×3 / 2×6 / 3×2 / 6×4 grid overlay (showing
+  individual crit slots filled vs empty) is a polish enhancement
+  that doesn't change validity surfacing.
+- **Revisit when:** Players need finer-grained per-zone slot
+  visibility, or MWO MechLab parity is requested.
+
+### Armory drag-and-drop interactions
+- **Source:** ADR 016 §S3 / tasks #361–#365
+- **Date deferred:** 2026-04-25
+- **Reason:** The NEON WIRE armory ships with click-to-equip
+  (stockpile row) + click-to-remove (inspector ✕). Full
+  drag-drop (with shift-swap, alt-confirm-evict, right-click
+  quick-unequip, double-click auto-fit) is polish on top of a
+  functional equip flow — not gating MVP playtests.
+- **Revisit when:** Loadout editing becomes a friction point in
+  playtests, or post-MVP UX polish pass.
+
 ---
 
 ## Resolved deferrals

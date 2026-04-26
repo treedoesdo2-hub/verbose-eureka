@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: app
+appId: com.payroll.app
+productName: PAYROLL
 directories:
   buildResources: build
 files:
