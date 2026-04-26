@@ -144,6 +144,30 @@ brief, defer the assignment, or escalate up).
 
 ---
 
+## Parallel tracks
+
+Steve runs two work streams:
+
+1. **MVP track** — mapgen + sim/AI (the two technically hardest
+   parts of the project that gate "shipped" by Steve's definition).
+   PM owns this track end-to-end: backlog, briefs, gates, merges.
+2. **Polish track** — player-facing screens, design updates, NEON
+   WIRE refinement, anything not in MVP track. Steve direct-assigns
+   work in this track to Builder, often verbally / in chat,
+   bypassing PM for speed.
+
+Polish-track assignments **do not** require a `pm/active/` brief
+before Builder starts. They do require:
+- A clean commit on `main` (no fake PR refs, real commit message,
+  message references the assignment intent if Steve provided one)
+- The same Tier-1 quality gates from `pm/PROTOCOL.md`
+  (typecheck / lint / test / build) before merge
+- A line in `pm/log.md` after the fact so the PM has visibility
+
+When PM-issued and Steve-direct work compete for Builder capacity,
+**MVP track wins.** The polish track is Steve's prerogative; the MVP
+track is the contract.
+
 ## Operating tempo
 
 - **Per session:** Builder picks up one assignment from `pm/active/`,

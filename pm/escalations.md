@@ -9,34 +9,27 @@ indicator of how blocked the project is on a User decision.
 
 ## Open
 
-### E1 — GitHub repo creation + initial push
+### E1 — GitHub repo creation + initial push  ✅ RESOLVED
 
 **Date:** 2026-04-26
-**Asked of:** User
-**Status (2026-04-26):** URL received — `https://github.com/treedoesdo2-hub/verbose-eureka.git`.
-GitHub repo is **empty** (no commits yet). Local `origin` remote
-**added** by PM. Initial push is **pending E2 + E3** so we don't
-have to undo decisions afterwards.
-
-**Note:** "I downloaded git and added the merc autobattler to it"
-sounded like GitHub Desktop. Desktop did NOT add a remote that the
-CLI git can see; PM added `origin` manually. Either tool will
-work going forward but the source of truth is the CLI / `.git/config`.
-
-**What I need from you to push:**
-1. Answer E2 (branch strategy)
-2. Answer E3 (historical fake PR refs)
-3. Confirm you want PM to commit the new scaffolding (`pm/`,
-   `BOARD.md`, `CLAUDE.md`) and push.
-
-**While you're there:**
-- Decide visibility on GitHub side: public, private, or solo. PM
-  recommends **private** while pre-launch — protects design and
-  unfinished work, lets us still use Issues / PRs.
+**Resolved:** 2026-04-26
+**Final state:** `main` pushed to
+`https://github.com/treedoesdo2-hub/verbose-eureka.git` at SHA
+`758b876`. Branch tracks `origin/main`. GCM auth went through after a
+click on the "Sign in with your browser" dialog (PM had wrongly given
+up on this before retrying — the dialog was up the whole time, behind
+the terminal).
 
 ---
 
-### E2 — master / main / mapgen-firefight-redesign reconciliation
+### E2 — master / main / mapgen-firefight-redesign reconciliation  ✅ RESOLVED (option A)
+
+**Resolved:** 2026-04-26 — User picked option A. `mapgen-firefight-redesign`
+renamed to `main`; `master` deleted locally; single trunk going forward.
+
+(original entry below for history)
+
+
 
 **Date:** 2026-04-26
 **Asked of:** User
@@ -64,7 +57,16 @@ C. **Leave it.** Keep working on `mapgen-firefight-redesign`. Tools that
 
 ---
 
-### E3 — Fabricated PR numbers in historical commits
+### E3 — Fabricated PR numbers in historical commits  ✅ RESOLVED (option C)
+
+**Resolved:** 2026-04-26 — User picked option C. 117 commits rewritten
+via `git filter-branch --msg-filter`; `(#NNN)` and `(#NNN / #NNN)` refs
+stripped, `(increment 2)` / `(increment 3)` markers preserved. Done
+before first push so no force-push needed.
+
+(original entry below for history)
+
+
 
 **Date:** 2026-04-26
 **Asked of:** User
