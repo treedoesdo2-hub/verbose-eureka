@@ -15,5 +15,12 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     globals: false,
+    // ADR 014 §Pillar A — 4096-tile map target. Mapgen-heavy tests (full
+    // pipeline + N-tick sim) routinely take 2–4s each on a warm CPU and
+    // hit the default 5s ceiling under file-parallelism CPU starvation.
+    // 30s gives plenty of headroom without masking real regressions —
+    // a stuck test still fails fast in absolute terms.
+    testTimeout: 30000,
+    hookTimeout: 30000,
   },
 });

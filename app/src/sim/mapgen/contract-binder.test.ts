@@ -45,7 +45,9 @@ describe('contract binder', () => {
     });
     const req = mapGenRequestFromContract(c, 1.5, 1);
     expect(req.biome).toBe('urban_sparse');
-    expect(req.size).toBe(128);
+    // ADR 014 §Pillar A — 4096-tile maps are the target. small/medium/large
+    // map onto 1024/2048/4096 via CONTRACT_SIZE_TILES.
+    expect(req.size).toBe(1024);
   });
 
   it('falls back to rural_open for extract objectives', () => {
