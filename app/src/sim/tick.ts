@@ -36,7 +36,7 @@ import {
   SUPPRESSION_PER_SHOT,
   totalBleedRate,
 } from './unit';
-import { edgeBlocksMovement, isFootPassable } from './world';
+import { breakWindowEdge, edgeBlocksMovement, edgeIsClimbable, isFootPassable } from './world';
 
 const MAX_SPEED_MPS = 4.5;
 
@@ -488,6 +488,11 @@ function squadCohesionPenalty(unit: Unit, state: SimState): number {
   return (extra / 14) * 70;
 }
 
+// ADR 017 increment 2 — climb-window tick budget. ~3 seconds at 30Hz so
+// climbing reads as a deliberate animation rather than an instant teleport
+// across an aperture. Damaged windows skip the climb (see edgeIsClimbable).
+const CLIMB_TICKS = SIM_HZ * 3;
+
 function processMovement(
   unit: Unit,
   state: SimState,
@@ -495,7 +500,87 @@ function processMovement(
   events: SimEvent[],
   patches: Map<UnitId, UnitPatch>,
 ): void {
+  // Climbing: decrement timer, complete on hit zero.
+  if (unit.action.kind === 'climbing') {
+    if (unit.action.ticksRemaining > 1) {
+      mergePatch(patches, unit.id, {
+        action: {
+          kind: 'climbing',
+          ticksRemaining: unit.action.ticksRemaining - 1,
+          toTileX: unit.action.toTileX,
+          toTileY: unit.action.toTileY,
+          edgeSide: unit.action.edgeSide,
+        },
+      });
+      return;
+    }
+    // Completion: break the window, place the unit at the destination
+    // tile center, return to idle so the BT picks the next move.
+    const ts = state.world.tileSizeMeters;
+    const fromTile = {
+      x: Math.floor(unit.position.x / ts),
+      y: Math.floor(unit.position.y / ts),
+    };
+    breakWindowEdge(state.world, fromTile.x, fromTile.y, unit.action.toTileX, unit.action.toTileY);
+    mergePatch(patches, unit.id, {
+      position: {
+        x: (unit.action.toTileX + 0.5) * ts,
+        y: (unit.action.toTileY + 0.5) * ts,
+      },
+      velocity: { x: 0, y: 0 },
+      action: { kind: 'idle' },
+    });
+    return;
+  }
+
   if (unit.action.kind !== 'moving') return;
+
+  // Detect climb-trigger: would the next sub-tick step cross an intact
+  // window edge? Inspect the from-tile (current) and the immediate
+  // neighbor toward the target. Foot/prone only — vehicles can't climb.
+  if (unit.stance !== 'prone' || true) {
+    const ts = state.world.tileSizeMeters;
+    const fromX = Math.floor(unit.position.x / ts);
+    const fromY = Math.floor(unit.position.y / ts);
+    const tx = Math.floor(unit.action.target.x / ts);
+    const ty = Math.floor(unit.action.target.y / ts);
+    const stepDx = Math.sign(tx - fromX);
+    const stepDy = Math.sign(ty - fromY);
+    if (stepDx !== 0 || stepDy !== 0) {
+      const tryCross = (nx: number, ny: number) => {
+        if (nx < 0 || ny < 0 || nx >= state.world.width || ny >= state.world.height) return null;
+        const climb = edgeIsClimbable(state.world, fromX, fromY, nx, ny, 'foot');
+        return climb.climbable ? { nx, ny, side: climb.edgeSide } : null;
+      };
+      // Prefer cardinal neighbors in the move direction. If diagonal,
+      // check both axes; only trigger climb if a cardinal step into the
+      // building is what the path actually wants.
+      const candidates: Array<{ nx: number; ny: number; side: 'N' | 'W' | null }> = [];
+      if (stepDx !== 0) {
+        const c = tryCross(fromX + stepDx, fromY);
+        if (c) candidates.push(c);
+      }
+      if (stepDy !== 0) {
+        const c = tryCross(fromX, fromY + stepDy);
+        if (c) candidates.push(c);
+      }
+      if (candidates.length > 0) {
+        const pick = candidates[0];
+        mergePatch(patches, unit.id, {
+          velocity: { x: 0, y: 0 },
+          action: {
+            kind: 'climbing',
+            ticksRemaining: CLIMB_TICKS,
+            toTileX: pick.nx,
+            toTileY: pick.ny,
+            edgeSide: pick.side as 'N' | 'W',
+          },
+        });
+        return;
+      }
+    }
+  }
+
   const mobility = unit.combat.mobilityPenalty + squadCohesionPenalty(unit, state);
   const m = executeMovement(unit, unit.action.target, state.world, mobility);
   if (m.arrived) {

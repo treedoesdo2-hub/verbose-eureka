@@ -590,6 +590,72 @@ export function isFootPassable(world: World, x: number, y: number): boolean {
   return axes.move !== 'blocked-all' && axes.move !== 'blocked-foot';
 }
 
+// Climbable-edge probe (#275 increment 2 / ADR 017).
+//
+// Returns true when the (fromTile → toTile) move crosses an intact
+// window edge in foot or prone mode. The pathfinder treats these as
+// expensive-but-passable; tick.executeMovement traps the crossing and
+// transitions the unit into a 'climbing' action that breaks the window
+// after a short delay.
+//
+// Vehicles cannot climb windows. Doors and damaged windows resolve via
+// edgeBlocksMovement directly — this helper is climb-window-only.
+export function edgeIsClimbable(
+  world: World,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  mode: MovementMode,
+): { climbable: boolean; edgeSide: 'N' | 'W' | null } {
+  if (mode !== 'foot' && mode !== 'prone') return { climbable: false, edgeSide: null };
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  if (Math.abs(dx) + Math.abs(dy) !== 1) return { climbable: false, edgeSide: null };
+  let overrideByte: number;
+  let edgeSide: 'N' | 'W';
+  if (dx === 1) {
+    overrideByte = world.edgeOverrideW[tileIndex(world, toX, toY)];
+    edgeSide = 'W';
+  } else if (dx === -1) {
+    overrideByte = world.edgeOverrideW[tileIndex(world, fromX, fromY)];
+    edgeSide = 'W';
+  } else if (dy === 1) {
+    overrideByte = world.edgeOverrideN[tileIndex(world, toX, toY)];
+    edgeSide = 'N';
+  } else {
+    overrideByte = world.edgeOverrideN[tileIndex(world, fromX, fromY)];
+    edgeSide = 'N';
+  }
+  return {
+    climbable: overrideByte === EDGE_OVERRIDE_WINDOW_INTACT,
+    edgeSide,
+  };
+}
+
+// Break a window edge (set it to WINDOW_BROKEN) on the edge between
+// from-tile and to-tile. Idempotent; safe to call when the edge is
+// already broken.
+export function breakWindowEdge(
+  world: World,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+): void {
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  if (dx === 1) {
+    world.edgeOverrideW[tileIndex(world, toX, toY)] = EDGE_OVERRIDE_WINDOW_BROKEN;
+  } else if (dx === -1) {
+    world.edgeOverrideW[tileIndex(world, fromX, fromY)] = EDGE_OVERRIDE_WINDOW_BROKEN;
+  } else if (dy === 1) {
+    world.edgeOverrideN[tileIndex(world, toX, toY)] = EDGE_OVERRIDE_WINDOW_BROKEN;
+  } else if (dy === -1) {
+    world.edgeOverrideN[tileIndex(world, fromX, fromY)] = EDGE_OVERRIDE_WINDOW_BROKEN;
+  }
+}
+
 // Edge-barrier movement gate (#276).
 //
 // A tile-by-tile walkability mask captures *what's standing on this tile*,

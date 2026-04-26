@@ -82,6 +82,10 @@ export type UnitAction =
   | { kind: 'reloading'; ticksRemaining: number }
   | { kind: 'stabilizing'; targetId: UnitId; ticksRemaining: number }
   | { kind: 'dragging'; targetId: UnitId; to: Vec2 }
+  // ADR 017 increment 2 — climbing through a window. The unit pauses
+  // movement; on completion the window is set to broken and the unit
+  // teleports one tile across the edge into the destination.
+  | { kind: 'climbing'; ticksRemaining: number; toTileX: number; toTileY: number; edgeSide: 'N' | 'W' }
   | { kind: 'downed' }
   | { kind: 'dead' };
 

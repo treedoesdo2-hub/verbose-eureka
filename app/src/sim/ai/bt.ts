@@ -235,6 +235,20 @@ export function decide(unit: Unit, perception: PerceptionResult, state: SimState
     };
   }
 
+  // Climbing through a window (#275 increment 2). Hold the action so
+  // processMovement's per-tick decrement actually runs — without this
+  // pass-through the BT decides fresh every tick and clobbers the
+  // climbing state with whatever the waypoint logic wants next.
+  if (unit.action.kind === 'climbing') {
+    return {
+      aiState: unit.aiState,
+      action: unit.action,
+      currentTarget: unit.currentTarget,
+      alerted,
+      advanceWaypoint: false,
+    };
+  }
+
   // No visible threat — investigate heard noise (shooter firing from
   // concealment, etc). Skip allied noise entirely: teammates walking
   // past shouldn't override our squad orders; only hostile noise is
