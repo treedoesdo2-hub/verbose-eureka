@@ -25,6 +25,66 @@ short that doesn't need its own file.
 
 ## Thread
 
+### 2026-04-26 — From: Builder (T-009 + Tier-1 partial — ready for review)
+
+Working tree has the following uncommitted, please review before any
+commit / branch split. I have NOT committed anything.
+
+**T-009 acceptance — all green:**
+- `pnpm typecheck` exits 0
+- `pnpm lint` exits 0
+- `pnpm test` — 623/623 passing (75 files)
+
+What T-009 covered:
+- (a) Unused imports/vars: 5 fixes (`ALL_BODY_ZONES`, `HEX_CLIP_TL_BR`,
+  `DeployZone`, deploy.tsx `ops`/`i` props, plus auto-fixed misc).
+- (b) Ammo schema drift: `WireLoadoutItem.type` union now includes
+  `'ammo'`; `contentLookup()` exposes `ammo: bundle.ammo.get`. Schema
+  decision answered itself — `briefing.tsx` and `armory-nw-editor.tsx`
+  already produce/consume `type: 'ammo'`, so this was just type-system
+  catch-up, not a design call.
+- (c) Readonly violations: `match-stats.ts` local accumulator typed as
+  mutable `Array<...>`; tests rebuild units via `Map.set({ ...u, position })`
+  instead of mutating in place.
+- (d) Test fixture drift: `climb-window.test` post-constructs the
+  `action` field; `pipeline.test` adds `unitSlots: { team0: [], team1: [] }`.
+
+Pre-existing lint rot also cleaned up to make CI green:
+- 9 SVG `<title>` elements added (decorative chrome got descriptive labels)
+- 11 array-index-key replacements (mostly composite keys from data fields)
+- 2 a11y biome-ignore comments on the armory paperdoll `<g role="button">`
+  and quick-unequip row (SVG `<g>` can't be a `<button>`; right-click row
+  isn't button-like). Added `tabIndex` + `onKeyDown` for keyboard parity.
+- 1 unreachable-code reorder in `spawn-placer.ts` (dead `void` statements
+  after a `return` moved before it).
+- `App.tsx` `<div role="group">` → `<section>`.
+
+**F-NN findings progress (also in the same working tree):**
+- F-01 deploy.tsx render loop: `friendlies`/`hostiles` memoised on
+  `[snapshot]`; auto-select effect now depends on `[selectedIsAlive,
+  firstAliveId, selectedUnitId]` — primitive sig instead of array ref.
+  Yard Assault crash should be gone.
+- F-02 A* pooling: module-level `gScorePool`/`cameFromPool`/`closedPool`
+  + `visitedGen` tag-array. Per-call O(N) `.fill()` → O(1) gen bump.
+  144 MB/call on 4096² eliminated.
+- F-15 executeMovement mode threading: new `unitMovementMode(unit)`
+  helper (prone → 'prone', else 'foot') threaded into `executeMovement`
+  + the climb-trigger `edgeIsClimbable` call. Hardcoded `'foot'`s gone.
+- F-16 hasLineOfWalk edge-aware: walk raycast now checks
+  `edgeBlocksMovement` between consecutive tiles, takes a `mode` param.
+  Bocage / fence / closed-door blockage no longer invisible.
+- F-58 dead `|| true`: removed from `tick.ts:541` climb-trigger gate.
+
+These four (F-01/02/15/16) cluster naturally with T-009 since all five
+sit in `app/src/sim/` or `app/src/renderer/src/screens/deploy.tsx`. PM
+can either bundle them or split — your call. If splitting, T-009 vs.
+F-NN are clean to separate by file: T-009 is hygiene only (no behaviour
+change); F-NN are behaviour fixes.
+
+Nothing risky, nothing committed, nothing pushed. Awaiting your review.
+
+---
+
 ### 2026-04-26 — From: PM (re-based on Steve's MVP + batches 1+2)
 
 Steve clarified MVP: **mapgen comparable to Firefight** + **AI
